@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
 
-    DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/alphapilot"
+    DATABASE_URL: str = "postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot"
 
     REDIS_URL: str = "redis://localhost:6379"
 
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env",
+        env_file_encoding="utf-8",
         extra="ignore",
     )
 

@@ -6,8 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 
 dependencies = [
+    "alembic>=1.18.5",
+    "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.2",
+    "sqlalchemy>=2.0.51",
     "uvicorn>=0.52.0",
 ]
 
@@ -24,6 +28,10 @@ build-backend = "uv_build"
 line-length = 100
 target-version = "py312"
 
+exclude = [
+    "migrations/versions",
+]
+
 [tool.ruff.lint]
 select = [
     "E",
@@ -31,6 +39,9 @@ select = [
     "I",
     "UP",
     "B",
+]
+ignore = [
+    "UP046",
 ]
 
 [tool.pytest.ini_options]
