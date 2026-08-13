@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: alphapilot
+          POSTGRES_PASSWORD: alphapilot
+          POSTGRES_DB: alphapilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alphapilot -d alphapilot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: MyPy
+        run: uv run mypy src
+
+      - name: Run database migrations
+        run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot
+
+      - name: Pytest
+        run: uv run pytest
+        env:
+          DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot

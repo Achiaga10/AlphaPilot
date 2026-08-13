@@ -21,8 +21,16 @@ class DailyCandle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "daily_candles"
 
     __table_args__ = (
-        Index("ix_daily_candles_company_date", "company_id", "date", unique=True),
-        Index("ix_daily_candles_date", "date"),
+        Index(
+            "ix_daily_candles_company_day",
+            "company_id",
+            "trading_day",
+            unique=True,
+        ),
+        Index(
+            "ix_daily_candles_day",
+            "trading_day",
+        ),
     )
 
     company_id: Mapped[UUID] = mapped_column(
@@ -30,7 +38,7 @@ class DailyCandle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
 
-    date: Mapped[date] = mapped_column(
+    trading_day: Mapped[date] = mapped_column(
         Date,
         nullable=False,
     )

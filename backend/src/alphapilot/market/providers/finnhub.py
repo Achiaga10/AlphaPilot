@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
+from alphapilot.market.dto import MarketCandle
 from alphapilot.market.providers.base import MarketProvider
 
 
@@ -17,5 +19,7 @@ class FinnhubProvider(MarketProvider):
     async def get_history(
         self,
         ticker: str,
-    ) -> list[dict[str, Any]]:
+        start: date,
+        end: date,
+    ) -> list[MarketCandle]:
         raise NotImplementedError

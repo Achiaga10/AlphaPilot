@@ -1,5 +1,8 @@
+from uuid import UUID
+
 from alphapilot.database.models.company import Company
 from alphapilot.repositories.company import CompanyRepository
+from alphapilot.schemas.company import CompanyUpdate
 from alphapilot.services.base import BaseService
 
 
@@ -9,6 +12,12 @@ class CompanyService(BaseService[CompanyRepository]):
         repository: CompanyRepository,
     ) -> None:
         super().__init__(repository)
+
+    async def create(
+        self,
+        company: Company,
+    ) -> Company:
+        return await self.repository.create(company)
 
     async def get_company(
         self,
@@ -20,3 +29,33 @@ class CompanyService(BaseService[CompanyRepository]):
         self,
     ) -> list[Company]:
         return await self.repository.list()
+
+    async def update_company(
+        self,
+        company_id: UUID,
+        data: CompanyUpdate,
+    ) -> Company | None:
+        company = await self.repository.get(company_id)
+
+        if company is None:
+            return None
+
+        updates = data.model_dump(exclude_unset=True)
+
+        for field, value in updates.items():
+            setattr(company, field, value)
+
+        return await self.repository.update(company)
+
+    async def delete_company(
+        self,
+        company_id: UUID,
+    ) -> bool:
+        company = await self.repository.get(company_id)
+
+        if company is None:
+            return False
+
+        await self.repository.delete(company)
+
+        return True

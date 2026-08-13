@@ -27,7 +27,9 @@ class BaseRepository(Generic[ModelType]):
     async def list(
         self,
     ) -> list[ModelType]:
-        result = await self.session.execute(select(self.model))
+        result = await self.session.execute(
+            select(self.model),
+        )
 
         return list(result.scalars().all())
 
@@ -39,6 +41,7 @@ class BaseRepository(Generic[ModelType]):
 
         await self.session.flush()
         await self.session.refresh(instance)
+        await self.session.commit()
 
         return instance
 
@@ -47,3 +50,4 @@ class BaseRepository(Generic[ModelType]):
         instance: ModelType,
     ) -> None:
         await self.session.delete(instance)
+        await self.session.commit()

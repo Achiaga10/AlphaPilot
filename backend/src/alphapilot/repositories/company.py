@@ -26,3 +26,13 @@ class CompanyRepository(BaseRepository[Company]):
         )
 
         return result.scalar_one_or_none()
+
+    async def update(
+        self,
+        company: Company,
+    ) -> Company:
+        await self.session.flush()
+        await self.session.commit()
+        await self.session.refresh(company)
+
+        return company
