@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.api.dependencies.market import get_market_provider
@@ -48,7 +48,7 @@ class FakeMarketProvider(MarketProvider):
 
 @pytest.mark.asyncio
 async def test_sync_market_data(
-    client: TestClient,
+    client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
     ticker = f"T{uuid4().hex[:8].upper()}"
@@ -69,7 +69,7 @@ async def test_sync_market_data(
     app.dependency_overrides[get_market_provider] = lambda: FakeMarketProvider()
 
     try:
-        response = client.post(
+        response = await client.post(
             f"/api/v1/market/sync/{ticker}",
             params={
                 "start": "2026-08-01",
@@ -87,13 +87,14 @@ async def test_sync_market_data(
         app.dependency_overrides.clear()
 
 
-def test_sync_market_data_company_not_found(
-    client: TestClient,
+@pytest.mark.asyncio
+async def test_sync_market_data_company_not_found(
+    client: AsyncClient,
 ) -> None:
     app.dependency_overrides[get_market_provider] = lambda: FakeMarketProvider()
 
     try:
-        response = client.post(
+        response = await client.post(
             "/api/v1/market/sync/DOESNOTEXIST",
             params={
                 "start": "2026-08-01",
