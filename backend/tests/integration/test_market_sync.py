@@ -59,10 +59,10 @@ async def test_market_sync_inserts_candles(
     company = Company(
         id=uuid4(),
         ticker=ticker,
-        name="Apple Inc.",
+        name="Test Company",
         exchange="NASDAQ",
         sector="Technology",
-        industry="Consumer Electronics",
+        industry="Software",
         is_active=True,
     )
 
@@ -84,15 +84,19 @@ async def test_market_sync_inserts_candles(
         candle_service=candle_service,
     )
 
-    await service.sync_company(
+    synced = await service.sync_company(
         ticker=ticker,
         start=date(2026, 8, 1),
         end=date(2026, 8, 2),
     )
 
+    assert synced is True
+
     result = await db_session.execute(
         select(DailyCandle)
-        .where(DailyCandle.company_id == company.id)
+        .where(
+            DailyCandle.company_id == company.id,
+        )
         .order_by(DailyCandle.trading_day),
     )
 
@@ -108,5 +112,8 @@ async def test_market_sync_inserts_candles(
     assert candles[0].volume == 100000
 
     assert candles[1].trading_day == date(2026, 8, 2)
+    assert candles[1].open == Decimal("103.00")
+    assert candles[1].high == Decimal("108.00")
+    assert candles[1].low == Decimal("102.00")
     assert candles[1].close == Decimal("107.00")
     assert candles[1].volume == 120000

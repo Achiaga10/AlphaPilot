@@ -1,10 +1,11 @@
 import asyncio
+from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from alphapilot.database.session import AsyncSessionLocal, get_db
+from alphapilot.database.session import AsyncSessionLocal
 from alphapilot.main import app
 
 if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
@@ -12,20 +13,16 @@ if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncSession:
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
+        await session.rollback()
 
 
 @pytest_asyncio.fixture
 async def client(
     db_session: AsyncSession,
-) -> AsyncClient:
-    async def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
+) -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
 
     async with AsyncClient(
@@ -34,5 +31,3 @@ async def client(
         follow_redirects=True,
     ) as client:
         yield client
-
-    app.dependency_overrides.clear()

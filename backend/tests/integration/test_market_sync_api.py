@@ -58,19 +58,17 @@ async def test_market_sync_api(
     company = Company(
         id=uuid4(),
         ticker=ticker,
-        name="Apple Inc.",
+        name="Test Company",
         exchange="NASDAQ",
         sector="Technology",
-        industry="Consumer Electronics",
+        industry="Software",
         is_active=True,
     )
 
-    # קודם כל מכניסים את החברה ל-DB
     db_session.add(company)
     await db_session.commit()
     await db_session.refresh(company)
 
-    # מחליפים את ה-provider האמיתי ב-FakeProvider
     app.dependency_overrides[get_market_provider] = lambda: FakeMarketProvider()
 
     try:
@@ -116,5 +114,7 @@ async def test_market_sync_api(
         assert candles[1].volume == 120000
 
     finally:
-        # חשוב מאוד — לא להשאיר override לטסטים אחרים
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(
+            get_market_provider,
+            None,
+        )

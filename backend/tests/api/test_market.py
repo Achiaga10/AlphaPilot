@@ -84,7 +84,10 @@ async def test_sync_market_data(
         }
 
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(
+            get_market_provider,
+            None,
+        )
 
 
 @pytest.mark.asyncio
@@ -108,4 +111,7 @@ async def test_sync_market_data_company_not_found(
         }
 
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(
+            get_market_provider,
+            None,
+        )
