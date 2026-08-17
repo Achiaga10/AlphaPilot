@@ -3,15 +3,21 @@ from decimal import Decimal
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.strategy.base import TradingStrategy
-from alphapilot.strategy.indicators import calculate_ema_series
+from alphapilot.strategy.context import StrategyContext
+from alphapilot.strategy.indicators import (
+    calculate_ema_series,
+    calculate_sma,
+)
 from alphapilot.strategy.signal import Signal
 
 
 class EMA20PullbackStrategy(TradingStrategy):
-    """EMA20 trend-pullback strategy."""
+    """EMA20 trend-pullback strategy with market regime filter."""
 
     EMA_FAST_PERIOD = 20
     EMA_SLOW_PERIOD = 50
+
+    MARKET_SMA_PERIOD = 200
 
     SLOPE_LOOKBACK = 5
 
@@ -24,6 +30,7 @@ class EMA20PullbackStrategy(TradingStrategy):
         self,
         company: Company,
         candles: list[DailyCandle],
+        context: StrategyContext | None = None,
     ) -> Signal:
         if len(candles) < self.MIN_CANDLES:
             return Signal.HOLD
@@ -56,15 +63,21 @@ class EMA20PullbackStrategy(TradingStrategy):
         previous_ema20 = ema20_values[-(self.SLOPE_LOOKBACK + 1)]
 
         #
-        # SELL
+        # EXIT / TREND BREAKDOWN
         #
-        # A close below EMA50 represents a trend breakdown.
+        # Market regime must never prevent a SELL.
         #
         if current_candle.close < current_ema50:
             return Signal.SELL
 
         #
-        # TREND FILTER
+        # MARKET REGIME
+        #
+        if not self._market_allows_long(context):
+            return Signal.HOLD
+
+        #
+        # STOCK TREND
         #
         ema20_above_ema50 = current_ema20 > current_ema50
 
@@ -93,3 +106,32 @@ class EMA20PullbackStrategy(TradingStrategy):
             return Signal.BUY
 
         return Signal.HOLD
+
+    def _market_allows_long(
+        self,
+        context: StrategyContext | None,
+    ) -> bool:
+        if context is None:
+            return False
+
+        benchmark_candles = sorted(
+            context.benchmark_candles,
+            key=lambda candle: candle.trading_day,
+        )
+
+        if len(benchmark_candles) < self.MARKET_SMA_PERIOD:
+            return False
+
+        benchmark_closes = [candle.close for candle in benchmark_candles]
+
+        sma200 = calculate_sma(
+            benchmark_closes,
+            self.MARKET_SMA_PERIOD,
+        )
+
+        if sma200 is None:
+            return False
+
+        current_market_price = benchmark_candles[-1].close
+
+        return current_market_price > sma200

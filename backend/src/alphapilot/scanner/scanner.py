@@ -6,13 +6,18 @@ from alphapilot.scanner.signal_result import SignalResult
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
 from alphapilot.strategy.base import TradingStrategy
+from alphapilot.strategy.context import StrategyContext
 from alphapilot.strategy.signal import Signal
 
 
 class Scanner:
     """Scans companies and evaluates them using a trading strategy."""
 
-    HISTORY_LOOKBACK_DAYS = 120
+    STOCK_HISTORY_LOOKBACK_DAYS = 120
+
+    MARKET_HISTORY_LOOKBACK_DAYS = 400
+
+    MARKET_BENCHMARK_TICKER = "SPY"
 
     def __init__(
         self,
@@ -41,20 +46,46 @@ class Scanner:
 
         end_date = date.today()
 
-        start_date = end_date - timedelta(
-            days=self.HISTORY_LOOKBACK_DAYS,
+        stock_start_date = end_date - timedelta(
+            days=self.STOCK_HISTORY_LOOKBACK_DAYS,
+        )
+
+        market_start_date = end_date - timedelta(
+            days=self.MARKET_HISTORY_LOOKBACK_DAYS,
+        )
+
+        benchmark_company = await self.company_service.get_company(
+            self.MARKET_BENCHMARK_TICKER,
+        )
+
+        benchmark_candles = []
+
+        if benchmark_company is not None:
+            benchmark_candles = await self.candle_service.get_history(
+                benchmark_company.id,
+                market_start_date,
+                end_date,
+            )
+
+        context = StrategyContext(
+            benchmark_ticker=self.MARKET_BENCHMARK_TICKER,
+            benchmark_candles=tuple(benchmark_candles),
         )
 
         for company in companies:
+            if company.ticker.upper() == self.MARKET_BENCHMARK_TICKER:
+                continue
+
             candles = await self.candle_service.get_history(
                 company.id,
-                start_date,
+                stock_start_date,
                 end_date,
             )
 
             signal = self.strategy.generate_signal(
                 company,
                 candles,
+                context,
             )
 
             if signal != Signal.BUY:
