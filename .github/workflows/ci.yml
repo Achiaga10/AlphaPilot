@@ -66,3 +66,4 @@ jobs:
         run: uv run pytest
         env:
           DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
