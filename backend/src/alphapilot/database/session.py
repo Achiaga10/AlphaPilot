@@ -5,14 +5,16 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from alphapilot.core.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
-    future=True,
+    poolclass=NullPool,
 )
+
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

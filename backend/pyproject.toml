@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.52.0",
+    "httpx>=0.28.1",
 ]
 
 
@@ -46,6 +47,8 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+
 
 [tool.mypy]
 python_version = "3.12"
@@ -53,7 +56,6 @@ strict = true
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "mypy>=2.3.0",
     "pre-commit>=4.6.1",
     "pytest>=9.1.1",
