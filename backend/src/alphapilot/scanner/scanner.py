@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from alphapilot.market.providers.base import MarketProvider
@@ -11,6 +11,8 @@ from alphapilot.strategy.signal import Signal
 
 class Scanner:
     """Scans companies and evaluates them using a trading strategy."""
+
+    HISTORY_LOOKBACK_DAYS = 120
 
     def __init__(
         self,
@@ -37,11 +39,17 @@ class Scanner:
 
         selected: list[SignalResult] = []
 
+        end_date = date.today()
+
+        start_date = end_date - timedelta(
+            days=self.HISTORY_LOOKBACK_DAYS,
+        )
+
         for company in companies:
             candles = await self.candle_service.get_history(
                 company.id,
-                date.today() - timedelta(days=40),
-                date.today(),
+                start_date,
+                end_date,
             )
 
             signal = self.strategy.generate_signal(
@@ -49,14 +57,16 @@ class Scanner:
                 candles,
             )
 
-            if signal == Signal.BUY:
-                selected.append(
-                    SignalResult(
-                        ticker=company.ticker,
-                        signal=signal,
-                        price=float(candles[-1].close),
-                        generated_at=datetime.utcnow(),
-                    )
+            if signal != Signal.BUY:
+                continue
+
+            selected.append(
+                SignalResult(
+                    ticker=company.ticker,
+                    signal=signal,
+                    price=float(candles[-1].close),
+                    generated_at=datetime.now(UTC),
                 )
+            )
 
         return selected

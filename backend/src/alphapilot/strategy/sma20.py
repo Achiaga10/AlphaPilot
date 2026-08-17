@@ -7,28 +7,44 @@ from alphapilot.strategy.signal import Signal
 
 
 class SMA20Strategy(TradingStrategy):
-    """20-day Simple Moving Average strategy."""
+    """20-day simple moving average crossover strategy."""
+
+    PERIOD = 20
 
     def generate_signal(
         self,
         company: Company,
         candles: list[DailyCandle],
     ) -> Signal:
-        if len(candles) < 20:
+        if len(candles) < self.PERIOD + 1:
             return Signal.HOLD
 
-        closes = [c.close for c in candles[-20:]]
+        ordered_candles = sorted(
+            candles,
+            key=lambda candle: candle.trading_day,
+        )
 
-        sma = sum(closes) / Decimal(20)
+        previous_window = ordered_candles[-(self.PERIOD + 1) : -1]
 
-        current_price = candles[-1].close
+        current_window = ordered_candles[-self.PERIOD :]
 
-        previous_price = candles[-2].close
+        previous_sma = sum(
+            (candle.close for candle in previous_window),
+            Decimal(0),
+        ) / Decimal(self.PERIOD)
 
-        if previous_price <= sma < current_price:
+        current_sma = sum(
+            (candle.close for candle in current_window),
+            Decimal(0),
+        ) / Decimal(self.PERIOD)
+
+        previous_price = ordered_candles[-2].close
+        current_price = ordered_candles[-1].close
+
+        if previous_price <= previous_sma and current_price > current_sma:
             return Signal.BUY
 
-        if previous_price >= sma > current_price:
+        if previous_price >= previous_sma and current_price < current_sma:
             return Signal.SELL
 
         return Signal.HOLD
