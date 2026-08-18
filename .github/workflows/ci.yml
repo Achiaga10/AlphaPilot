@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - main
-      - develop
 
   pull_request:
     branches:
       - main
-      - develop
 
   workflow_dispatch:
 
@@ -17,15 +15,22 @@ jobs:
   checks:
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot
+      TEST_DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot_test
+
     services:
       postgres:
         image: postgres:16
+
         env:
           POSTGRES_USER: alphapilot
           POSTGRES_PASSWORD: alphapilot
           POSTGRES_DB: alphapilot
+
         ports:
           - 5432:5432
+
         options: >-
           --health-cmd "pg_isready -U alphapilot -d alphapilot"
           --health-interval 10s
@@ -57,13 +62,50 @@ jobs:
       - name: MyPy
         run: uv run mypy src
 
-      - name: Run database migrations
+      - name: Create test database
+        run: |
+          uv run python - <<'PY'
+          import psycopg
+
+          connection = psycopg.connect(
+              "postgresql://alphapilot:alphapilot@localhost:5432/postgres",
+              autocommit=True,
+          )
+
+          connection.execute(
+              "CREATE DATABASE alphapilot_test"
+          )
+
+          connection.close()
+          PY
+
+      - name: Verify database configuration
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy.engine import make_url
+          from alphapilot.core.config import settings
+
+          dev_database = make_url(
+              settings.DATABASE_URL
+          ).database
+
+          test_database = make_url(
+              settings.TEST_DATABASE_URL
+          ).database
+
+          print(f"Development database: {dev_database}")
+          print(f"Test database: {test_database}")
+
+          assert dev_database == "alphapilot"
+          assert test_database == "alphapilot_test"
+          assert settings.DATABASE_URL != settings.TEST_DATABASE_URL
+          PY
+
+      - name: Run development database migrations
         run: uv run alembic upgrade head
-        env:
-          DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot
+
+      - name: Run test database migrations
+        run: DATABASE_URL="${TEST_DATABASE_URL}" uv run alembic upgrade head
 
       - name: Pytest
         run: uv run pytest
-        env:
-          DATABASE_URL: postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot
-          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
