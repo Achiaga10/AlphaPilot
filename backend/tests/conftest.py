@@ -19,13 +19,19 @@ if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
-TEST_DATABASE_URL = settings.TEST_DATABASE_URL or settings.DATABASE_URL
+if settings.TEST_DATABASE_URL is None:
+    raise RuntimeError(
+        "TEST_DATABASE_URL is not configured. "
+        "Refusing to run tests without a dedicated test database."
+    )
 
-if TEST_DATABASE_URL == settings.DATABASE_URL:
+if settings.TEST_DATABASE_URL == settings.DATABASE_URL:
     raise RuntimeError(
         "TEST_DATABASE_URL must be different from DATABASE_URL. "
         "Refusing to run tests against the development database."
     )
+
+TEST_DATABASE_URL = settings.TEST_DATABASE_URL
 
 
 test_engine = create_async_engine(
