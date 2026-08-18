@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     DATABASE_URL: str = "postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot"
+    TEST_DATABASE_URL: str | None = None
 
     REDIS_URL: str = "redis://localhost:6379"
 
