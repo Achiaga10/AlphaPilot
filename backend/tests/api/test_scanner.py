@@ -31,22 +31,13 @@ def create_candle(
     )
 
 
-@pytest.mark.asyncio
-async def test_scanner_returns_buy_signal(
-    client: AsyncClient,
+async def seed_market_and_stock(
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
+    benchmark_ticker: str,
+    stock_ticker: str,
+    *,
+    pullback: bool,
 ) -> None:
-    benchmark_ticker = f"B{uuid4().hex[:8].upper()}"
-
-    stock_ticker = f"T{uuid4().hex[:8].upper()}"
-
-    monkeypatch.setattr(
-        Scanner,
-        "MARKET_BENCHMARK_TICKER",
-        benchmark_ticker,
-    )
-
     benchmark_company = Company(
         id=uuid4(),
         ticker=benchmark_ticker,
@@ -78,10 +69,6 @@ async def test_scanner_returns_buy_signal(
 
     today = date.today()
 
-    #
-    # Bullish benchmark:
-    # last price is above SMA200.
-    #
     benchmark_start = today - timedelta(days=219)
 
     benchmark_candles = [
@@ -97,9 +84,6 @@ async def test_scanner_returns_buy_signal(
     benchmark_candles[-1].high = Decimal("352.00")
     benchmark_candles[-1].low = Decimal("348.00")
 
-    #
-    # Stock in EMA20 pullback setup.
-    #
     stock_start = today - timedelta(days=59)
 
     stock_candles = [
@@ -111,11 +95,38 @@ async def test_scanner_returns_buy_signal(
         for index in range(60)
     ]
 
-    stock_candles[-1].low = Decimal("149.00")
+    if pullback:
+        stock_candles[-1].low = Decimal("149.00")
+    else:
+        stock_candles[-1].low = Decimal("155.00")
 
     db_session.add_all(benchmark_candles + stock_candles)
 
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_scanner_returns_buy_signal(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    benchmark_ticker = f"B{uuid4().hex[:8].upper()}"
+
+    stock_ticker = f"T{uuid4().hex[:8].upper()}"
+
+    monkeypatch.setattr(
+        Scanner,
+        "MARKET_BENCHMARK_TICKER",
+        benchmark_ticker,
+    )
+
+    await seed_market_and_stock(
+        db_session,
+        benchmark_ticker,
+        stock_ticker,
+        pullback=True,
+    )
 
     response = await client.get(
         "/api/v1/scanner/signals",
@@ -125,11 +136,6 @@ async def test_scanner_returns_buy_signal(
 
     data = response.json()
 
-    #
-    # Scanner scans the entire database.
-    # Other tests may already have created companies,
-    # so we only validate the company created by this test.
-    #
     matching_signals = [signal for signal in data if signal["ticker"] == stock_ticker]
 
     assert len(matching_signals) == 1
@@ -139,14 +145,74 @@ async def test_scanner_returns_buy_signal(
     assert signal["ticker"] == stock_ticker
     assert signal["signal"] == "BUY"
     assert signal["price"] == 159.0
+
     assert signal["ema20"] == pytest.approx(149.5)
+
     assert signal["ema50"] == pytest.approx(134.5)
+
     assert signal["market_regime"] == "BULLISH"
+
     assert signal["reason"] == ("EMA20_PULLBACK_RECLAIM")
 
-    #
-    # Benchmark must never appear as a trading candidate.
-    #
     returned_tickers = {item["ticker"] for item in data}
 
     assert benchmark_ticker not in returned_tickers
+
+
+@pytest.mark.asyncio
+async def test_scanner_evaluate_returns_hold_reason(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    benchmark_ticker = f"B{uuid4().hex[:8].upper()}"
+
+    stock_ticker = f"T{uuid4().hex[:8].upper()}"
+
+    monkeypatch.setattr(
+        Scanner,
+        "MARKET_BENCHMARK_TICKER",
+        benchmark_ticker,
+    )
+
+    await seed_market_and_stock(
+        db_session,
+        benchmark_ticker,
+        stock_ticker,
+        pullback=False,
+    )
+
+    response = await client.get(
+        f"/api/v1/scanner/evaluate/{stock_ticker}",
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["ticker"] == stock_ticker
+    assert data["signal"] == "HOLD"
+    assert data["price"] == 159.0
+
+    assert data["ema20"] == pytest.approx(149.5)
+
+    assert data["ema50"] == pytest.approx(134.5)
+
+    assert data["market_regime"] == "BULLISH"
+
+    assert data["reason"] == "NO_PULLBACK"
+
+
+@pytest.mark.asyncio
+async def test_scanner_evaluate_company_not_found(
+    client: AsyncClient,
+) -> None:
+    response = await client.get(
+        "/api/v1/scanner/evaluate/DOESNOTEXIST",
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Company DOESNOTEXIST not found",
+    }

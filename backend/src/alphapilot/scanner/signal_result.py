@@ -12,7 +12,7 @@ from alphapilot.strategy.signal import Signal
 class SignalResult:
     ticker: str
     signal: Signal
-    price: float
+    price: float | None
 
     ema20: float | None
     ema50: float | None

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.api.dependencies.market import get_market_provider
@@ -9,6 +9,7 @@ from alphapilot.market.providers.base import MarketProvider
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.scanner.scanner import Scanner
+from alphapilot.scanner.signal_result import SignalResult
 from alphapilot.schemas.scanner import ScannerSignalResponse
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
@@ -56,6 +57,21 @@ def get_scanner(
     )
 
 
+def build_response(
+    result: SignalResult,
+) -> ScannerSignalResponse:
+    return ScannerSignalResponse(
+        ticker=result.ticker,
+        signal=result.signal,
+        price=result.price,
+        ema20=result.ema20,
+        ema50=result.ema50,
+        market_regime=result.market_regime,
+        reason=result.reason,
+        generated_at=result.generated_at,
+    )
+
+
 @router.get(
     "/signals",
     response_model=list[ScannerSignalResponse],
@@ -68,16 +84,30 @@ async def scan_market(
 ) -> list[ScannerSignalResponse]:
     results = await scanner.scan_all()
 
-    return [
-        ScannerSignalResponse(
-            ticker=result.ticker,
-            signal=result.signal,
-            price=result.price,
-            ema20=result.ema20,
-            ema50=result.ema50,
-            market_regime=result.market_regime,
-            reason=result.reason,
-            generated_at=result.generated_at,
+    return [build_response(result) for result in results]
+
+
+@router.get(
+    "/evaluate/{ticker}",
+    response_model=ScannerSignalResponse,
+)
+async def evaluate_company(
+    ticker: str,
+    scanner: Annotated[
+        Scanner,
+        Depends(get_scanner),
+    ],
+) -> ScannerSignalResponse:
+    result = await scanner.evaluate_company(
+        ticker,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Company {ticker.upper()} not found",
         )
-        for result in results
-    ]
+
+    return build_response(
+        result,
+    )
