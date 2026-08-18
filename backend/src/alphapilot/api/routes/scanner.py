@@ -30,9 +30,13 @@ def get_scanner(
         Depends(get_market_provider),
     ],
 ) -> Scanner:
-    company_repository = CompanyRepository(session)
+    company_repository = CompanyRepository(
+        session,
+    )
 
-    candle_repository = DailyCandleRepository(session)
+    candle_repository = DailyCandleRepository(
+        session,
+    )
 
     company_service = CompanyService(
         company_repository,
@@ -69,6 +73,10 @@ async def scan_market(
             ticker=result.ticker,
             signal=result.signal,
             price=result.price,
+            ema20=result.ema20,
+            ema50=result.ema50,
+            market_regime=result.market_regime,
+            reason=result.reason,
             generated_at=result.generated_at,
         )
         for result in results

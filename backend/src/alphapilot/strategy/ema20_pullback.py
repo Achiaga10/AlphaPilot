@@ -4,6 +4,11 @@ from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.strategy.base import TradingStrategy
 from alphapilot.strategy.context import StrategyContext
+from alphapilot.strategy.evaluation import (
+    MarketRegime,
+    SignalReason,
+    StrategyEvaluation,
+)
 from alphapilot.strategy.indicators import (
     calculate_ema_series,
     calculate_sma,
@@ -26,14 +31,22 @@ class EMA20PullbackStrategy(TradingStrategy):
 
     MIN_CANDLES = EMA_SLOW_PERIOD + SLOPE_LOOKBACK
 
-    def generate_signal(
+    def evaluate(
         self,
         company: Company,
         candles: list[DailyCandle],
         context: StrategyContext | None = None,
-    ) -> Signal:
+    ) -> StrategyEvaluation:
+        market_regime = self._get_market_regime(
+            context,
+        )
+
         if len(candles) < self.MIN_CANDLES:
-            return Signal.HOLD
+            return StrategyEvaluation(
+                signal=Signal.HOLD,
+                reason=SignalReason.INSUFFICIENT_DATA,
+                market_regime=market_regime,
+            )
 
         ordered_candles = sorted(
             candles,
@@ -53,7 +66,11 @@ class EMA20PullbackStrategy(TradingStrategy):
         )
 
         if not ema20_values or not ema50_values:
-            return Signal.HOLD
+            return StrategyEvaluation(
+                signal=Signal.HOLD,
+                reason=SignalReason.INSUFFICIENT_DATA,
+                market_regime=market_regime,
+            )
 
         current_candle = ordered_candles[-1]
 
@@ -63,18 +80,30 @@ class EMA20PullbackStrategy(TradingStrategy):
         previous_ema20 = ema20_values[-(self.SLOPE_LOOKBACK + 1)]
 
         #
-        # EXIT / TREND BREAKDOWN
+        # EXIT
         #
-        # Market regime must never prevent a SELL.
+        # A market filter must never prevent a SELL.
         #
         if current_candle.close < current_ema50:
-            return Signal.SELL
+            return StrategyEvaluation(
+                signal=Signal.SELL,
+                reason=SignalReason.TREND_BREAKDOWN,
+                ema20=current_ema20,
+                ema50=current_ema50,
+                market_regime=market_regime,
+            )
 
         #
         # MARKET REGIME
         #
-        if not self._market_allows_long(context):
-            return Signal.HOLD
+        if market_regime != MarketRegime.BULLISH:
+            return StrategyEvaluation(
+                signal=Signal.HOLD,
+                reason=SignalReason.MARKET_REGIME_BLOCKED,
+                ema20=current_ema20,
+                ema50=current_ema50,
+                market_regime=market_regime,
+            )
 
         #
         # STOCK TREND
@@ -83,13 +112,17 @@ class EMA20PullbackStrategy(TradingStrategy):
 
         ema20_rising = current_ema20 > previous_ema20
 
-        bullish_trend = ema20_above_ema50 and ema20_rising
-
-        if not bullish_trend:
-            return Signal.HOLD
+        if not (ema20_above_ema50 and ema20_rising):
+            return StrategyEvaluation(
+                signal=Signal.HOLD,
+                reason=SignalReason.STOCK_TREND_NOT_BULLISH,
+                ema20=current_ema20,
+                ema50=current_ema50,
+                market_regime=market_regime,
+            )
 
         #
-        # PULLBACK
+        # PULLBACK ZONE
         #
         pullback_lower = current_ema20 * self.PULLBACK_LOWER_BOUND
 
@@ -97,22 +130,43 @@ class EMA20PullbackStrategy(TradingStrategy):
 
         touched_ema20_zone = pullback_lower <= current_candle.low <= pullback_upper
 
+        if not touched_ema20_zone:
+            return StrategyEvaluation(
+                signal=Signal.HOLD,
+                reason=SignalReason.NO_PULLBACK,
+                ema20=current_ema20,
+                ema50=current_ema50,
+                market_regime=market_regime,
+            )
+
         #
-        # CONFIRMATION
+        # RECLAIM / CONFIRMATION
         #
         reclaimed_ema20 = current_candle.close >= current_ema20
 
-        if touched_ema20_zone and reclaimed_ema20:
-            return Signal.BUY
+        if not reclaimed_ema20:
+            return StrategyEvaluation(
+                signal=Signal.HOLD,
+                reason=SignalReason.PULLBACK_NOT_CONFIRMED,
+                ema20=current_ema20,
+                ema50=current_ema50,
+                market_regime=market_regime,
+            )
 
-        return Signal.HOLD
+        return StrategyEvaluation(
+            signal=Signal.BUY,
+            reason=SignalReason.EMA20_PULLBACK_RECLAIM,
+            ema20=current_ema20,
+            ema50=current_ema50,
+            market_regime=market_regime,
+        )
 
-    def _market_allows_long(
+    def _get_market_regime(
         self,
         context: StrategyContext | None,
-    ) -> bool:
+    ) -> MarketRegime:
         if context is None:
-            return False
+            return MarketRegime.UNKNOWN
 
         benchmark_candles = sorted(
             context.benchmark_candles,
@@ -120,7 +174,7 @@ class EMA20PullbackStrategy(TradingStrategy):
         )
 
         if len(benchmark_candles) < self.MARKET_SMA_PERIOD:
-            return False
+            return MarketRegime.UNKNOWN
 
         benchmark_closes = [candle.close for candle in benchmark_candles]
 
@@ -130,8 +184,14 @@ class EMA20PullbackStrategy(TradingStrategy):
         )
 
         if sma200 is None:
-            return False
+            return MarketRegime.UNKNOWN
 
         current_market_price = benchmark_candles[-1].close
 
-        return current_market_price > sma200
+        if current_market_price > sma200:
+            return MarketRegime.BULLISH
+
+        if current_market_price < sma200:
+            return MarketRegime.BEARISH
+
+        return MarketRegime.NEUTRAL

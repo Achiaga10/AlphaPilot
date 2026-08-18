@@ -139,6 +139,10 @@ async def test_scanner_returns_buy_signal(
     assert signal["ticker"] == stock_ticker
     assert signal["signal"] == "BUY"
     assert signal["price"] == 159.0
+    assert signal["ema20"] == pytest.approx(149.5)
+    assert signal["ema50"] == pytest.approx(134.5)
+    assert signal["market_regime"] == "BULLISH"
+    assert signal["reason"] == ("EMA20_PULLBACK_RECLAIM")
 
     #
     # Benchmark must never appear as a trading candidate.

@@ -14,7 +14,6 @@ class Scanner:
     """Scans companies and evaluates them using a trading strategy."""
 
     STOCK_HISTORY_LOOKBACK_DAYS = 120
-
     MARKET_HISTORY_LOOKBACK_DAYS = 400
 
     MARKET_BENCHMARK_TICKER = "SPY"
@@ -82,20 +81,24 @@ class Scanner:
                 end_date,
             )
 
-            signal = self.strategy.generate_signal(
+            evaluation = self.strategy.evaluate(
                 company,
                 candles,
                 context,
             )
 
-            if signal != Signal.BUY:
+            if evaluation.signal != Signal.BUY:
                 continue
 
             selected.append(
                 SignalResult(
                     ticker=company.ticker,
-                    signal=signal,
+                    signal=evaluation.signal,
                     price=float(candles[-1].close),
+                    ema20=(float(evaluation.ema20) if evaluation.ema20 is not None else None),
+                    ema50=(float(evaluation.ema50) if evaluation.ema50 is not None else None),
+                    market_regime=(evaluation.market_regime),
+                    reason=evaluation.reason,
                     generated_at=datetime.now(UTC),
                 )
             )
