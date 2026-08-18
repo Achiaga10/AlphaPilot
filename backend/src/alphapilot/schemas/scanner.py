@@ -1,5 +1,6 @@
-from dataclasses import dataclass
 from datetime import datetime
+
+from pydantic import BaseModel
 
 from alphapilot.strategy.evaluation import (
     MarketRegime,
@@ -8,8 +9,9 @@ from alphapilot.strategy.evaluation import (
 from alphapilot.strategy.signal import Signal
 
 
-@dataclass(slots=True)
-class SignalResult:
+class ScannerSignalResponse(BaseModel):
+    """Trading signal returned by the market scanner."""
+
     ticker: str
     signal: Signal
     price: float | None
