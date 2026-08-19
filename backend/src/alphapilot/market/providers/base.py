@@ -2,7 +2,10 @@ from abc import ABC, abstractmethod
 from datetime import date
 from typing import Any
 
-from alphapilot.market.dto import MarketCandle
+from alphapilot.market.dto import (
+    IndexConstituentData,
+    MarketCandle,
+)
 
 
 class MarketProvider(ABC):
@@ -33,4 +36,15 @@ class IndexConstituentsProvider(ABC):
         self,
         index_symbol: str,
     ) -> list[str]:
-        """Return the current tickers belonging to an index."""
+        """Return current tickers belonging to an index."""
+
+
+class IndexConstituentDetailsProvider(ABC):
+    """Provides metadata for current index constituents."""
+
+    @abstractmethod
+    async def get_index_constituent_details(
+        self,
+        index_symbol: str,
+    ) -> list[IndexConstituentData]:
+        """Return current constituents with company metadata."""

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
 
+    WIKIMEDIA_USER_AGENT: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
