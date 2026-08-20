@@ -9,6 +9,7 @@ Write-Host ""
 
 Write-Host "[1/3] Ruff..." -ForegroundColor Yellow
 uv run ruff check . --fix
+uv run ruff format .
 uv run ruff check .
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

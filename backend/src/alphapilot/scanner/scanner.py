@@ -4,6 +4,9 @@ from typing import Any
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.market.providers.base import MarketProvider
+from alphapilot.repositories.index_constituent import (
+    IndexConstituentRepository,
+)
 from alphapilot.scanner.signal_result import SignalResult
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
@@ -20,6 +23,7 @@ class Scanner:
     MARKET_HISTORY_LOOKBACK_DAYS = 400
 
     MARKET_BENCHMARK_TICKER = "SPY"
+    SP500_INDEX_SYMBOL = "^GSPC"
 
     def __init__(
         self,
@@ -27,17 +31,34 @@ class Scanner:
         company_service: CompanyService,
         candle_service: DailyCandleService,
         strategy: TradingStrategy,
+        universe_repository: IndexConstituentRepository,
     ) -> None:
         self.provider = provider
         self.company_service = company_service
         self.candle_service = candle_service
         self.strategy = strategy
+        self.universe_repository = universe_repository
 
     async def scan_company(
         self,
         ticker: str,
     ) -> dict[str, Any]:
-        return await self.provider.get_quote(ticker)
+        return await self.provider.get_quote(
+            ticker,
+        )
+
+    async def _list_scan_companies(
+        self,
+    ) -> list[Company]:
+        constituents = await self.universe_repository.list_active(
+            self.SP500_INDEX_SYMBOL,
+        )
+
+        active_tickers = {constituent.ticker for constituent in constituents}
+
+        companies = await self.company_service.list_companies()
+
+        return [company for company in companies if company.ticker.upper() in active_tickers]
 
     async def evaluate_company(
         self,
@@ -76,7 +97,7 @@ class Scanner:
     async def scan_all(
         self,
     ) -> list[SignalResult]:
-        companies = await self.company_service.list_companies()
+        companies = await self._list_scan_companies()
 
         selected: list[SignalResult] = []
 
@@ -136,7 +157,7 @@ class Scanner:
             )
 
         return StrategyContext(
-            benchmark_ticker=self.MARKET_BENCHMARK_TICKER,
+            benchmark_ticker=(self.MARKET_BENCHMARK_TICKER),
             benchmark_candles=tuple(benchmark_candles),
         )
 

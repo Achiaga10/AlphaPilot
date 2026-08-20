@@ -10,6 +10,8 @@ from alphapilot.repositories.base import BaseRepository
 
 
 class DailyCandleRepository(BaseRepository[DailyCandle]):
+    UPSERT_CHUNK_SIZE = 1000
+
     def __init__(
         self,
         session: AsyncSession,
@@ -57,21 +59,29 @@ class DailyCandleRepository(BaseRepository[DailyCandle]):
             for candle in candles
         ]
 
-        statement = insert(DailyCandle).values(values)
+        for chunk_start in range(
+            0,
+            len(values),
+            self.UPSERT_CHUNK_SIZE,
+        ):
+            chunk = values[chunk_start : chunk_start + self.UPSERT_CHUNK_SIZE]
 
-        statement = statement.on_conflict_do_update(
-            index_elements=[
-                DailyCandle.company_id,
-                DailyCandle.trading_day,
-            ],
-            set_={
-                "open": statement.excluded.open,
-                "high": statement.excluded.high,
-                "low": statement.excluded.low,
-                "close": statement.excluded.close,
-                "volume": statement.excluded.volume,
-            },
-        )
+            statement = insert(DailyCandle).values(chunk)
 
-        await self.session.execute(statement)
+            statement = statement.on_conflict_do_update(
+                index_elements=[
+                    DailyCandle.company_id,
+                    DailyCandle.trading_day,
+                ],
+                set_={
+                    "open": statement.excluded.open,
+                    "high": statement.excluded.high,
+                    "low": statement.excluded.low,
+                    "close": statement.excluded.close,
+                    "volume": statement.excluded.volume,
+                },
+            )
+
+            await self.session.execute(statement)
+
         await self.session.commit()

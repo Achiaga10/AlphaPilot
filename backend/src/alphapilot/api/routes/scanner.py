@@ -8,6 +8,9 @@ from alphapilot.database.session import get_db
 from alphapilot.market.providers.base import MarketProvider
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
+from alphapilot.repositories.index_constituent import (
+    IndexConstituentRepository,
+)
 from alphapilot.scanner.scanner import Scanner
 from alphapilot.scanner.signal_result import SignalResult
 from alphapilot.schemas.scanner import ScannerSignalResponse
@@ -39,6 +42,10 @@ def get_scanner(
         session,
     )
 
+    universe_repository = IndexConstituentRepository(
+        session,
+    )
+
     company_service = CompanyService(
         company_repository,
     )
@@ -54,6 +61,7 @@ def get_scanner(
         company_service=company_service,
         candle_service=candle_service,
         strategy=strategy,
+        universe_repository=universe_repository,
     )
 
 
@@ -105,7 +113,7 @@ async def evaluate_company(
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Company {ticker.upper()} not found",
+            detail=(f"Company {ticker.upper()} not found"),
         )
 
     return build_response(

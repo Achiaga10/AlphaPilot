@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
+from alphapilot.repositories.index_constituent import (
+    IndexConstituentRepository,
+)
 from alphapilot.scanner.scanner import Scanner
 
 
@@ -128,6 +131,17 @@ async def test_scanner_returns_buy_signal(
         pullback=True,
     )
 
+    universe_repository = IndexConstituentRepository(
+        db_session,
+    )
+
+    await universe_repository.sync_current(
+        "^GSPC",
+        [
+            stock_ticker,
+        ],
+    )
+
     response = await client.get(
         "/api/v1/scanner/signals",
     )
@@ -152,7 +166,7 @@ async def test_scanner_returns_buy_signal(
 
     assert signal["market_regime"] == "BULLISH"
 
-    assert signal["reason"] == ("EMA20_PULLBACK_RECLAIM")
+    assert signal["reason"] == "EMA20_PULLBACK_RECLAIM"
 
     returned_tickers = {item["ticker"] for item in data}
 
@@ -181,6 +195,12 @@ async def test_scanner_evaluate_returns_hold_reason(
         stock_ticker,
         pullback=False,
     )
+
+    # Intentionally do NOT add stock_ticker
+    # to the S&P 500 universe.
+    #
+    # evaluate/{ticker} must work for any
+    # company that exists in AlphaPilot.
 
     response = await client.get(
         f"/api/v1/scanner/evaluate/{stock_ticker}",
@@ -214,5 +234,5 @@ async def test_scanner_evaluate_company_not_found(
     assert response.status_code == 404
 
     assert response.json() == {
-        "detail": "Company DOESNOTEXIST not found",
+        "detail": ("Company DOESNOTEXIST not found"),
     }
