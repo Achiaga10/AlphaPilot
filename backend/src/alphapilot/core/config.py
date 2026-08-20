@@ -19,11 +19,16 @@ class Settings(BaseSettings):
 
     POLYGON_API_KEY: str = ""
 
+    POLYGON_REQUESTS_PER_MINUTE: int = 5
+
     FINNHUB_API_KEY: str = ""
 
     OPENAI_API_KEY: str = ""
 
     WIKIMEDIA_USER_AGENT: str = ""
+
+    ALPACA_API_KEY: str = ""
+    ALPACA_SECRET_KEY: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
