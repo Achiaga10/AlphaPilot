@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 import pytest
 
+from alphapilot.core.config import settings
 from alphapilot.market.providers.wikipedia import (
     WikipediaIndexConstituentsProvider,
 )
@@ -82,7 +83,11 @@ async def test_get_index_constituents(
         "AsyncClient",
         create_client,
     )
-
+    monkeypatch.setattr(
+        settings,
+        "WIKIMEDIA_USER_AGENT",
+        "AlphaPilotTest/0.1",
+    )
     provider = WikipediaIndexConstituentsProvider()
 
     tickers = await provider.get_index_constituents("^GSPC")
