@@ -9,6 +9,7 @@ from alphapilot.strategy.evaluation import (
     SignalReason,
     StrategyEvaluation,
 )
+from alphapilot.strategy.exit_mode import TrendExitMode
 from alphapilot.strategy.indicators import (
     calculate_ema_series,
     calculate_sma,
@@ -30,6 +31,17 @@ class EMA20PullbackStrategy(TradingStrategy):
     PULLBACK_UPPER_BOUND = Decimal("1.01")
 
     MIN_CANDLES = EMA_SLOW_PERIOD + SLOPE_LOOKBACK
+
+    def __init__(
+        self,
+        exit_mode: TrendExitMode = TrendExitMode.EMA50,
+        hybrid_trend_threshold_pct: Decimal = Decimal("3"),
+    ) -> None:
+        if hybrid_trend_threshold_pct < 0:
+            raise ValueError("hybrid_trend_threshold_pct must not be negative")
+
+        self.exit_mode = exit_mode
+        self.hybrid_trend_threshold_pct = hybrid_trend_threshold_pct
 
     def evaluate(
         self,
@@ -84,10 +96,16 @@ class EMA20PullbackStrategy(TradingStrategy):
         #
         # A market filter must never prevent a SELL.
         #
-        if current_candle.close < current_ema50:
+        exit_reason = self._get_exit_reason(
+            close=current_candle.close,
+            ema20=current_ema20,
+            ema50=current_ema50,
+        )
+
+        if exit_reason is not None:
             return StrategyEvaluation(
                 signal=Signal.SELL,
-                reason=SignalReason.TREND_BREAKDOWN,
+                reason=exit_reason,
                 ema20=current_ema20,
                 ema50=current_ema50,
                 market_regime=market_regime,
@@ -160,6 +178,66 @@ class EMA20PullbackStrategy(TradingStrategy):
             ema50=current_ema50,
             market_regime=market_regime,
         )
+
+    def _get_exit_reason(
+        self,
+        *,
+        close: Decimal,
+        ema20: Decimal,
+        ema50: Decimal,
+    ) -> SignalReason | None:
+        if self.exit_mode == TrendExitMode.EMA20:
+            if close < ema20:
+                return SignalReason.EMA20_TREND_BREAKDOWN
+
+            return None
+
+        if self.exit_mode == TrendExitMode.EMA50:
+            if close < ema50:
+                return SignalReason.TREND_BREAKDOWN
+
+            return None
+
+        #
+        # HYBRID EXIT
+        #
+        # EMA50 remains the hard trend-break exit.
+        #
+        if close < ema50:
+            return SignalReason.TREND_BREAKDOWN
+
+        #
+        # Above EMA20 there is no exit.
+        #
+        if close >= ema20:
+            return None
+
+        #
+        # Price is below EMA20 but still above EMA50.
+        #
+        # In a strong trend we allow additional room and wait
+        # for EMA50. In a weaker trend we exit on EMA20.
+        #
+        if self._is_strong_trend(
+            ema20=ema20,
+            ema50=ema50,
+        ):
+            return None
+
+        return SignalReason.EMA20_TREND_BREAKDOWN
+
+    def _is_strong_trend(
+        self,
+        *,
+        ema20: Decimal,
+        ema50: Decimal,
+    ) -> bool:
+        if ema50 <= 0:
+            return False
+
+        spread_pct = (ema20 - ema50) / ema50 * Decimal("100")
+
+        return spread_pct >= self.hybrid_trend_threshold_pct
 
     def _get_market_regime(
         self,
