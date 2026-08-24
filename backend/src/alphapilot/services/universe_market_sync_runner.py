@@ -102,6 +102,7 @@ class UniverseMarketSyncRunner:
         await self._ensure_benchmark_company()
 
         await self._sync_benchmark(
+            start=start,
             end=end,
         )
 
@@ -187,15 +188,16 @@ class UniverseMarketSyncRunner:
 
     async def _sync_benchmark(
         self,
+        start: date,
         end: date,
     ) -> None:
-        start = end - timedelta(
+        benchmark_start = start - timedelta(
             days=self.MARKET_BENCHMARK_LOOKBACK_DAYS,
         )
 
         result = await self.batch_sync_service.sync_ticker(
             ticker=self.MARKET_BENCHMARK_TICKER,
-            start=start,
+            start=benchmark_start,
             end=end,
         )
 
