@@ -20,6 +20,10 @@ from alphapilot.backtesting.multi_portfolio_models import (
     MultiPortfolioConfig,
     MultiPortfolioSimulationResult,
 )
+from alphapilot.backtesting.portfolio_attribution import (
+    AttributionSummary,
+    PortfolioAttributionCalculator,
+)
 from alphapilot.backtesting.portfolio_metrics import (
     PortfolioPerformanceMetrics,
     PortfolioPerformanceMetricsCalculator,
@@ -40,6 +44,7 @@ class MultiPortfolioRunResult:
     successful_tickers: tuple[str, ...]
     failed_tickers: tuple[tuple[str, str], ...]
     selection_policy_name: str
+    attribution: AttributionSummary
 
 
 class MultiPortfolioBacktestService:
@@ -98,6 +103,7 @@ class MultiPortfolioBacktestService:
         engine = BacktestingEngine(self.strategy)
         backtests = {}
         stock_histories = {}
+        ticker_sectors: dict[str, str | None] = {}
         successful: list[str] = []
         failed: list[tuple[str, str]] = []
 
@@ -126,6 +132,7 @@ class MultiPortfolioBacktestService:
                     end=end,
                 )
                 stock_histories[ticker] = candles
+                ticker_sectors[ticker] = company.sector
                 successful.append(ticker)
             except Exception as exc:
                 failed.append((ticker, f"{type(exc).__name__}: {exc}"))
@@ -149,8 +156,13 @@ class MultiPortfolioBacktestService:
         portfolio = MultiPortfolioSimulator(
             config=config,
             selection_policy=self.selection_policy,
-        ).run(backtests, ranking_scores=ranking_scores)
+        ).run(
+            backtests,
+            ranking_scores=ranking_scores,
+            ticker_sectors=ticker_sectors,
+        )
         metrics = MultiPortfolioPerformanceMetricsCalculator().calculate(portfolio)
+        attribution = PortfolioAttributionCalculator().calculate(portfolio)
 
         benchmark_config = PortfolioConfig(
             initial_capital=config.initial_capital,
@@ -175,4 +187,5 @@ class MultiPortfolioBacktestService:
             successful_tickers=tuple(successful),
             failed_tickers=tuple(failed),
             selection_policy_name=self.selection_policy.name,
+            attribution=attribution,
         )

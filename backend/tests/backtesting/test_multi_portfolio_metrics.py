@@ -14,11 +14,14 @@ from alphapilot.backtesting.multi_portfolio_models import (
 def test_calculates_multi_portfolio_metrics() -> None:
     trade = MultiPortfolioTrade(
         ticker="AAA",
+        sector="Technology",
         entry_signal_day=date(2025, 1, 1),
         entry_day=date(2025, 1, 2),
+        entry_reference_price=Decimal("100"),
         entry_price=Decimal("100"),
         exit_signal_day=date(2025, 1, 3),
         exit_day=date(2025, 1, 4),
+        exit_reference_price=Decimal("110"),
         exit_price=Decimal("110"),
         shares=5,
         entry_commission=Decimal("0"),

@@ -11,6 +11,7 @@ from alphapilot.backtesting.multi_portfolio_models import (
     MultiPortfolioSimulationResult,
 )
 from alphapilot.backtesting.multi_portfolio_service import MultiPortfolioRunResult
+from alphapilot.backtesting.portfolio_attribution import PortfolioAttributionCalculator
 from alphapilot.backtesting.portfolio_metrics import PortfolioPerformanceMetrics
 from alphapilot.cli.backtest_multi_portfolio import build_summary
 from alphapilot.strategy.exit_mode import TrendExitMode
@@ -75,6 +76,7 @@ def test_summary_documents_research_configuration_and_limitations() -> None:
         successful_tickers=("AAA",),
         failed_tickers=(),
         selection_policy_name="ticker-ascending-baseline",
+        attribution=PortfolioAttributionCalculator().calculate(portfolio),
     )
 
     summary = build_summary(
@@ -86,6 +88,8 @@ def test_summary_documents_research_configuration_and_limitations() -> None:
         start=date(2025, 1, 1),
         end=date(2026, 8, 20),
         config=MultiPortfolioConfig(),
+        cost_scenario="cost-low",
+        fold_label="fold-3",
     )
 
     assert "Hybrid trend threshold: 2.00%" in summary
@@ -96,3 +100,6 @@ def test_summary_documents_research_configuration_and_limitations() -> None:
     assert "marked to market" in summary
     assert "survivorship bias" in summary
     assert "Benchmark caveat" in summary
+    assert "Cost scenario: cost-low" in summary
+    assert "Temporal fold: fold-3" in summary
+    assert "Reconciliation residual" in summary

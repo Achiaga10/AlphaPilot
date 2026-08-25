@@ -24,13 +24,13 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 8 — Candidate Ranking & Portfolio Selection
+Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
 
-Sprints 6 and 7 are complete and merged. Sprint 8 must add deterministic,
-explainable candidate ranking while preserving the Sprint 7 shared-cash engine.
-Read `docs/SPRINT8_PLAN.md` and `docs/PROJECT_STATE.md` for exact scope.
+Sprints 6 through 8 are complete and merged. Sprint 9 validates the frozen RS20
+baseline through fixed costs, temporal folds, and return attribution. Read
+`docs/SPRINT9_PLAN.md` and `docs/PROJECT_STATE.md` for exact scope.
 
-Do not begin Sprint 9 until Sprint 8 has been completed, documented, and reviewed
+Do not begin Sprint 10 until Sprint 9 has been completed, documented, and reviewed
 by the user.
 
 ## Development Environment
@@ -86,7 +86,7 @@ Do not recreate files based on assumptions if the real implementation is availab
 
 Do not change strategy behavior while fixing infrastructure unless absolutely required.
 
-Do not introduce unrelated architectural work during Sprint 8.
+Do not introduce unrelated architectural work during Sprint 9.
 
 ## Testing Rules
 
@@ -251,29 +251,27 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Current Sprint 8 Completion Task
+## Current Sprint 9 Completion Task
 
-Implement the deterministic ranking layer described in `docs/SPRINT8_PLAN.md`,
-validate it with focused tests and `.\run_checks.ps1`, and run alphabetical-control
-versus fixed RS20 comparisons for EMA HYBRID 2% and Micho V1 BOTH on the prescribed
-development and validation periods.
+Implement the robustness and attribution work described in `docs/SPRINT9_PLAN.md`,
+validate it with focused tests and `.\run_checks.ps1`, and run the fixed cost and
+temporal-fold matrices for EMA HYBRID 2% and Micho V1 BOTH.
 
-The ticker-order selection policy remains the non-alpha control. RS20 uses exactly
-20 trading bars. Do not optimize its lookback, portfolio constraints, or strategies.
+RS20 remains frozen at 20 bars against SPY. Do not optimize ranking, costs, folds,
+portfolio constraints, or strategies after observing results.
 
-When complete, create `docs/SPRINT8_COMPLETION_REPORT.md` with architecture,
-semantics, files, tests, exact commands/results, SPY comparisons, limitations,
-technical debt, Git state, a commit-message recommendation, and a Sprint 8
-recommendation.
+When complete, create `docs/SPRINT9_COMPLETION_REPORT.md` with architecture,
+tests, exact cost/fold results, attribution and reconciliation, SPY comparisons,
+limitations, technical debt, Git state, and a Sprint 10 recommendation.
 
 ## End-of-Task Rule
 
 After creating:
 
-docs/SPRINT8_COMPLETION_REPORT.md
+docs/SPRINT9_COMPLETION_REPORT.md
 
 do not begin another feature.
 
 The user will take that file back to ChatGPT for review.
 
-Sprint 9 will be planned only after that review.
+Sprint 10 will be planned only after that review.

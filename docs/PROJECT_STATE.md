@@ -2,16 +2,16 @@
 
 ## Current Phase
 
-Sprint 8 — Candidate Ranking & Portfolio Selection
+Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
 
 Current development branch:
-feature/candidate-ranking-engine
+feature/ranking-robustness-analysis
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
-Sprint 7 is complete and merged. Sprint 8 implementation, checks, and fixed
-experiments are complete locally and await user review and Git operations. See
-`docs/SPRINT8_PLAN.md` and `docs/SPRINT8_COMPLETION_REPORT.md`.
+Sprints 7 and 8 are complete and merged. Sprint 9 implementation, checks, and
+fixed experiments are complete locally and await user review and Git operations.
+See `docs/SPRINT9_PLAN.md` and `docs/SPRINT9_COMPLETION_REPORT.md`.
 
 ## Project Goal
 
@@ -83,6 +83,9 @@ Sprint 7 — Multi-Stock Portfolio Backtesting
 DONE / merged
 
 Sprint 8 — Candidate Ranking & Portfolio Selection
+DONE / merged
+
+Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
 COMPLETE locally / awaiting user review and Git operations
 
 ## Sprint 7 Portfolio Infrastructure
