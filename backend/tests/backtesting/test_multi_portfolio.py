@@ -3,6 +3,10 @@ from decimal import Decimal
 
 import pytest
 
+from alphapilot.backtesting.candidate_selection import (
+    CandidateRejectionReason,
+    RelativeStrength20SelectionPolicy,
+)
 from alphapilot.backtesting.models import (
     BacktestBarResult,
     BacktestResult,
@@ -238,3 +242,118 @@ def test_config_rejects_invalid_constraints() -> None:
 
     with pytest.raises(ValueError, match="initial_capital"):
         MultiPortfolioConfig(initial_capital=Decimal("0"))
+
+
+def test_rs20_selection_preserves_score_and_rejection_attribution() -> None:
+    simulator = MultiPortfolioSimulator(
+        MultiPortfolioConfig(initial_capital=Decimal("1000"), max_positions=1),
+        selection_policy=RelativeStrength20SelectionPolicy(),
+    )
+    inputs = {
+        "AAA": backtest("AAA", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD)),
+        "BBB": backtest("BBB", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD)),
+    }
+    scores = {
+        ("AAA", START): Decimal("-0.10"),
+        ("BBB", START): Decimal("0.20"),
+    }
+
+    result = simulator.run(inputs, ranking_scores=scores)
+
+    assert result.open_positions[0].ticker == "BBB"
+    assert len(result.selection_audit) == 2
+    assert result.selection_audit[0].ticker == "BBB"
+    assert result.selection_audit[0].ranking_score == Decimal("0.20")
+    assert result.selection_audit[0].candidate_rank == 1
+    assert result.selection_audit[0].selected is True
+    assert result.selection_audit[1].ticker == "AAA"
+    assert result.selection_audit[1].selected is False
+    assert result.selection_audit[1].rejection_reason == CandidateRejectionReason.SLOTS_FULL
+    assert result.ranking_diagnostics.total_candidates_considered == 2
+    assert result.ranking_diagnostics.selected_candidates == 1
+    assert result.ranking_diagnostics.rejected_candidates == 1
+    assert result.ranking_diagnostics.constrained_days == 1
+    assert result.ranking_diagnostics.average_selected_score == Decimal("0.20")
+    assert result.ranking_diagnostics.average_rejected_score == Decimal("-0.10")
+
+
+def test_ranking_does_not_change_exit_before_entry_or_sell_processing() -> None:
+    result = MultiPortfolioSimulator(
+        MultiPortfolioConfig(initial_capital=Decimal("1000"), max_positions=1),
+        selection_policy=RelativeStrength20SelectionPolicy(),
+    ).run(
+        {
+            "AAA": backtest(
+                "AAA",
+                bar(0, signal=Signal.BUY),
+                bar(1, signal=Signal.SELL),
+                bar(2, signal=Signal.HOLD),
+            ),
+            "BBB": backtest(
+                "BBB",
+                bar(1, signal=Signal.BUY),
+                bar(2, signal=Signal.HOLD),
+            ),
+        },
+        ranking_scores={
+            ("AAA", START): Decimal("0"),
+            ("BBB", START + timedelta(days=1)): Decimal("1"),
+        },
+    )
+
+    assert result.trades[0].ticker == "AAA"
+    assert result.open_positions[0].ticker == "BBB"
+
+
+def test_same_ranked_input_produces_identical_portfolio_and_audit() -> None:
+    simulator = MultiPortfolioSimulator(
+        MultiPortfolioConfig(initial_capital=Decimal("1000"), max_positions=1),
+        selection_policy=RelativeStrength20SelectionPolicy(),
+    )
+    inputs = {
+        "BBB": backtest("BBB", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD)),
+        "AAA": backtest("AAA", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD)),
+    }
+    scores = {("AAA", START): Decimal("0.1"), ("BBB", START): Decimal("0.2")}
+
+    first = simulator.run(inputs, ranking_scores=scores)
+    second = simulator.run(inputs, ranking_scores=scores)
+
+    assert first == second
+
+
+def test_unscored_rs20_candidate_is_counted_without_fabricated_score() -> None:
+    result = MultiPortfolioSimulator(
+        MultiPortfolioConfig(initial_capital=Decimal("1000"), max_positions=1),
+        selection_policy=RelativeStrength20SelectionPolicy(),
+    ).run(
+        {"AAA": backtest("AAA", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD))},
+        ranking_scores={("AAA", START): None},
+    )
+
+    assert result.selection_audit[0].ranking_score is None
+    assert result.ranking_diagnostics.missing_score_candidates == 1
+
+
+def test_allocation_rejection_is_audited() -> None:
+    result = MultiPortfolioSimulator(
+        MultiPortfolioConfig(initial_capital=Decimal("50"), max_positions=1),
+        selection_policy=RelativeStrength20SelectionPolicy(),
+    ).run(
+        {
+            "AAA": backtest(
+                "AAA",
+                bar(0, signal=Signal.BUY),
+                bar(1, signal=Signal.HOLD, open_price="100"),
+            )
+        },
+        ranking_scores={("AAA", START): Decimal("0.1")},
+    )
+
+    assert result.open_positions == ()
+    assert result.selection_audit[0].selected is False
+    assert (
+        result.selection_audit[0].rejection_reason
+        == CandidateRejectionReason.INSUFFICIENT_ALLOCATION
+    )
+    assert result.ranking_diagnostics.rejected_insufficient_allocation == 1

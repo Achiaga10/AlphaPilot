@@ -5,17 +5,20 @@ from datetime import date
 from decimal import Decimal
 
 from alphapilot.backtesting.candidate_selection import (
+    CandidateRejectionReason,
     CandidateSelectionPolicy,
     ExecutableCandidate,
     TickerAscendingSelectionPolicy,
 )
 from alphapilot.backtesting.models import BacktestBarResult, BacktestResult
 from alphapilot.backtesting.multi_portfolio_models import (
+    CandidateSelectionAudit,
     MultiPortfolioConfig,
     MultiPortfolioEquityPoint,
     MultiPortfolioPosition,
     MultiPortfolioSimulationResult,
     MultiPortfolioTrade,
+    RankingDiagnostics,
 )
 from alphapilot.strategy.signal import Signal
 
@@ -38,7 +41,10 @@ class MultiPortfolioSimulator:
     def run(
         self,
         backtests: dict[str, BacktestResult],
+        *,
+        ranking_scores: dict[tuple[str, date], Decimal | None] | None = None,
     ) -> MultiPortfolioSimulationResult:
+        frozen_scores = ranking_scores if ranking_scores is not None else {}
         normalized = {ticker.upper(): result for ticker, result in backtests.items()}
         bars_by_ticker_day = {
             ticker: {bar.trading_day: bar for bar in result.bars}
@@ -60,6 +66,7 @@ class MultiPortfolioSimulator:
                         ticker=ticker,
                         signal_bar=signal_bar,
                         execution_bar=execution_bar,
+                        ranking_score=frozen_scores.get((ticker, signal_bar.trading_day)),
                     )
                 )
 
@@ -68,6 +75,8 @@ class MultiPortfolioSimulator:
         trades: list[MultiPortfolioTrade] = []
         latest_closes: dict[str, Decimal] = {}
         equity_curve: list[MultiPortfolioEquityPoint] = []
+        selection_audit: list[CandidateSelectionAudit] = []
+        constrained_days = 0
 
         for trading_day in calendar:
             candidates = executable_by_day[trading_day]
@@ -101,9 +110,16 @@ class MultiPortfolioSimulator:
                 if candidate.signal_bar.signal == Signal.BUY and candidate.ticker not in positions
             ]
 
-            for candidate in self.selection_policy.order(buys):
-                if len(positions) >= self.config.max_positions:
-                    break
+            available_slots_at_start = self.config.max_positions - len(positions)
+
+            if len(buys) > available_slots_at_start:
+                constrained_days += 1
+
+            for candidate_rank, candidate in enumerate(
+                self.selection_policy.order(buys),
+                start=1,
+            ):
+                available_slots = self.config.max_positions - len(positions)
 
                 equity_at_open = cash + sum(
                     Decimal(position.shares)
@@ -116,6 +132,20 @@ class MultiPortfolioSimulator:
                     for ticker, position in positions.items()
                 )
 
+                if available_slots <= 0:
+                    selection_audit.append(
+                        self._audit_decision(
+                            candidate=candidate,
+                            candidate_rank=candidate_rank,
+                            selected=False,
+                            rejection_reason=CandidateRejectionReason.SLOTS_FULL,
+                            available_slots=available_slots,
+                            cash=cash,
+                            equity=equity_at_open,
+                        )
+                    )
+                    continue
+
                 cash, position = self._open_position(
                     cash=cash,
                     equity=equity_at_open,
@@ -124,6 +154,29 @@ class MultiPortfolioSimulator:
 
                 if position is not None:
                     positions[candidate.ticker] = position
+                    selection_audit.append(
+                        self._audit_decision(
+                            candidate=candidate,
+                            candidate_rank=candidate_rank,
+                            selected=True,
+                            rejection_reason=None,
+                            available_slots=available_slots,
+                            cash=cash + position.cost_basis,
+                            equity=equity_at_open,
+                        )
+                    )
+                else:
+                    selection_audit.append(
+                        self._audit_decision(
+                            candidate=candidate,
+                            candidate_rank=candidate_rank,
+                            selected=False,
+                            rejection_reason=(CandidateRejectionReason.INSUFFICIENT_ALLOCATION),
+                            available_slots=available_slots,
+                            cash=cash,
+                            equity=equity_at_open,
+                        )
+                    )
 
             for ticker, bars_by_day in bars_by_ticker_day.items():
                 bar = bars_by_day.get(trading_day)
@@ -161,7 +214,84 @@ class MultiPortfolioSimulator:
             equity_curve=tuple(equity_curve),
             trades=tuple(trades),
             open_positions=tuple(positions[ticker] for ticker in sorted(positions)),
+            selection_audit=tuple(selection_audit),
+            ranking_diagnostics=self._build_ranking_diagnostics(
+                selection_audit,
+                constrained_days=constrained_days,
+            ),
         )
+
+    def _audit_decision(
+        self,
+        *,
+        candidate: ExecutableCandidate,
+        candidate_rank: int,
+        selected: bool,
+        rejection_reason: CandidateRejectionReason | None,
+        available_slots: int,
+        cash: Decimal,
+        equity: Decimal,
+    ) -> CandidateSelectionAudit:
+        return CandidateSelectionAudit(
+            execution_day=candidate.execution_bar.trading_day,
+            signal_day=candidate.signal_bar.trading_day,
+            ticker=candidate.ticker,
+            selection_policy=self.selection_policy.name,
+            ranking_score=candidate.ranking_score,
+            candidate_rank=candidate_rank,
+            selected=selected,
+            rejection_reason=rejection_reason,
+            available_slots=available_slots,
+            cash=cash,
+            equity=equity,
+        )
+
+    def _build_ranking_diagnostics(
+        self,
+        audit: list[CandidateSelectionAudit],
+        *,
+        constrained_days: int,
+    ) -> RankingDiagnostics:
+        selected = [item for item in audit if item.selected]
+        rejected = [item for item in audit if not item.selected]
+        selected_scores = [
+            item.ranking_score for item in selected if item.ranking_score is not None
+        ]
+        rejected_scores = [
+            item.ranking_score for item in rejected if item.ranking_score is not None
+        ]
+        total = len(audit)
+
+        return RankingDiagnostics(
+            total_candidates_considered=total,
+            selected_candidates=len(selected),
+            rejected_candidates=len(rejected),
+            selection_rate_pct=(
+                Decimal(len(selected)) / Decimal(total) * Decimal("100") if total else Decimal("0")
+            ),
+            constrained_days=constrained_days,
+            rejected_slots_full=sum(
+                item.rejection_reason == CandidateRejectionReason.SLOTS_FULL for item in rejected
+            ),
+            rejected_insufficient_allocation=sum(
+                item.rejection_reason == CandidateRejectionReason.INSUFFICIENT_ALLOCATION
+                for item in rejected
+            ),
+            average_selected_score=self._average_score(selected_scores),
+            average_rejected_score=self._average_score(rejected_scores),
+            missing_score_candidates=(
+                sum(item.ranking_score is None for item in audit)
+                if self.selection_policy.uses_scores
+                else 0
+            ),
+        )
+
+    @staticmethod
+    def _average_score(scores: list[Decimal]) -> Decimal | None:
+        if not scores:
+            return None
+
+        return sum(scores, Decimal("0")) / Decimal(len(scores))
 
     def _valuation_price_at_open(
         self,

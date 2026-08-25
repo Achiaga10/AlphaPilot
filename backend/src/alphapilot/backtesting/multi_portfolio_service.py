@@ -24,9 +24,11 @@ from alphapilot.backtesting.portfolio_metrics import (
     PortfolioPerformanceMetrics,
     PortfolioPerformanceMetricsCalculator,
 )
+from alphapilot.backtesting.ranking_features import RelativeStrength20Calculator
 from alphapilot.backtesting.service import CandleHistoryService, CompanyLookupService
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
 from alphapilot.strategy.base import TradingStrategy
+from alphapilot.strategy.signal import Signal
 
 
 @dataclass(slots=True, frozen=True)
@@ -95,6 +97,7 @@ class MultiPortfolioBacktestService:
         tickers = sorted({item.ticker.upper() for item in constituents})
         engine = BacktestingEngine(self.strategy)
         backtests = {}
+        stock_histories = {}
         successful: list[str] = []
         failed: list[tuple[str, str]] = []
 
@@ -122,14 +125,31 @@ class MultiPortfolioBacktestService:
                     start=start,
                     end=end,
                 )
+                stock_histories[ticker] = candles
                 successful.append(ticker)
             except Exception as exc:
                 failed.append((ticker, f"{type(exc).__name__}: {exc}"))
 
+        ranking_scores: dict[tuple[str, date], Decimal | None] = {}
+
+        if self.selection_policy.uses_scores:
+            calculator = RelativeStrength20Calculator()
+
+            for ticker, backtest in backtests.items():
+                for bar in backtest.bars:
+                    if bar.signal != Signal.BUY:
+                        continue
+
+                    ranking_scores[(ticker, bar.trading_day)] = calculator.calculate(
+                        stock_candles=stock_histories[ticker],
+                        benchmark_candles=benchmark_candles,
+                        signal_day=bar.trading_day,
+                    )
+
         portfolio = MultiPortfolioSimulator(
             config=config,
             selection_policy=self.selection_policy,
-        ).run(backtests)
+        ).run(backtests, ranking_scores=ranking_scores)
         metrics = MultiPortfolioPerformanceMetricsCalculator().calculate(portfolio)
 
         benchmark_config = PortfolioConfig(
