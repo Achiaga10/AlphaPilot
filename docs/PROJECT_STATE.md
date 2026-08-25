@@ -2,16 +2,18 @@
 
 ## Current Phase
 
-Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
+Sprint 10B — Risk Model Hardening & Decision Orchestration (COMPLETE locally)
 
 Current development branch:
-feature/ranking-robustness-analysis
+feature/portfolio-risk-decision-api (Sprint 10 remains local and uncommitted)
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
-Sprints 7 and 8 are complete and merged. Sprint 9 implementation, checks, and
-fixed experiments are complete locally and await user review and Git operations.
-See `docs/SPRINT9_PLAN.md` and `docs/SPRINT9_COMPLETION_REPORT.md`.
+Sprints 7 through 9 are complete and merged. Sprint 10 is complete and reviewed;
+its local changes are the foundation for Sprint 10B. Sprint 10B implementation,
+checks, orchestration/API validation, and the frozen 12-run experiment are
+complete locally and await user review/Git operations. Sprint 11 is NOT STARTED.
+See `docs/SPRINT10B_PLAN.md` and `docs/SPRINT10B_COMPLETION_REPORT.md`.
 
 ## Project Goal
 
@@ -86,7 +88,16 @@ Sprint 8 — Candidate Ranking & Portfolio Selection
 DONE / merged
 
 Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
+DONE / merged
+
+Sprint 10 — Portfolio Risk, Position Sizing & Decision API
+COMPLETE / reviewed (changes remain local in the current working tree)
+
+Sprint 10B — Risk Model Hardening & Decision Orchestration
 COMPLETE locally / awaiting user review and Git operations
+
+Sprint 11 — UI MVP
+NOT STARTED
 
 ## Sprint 7 Portfolio Infrastructure
 

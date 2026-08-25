@@ -21,6 +21,8 @@ from alphapilot.backtesting.multi_portfolio_service import (
     MultiPortfolioRunResult,
 )
 from alphapilot.database.session import get_db
+from alphapilot.portfolio.risk import PortfolioRiskConfig
+from alphapilot.portfolio.sizing import SizingPolicyName
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
@@ -50,6 +52,18 @@ def parse_args() -> argparse.Namespace:
         help="Named Sprint 9 cost scenario; overrides commission/slippage when set.",
     )
     parser.add_argument("--fold-label", default="full-period")
+    parser.add_argument(
+        "--sizing-policy",
+        choices=[item.value for item in SizingPolicyName],
+        default=SizingPolicyName.EQUAL_SLOT.value,
+    )
+    parser.add_argument("--risk-per-position-pct", type=Decimal, default=Decimal("1"))
+    parser.add_argument("--atr-period", type=int, default=14)
+    parser.add_argument("--atr-stop-multiple", type=Decimal, default=Decimal("2"))
+    parser.add_argument("--max-position-weight-pct", type=Decimal, default=Decimal("10"))
+    parser.add_argument("--max-portfolio-risk-pct", type=Decimal, default=Decimal("8"))
+    parser.add_argument("--minimum-cash-reserve-pct", type=Decimal, default=Decimal("10"))
+    parser.add_argument("--max-sector-weight-pct", type=Decimal, default=Decimal("30"))
     parser.add_argument(
         "--selection-policy",
         choices=[item.value for item in SelectionPolicyName],
@@ -126,12 +140,28 @@ def build_summary(
             f"Failed tickers: {len(result.failed_tickers)}",
             f"Initial capital: ${config.initial_capital:.2f}",
             f"Max positions: {config.max_positions}",
-            "Sizing method: fixed equal slot (current equity / max positions)",
+            (
+                "Sizing method: fixed equal slot (current equity / max positions)"
+                if config.sizing_policy == SizingPolicyName.EQUAL_SLOT
+                else (
+                    "Sizing method: 1% equity risk / (2 x ATR14), capped by constraints"
+                    if config.sizing_policy == SizingPolicyName.ATR_RISK
+                    else "Sizing method: candidate-batch inverse ATR percentage weights"
+                )
+            ),
+            f"Sizing policy: {config.sizing_policy.value}",
             f"Commission per order: ${config.commission_per_order:.2f}",
             f"Slippage: {config.slippage_bps:.2f} bps",
             f"Cost scenario: {cost_scenario}",
             f"Temporal fold: {fold_label}",
             f"Selection policy: {result.selection_policy_name}",
+            f"Risk per position: {config.risk_config.risk_per_position_pct:.2f}%",
+            f"ATR period: {config.risk_config.atr_period}",
+            f"ATR stop multiple: {config.risk_config.atr_stop_multiple:.2f}",
+            f"Max position weight: {config.risk_config.max_position_weight_pct:.2f}%",
+            f"Max portfolio risk: {config.risk_config.max_portfolio_risk_pct:.2f}%",
+            f"Minimum cash reserve: {config.risk_config.minimum_cash_reserve_pct:.2f}%",
+            f"Max sector weight: {config.risk_config.max_sector_weight_pct:.2f}%",
             (
                 "Ranking formula: stock 20-bar return minus SPY 20-bar return; "
                 "signal-day information only."
@@ -162,6 +192,28 @@ def build_summary(
             f"Average open positions: {_format_decimal(metrics.average_open_positions, '')}",
             f"Max concurrent positions: {metrics.max_concurrent_positions}",
             f"Open positions at end: {len(result.portfolio.open_positions)}",
+            f"BUY approved: {result.portfolio.risk_diagnostics.buy_approved}",
+            f"BUY skipped: {result.portfolio.risk_diagnostics.buy_skipped}",
+            f"Skips by reason: {dict(result.portfolio.risk_diagnostics.skips_by_reason)}",
+            "Average proposed position weight: "
+            f"{_format_decimal(result.portfolio.risk_diagnostics.average_position_weight_pct)}",
+            "Average modeled position risk: "
+            f"${result.portfolio.risk_diagnostics.average_modeled_position_risk:.2f}",
+            f"Average cash reserve: ${result.portfolio.risk_diagnostics.average_cash_reserve:.2f}",
+            "Average portfolio modeled risk: "
+            f"${result.portfolio.risk_diagnostics.average_portfolio_modeled_risk:.2f}",
+            "Max portfolio modeled risk: "
+            f"${result.portfolio.risk_diagnostics.max_portfolio_modeled_risk:.2f}",
+            "Average portfolio modeled risk percent: "
+            f"{_format_decimal(result.portfolio.risk_diagnostics.average_portfolio_modeled_risk_pct)}",
+            "Max portfolio modeled risk percent: "
+            f"{_format_decimal(result.portfolio.risk_diagnostics.max_portfolio_modeled_risk_pct)}",
+            f"Average cash: ${result.portfolio.risk_diagnostics.average_cash:.2f}",
+            "Average cash percent: "
+            f"{_format_decimal(result.portfolio.risk_diagnostics.average_cash_pct)}",
+            f"Final cash: ${result.portfolio.risk_diagnostics.final_cash:.2f}",
+            "Max sector weight observed: "
+            f"{_format_decimal(result.portfolio.risk_diagnostics.max_sector_weight_observed_pct)}",
             "",
             "RETURN ATTRIBUTION",
             "------------------",
@@ -255,6 +307,7 @@ def _base_name(
     selection_policy: SelectionPolicyName,
     cost_scenario: str,
     fold_label: str,
+    sizing_policy: SizingPolicyName,
 ) -> str:
     suffix = strategy_name.value.replace("-", "_")
 
@@ -269,7 +322,11 @@ def _base_name(
     safe_policy = selection_policy.value.replace("-", "_")
     safe_cost = cost_scenario.replace("-", "_")
     safe_fold = fold_label.replace("-", "_")
-    return f"multi_portfolio_{suffix}_{safe_policy}_{safe_cost}_{safe_fold}_{start}_{end}"
+    safe_sizing = sizing_policy.value.replace("-", "_")
+    return (
+        f"multi_portfolio_{suffix}_{safe_policy}_{safe_sizing}_{safe_cost}_"
+        f"{safe_fold}_{start}_{end}"
+    )
 
 
 def _score_pct(value: Decimal | None) -> Decimal | None:
@@ -283,11 +340,24 @@ async def run(args: argparse.Namespace) -> None:
     selection_policy_name = SelectionPolicyName(args.selection_policy)
     scenario_name = CostScenarioName(args.cost_scenario) if args.cost_scenario is not None else None
     scenario = get_cost_scenario(scenario_name) if scenario_name is not None else None
+    sizing_policy = SizingPolicyName(args.sizing_policy)
+    risk_config = PortfolioRiskConfig(
+        risk_per_position_pct=args.risk_per_position_pct,
+        atr_period=args.atr_period,
+        atr_stop_multiple=args.atr_stop_multiple,
+        max_position_weight_pct=args.max_position_weight_pct,
+        max_portfolio_risk_pct=args.max_portfolio_risk_pct,
+        minimum_cash_reserve_pct=args.minimum_cash_reserve_pct,
+        max_sector_weight_pct=args.max_sector_weight_pct,
+        max_positions=args.max_positions,
+    )
     config = MultiPortfolioConfig(
         initial_capital=args.capital,
         max_positions=args.max_positions,
         commission_per_order=(scenario.commission_per_order if scenario else args.commission),
         slippage_bps=(scenario.slippage_bps if scenario else args.slippage_bps),
+        sizing_policy=sizing_policy,
+        risk_config=risk_config,
     )
     strategy = create_strategy(
         strategy_name,
@@ -319,6 +389,7 @@ async def run(args: argparse.Namespace) -> None:
             selection_policy_name,
             scenario.name.value if scenario else "custom",
             args.fold_label,
+            sizing_policy,
         )
         summary_path = args.output_dir / f"{base_name}_summary.txt"
         equity_path = args.output_dir / f"{base_name}_equity.csv"
@@ -344,7 +415,18 @@ async def run(args: argparse.Namespace) -> None:
 
         with equity_path.open("w", newline="", encoding="utf-8") as output:
             writer = csv.writer(output)
-            writer.writerow(["trading_day", "cash", "invested_value", "equity", "open_positions"])
+            writer.writerow(
+                [
+                    "trading_day",
+                    "cash",
+                    "invested_value",
+                    "equity",
+                    "open_positions",
+                    "modeled_portfolio_risk",
+                    "cash_reserve",
+                    "max_sector_weight_pct",
+                ]
+            )
 
             for point in result.portfolio.equity_curve:
                 writer.writerow(
@@ -354,6 +436,9 @@ async def run(args: argparse.Namespace) -> None:
                         point.invested_value,
                         point.equity,
                         point.open_positions,
+                        point.modeled_portfolio_risk,
+                        point.cash_reserve,
+                        point.max_sector_weight_pct,
                     ]
                 )
 
@@ -413,6 +498,15 @@ async def run(args: argparse.Namespace) -> None:
                     "available_slots",
                     "cash",
                     "equity",
+                    "decision_reason",
+                    "proposed_shares",
+                    "target_allocation",
+                    "target_weight_pct",
+                    "modeled_position_risk",
+                    "portfolio_risk_before",
+                    "sector_weight_before_pct",
+                    "sector_weight_after_pct",
+                    "normalized_sizing_weight",
                 ]
             )
 
@@ -430,6 +524,15 @@ async def run(args: argparse.Namespace) -> None:
                         item.available_slots,
                         item.cash,
                         item.equity,
+                        item.decision_reason,
+                        item.proposed_shares,
+                        item.target_allocation,
+                        item.target_weight_pct,
+                        item.modeled_position_risk,
+                        item.portfolio_risk_before,
+                        item.sector_weight_before_pct,
+                        item.sector_weight_after_pct,
+                        item.normalized_sizing_weight,
                     ]
                 )
 

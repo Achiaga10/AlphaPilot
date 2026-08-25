@@ -30,6 +30,8 @@ from alphapilot.backtesting.portfolio_metrics import (
 )
 from alphapilot.backtesting.ranking_features import RelativeStrength20Calculator
 from alphapilot.backtesting.service import CandleHistoryService, CompanyLookupService
+from alphapilot.portfolio.risk import AverageTrueRangeCalculator
+from alphapilot.portfolio.sizing import SizingPolicyName
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
 from alphapilot.strategy.base import TradingStrategy
 from alphapilot.strategy.signal import Signal
@@ -138,6 +140,7 @@ class MultiPortfolioBacktestService:
                 failed.append((ticker, f"{type(exc).__name__}: {exc}"))
 
         ranking_scores: dict[tuple[str, date], Decimal | None] = {}
+        atr_values: dict[tuple[str, date], Decimal | None] = {}
 
         if self.selection_policy.uses_scores:
             calculator = RelativeStrength20Calculator()
@@ -153,6 +156,17 @@ class MultiPortfolioBacktestService:
                         signal_day=bar.trading_day,
                     )
 
+        if config.sizing_policy != SizingPolicyName.EQUAL_SLOT:
+            atr_calculator = AverageTrueRangeCalculator()
+            for ticker, backtest in backtests.items():
+                for bar in backtest.bars:
+                    if bar.signal == Signal.BUY:
+                        atr_values[(ticker, bar.trading_day)] = atr_calculator.calculate(
+                            stock_histories[ticker],
+                            signal_day=bar.trading_day,
+                            period=config.risk_config.atr_period,
+                        )
+
         portfolio = MultiPortfolioSimulator(
             config=config,
             selection_policy=self.selection_policy,
@@ -160,6 +174,7 @@ class MultiPortfolioBacktestService:
             backtests,
             ranking_scores=ranking_scores,
             ticker_sectors=ticker_sectors,
+            atr_values=atr_values,
         )
         metrics = MultiPortfolioPerformanceMetricsCalculator().calculate(portfolio)
         attribution = PortfolioAttributionCalculator().calculate(portfolio)

@@ -13,6 +13,8 @@ from alphapilot.backtesting.models import (
 )
 from alphapilot.backtesting.multi_portfolio import MultiPortfolioSimulator
 from alphapilot.backtesting.multi_portfolio_models import MultiPortfolioConfig
+from alphapilot.portfolio.risk import PortfolioRiskConfig
+from alphapilot.portfolio.sizing import SizingPolicyName
 from alphapilot.strategy.evaluation import SignalReason, StrategyEvaluation
 from alphapilot.strategy.signal import Signal
 
@@ -357,3 +359,74 @@ def test_allocation_rejection_is_audited() -> None:
         == CandidateRejectionReason.INSUFFICIENT_ALLOCATION
     )
     assert result.ranking_diagnostics.rejected_insufficient_allocation == 1
+
+
+def test_atr_risk_sizing_enforces_frozen_risk_cash_and_sector_constraints() -> None:
+    config = MultiPortfolioConfig(
+        initial_capital=Decimal("100000"),
+        max_positions=10,
+        sizing_policy=SizingPolicyName.ATR_RISK,
+        risk_config=PortfolioRiskConfig(),
+    )
+    result = MultiPortfolioSimulator(config).run(
+        {
+            "AAA": backtest(
+                "AAA",
+                bar(0, signal=Signal.BUY),
+                bar(1, signal=Signal.HOLD, open_price="100", close="110"),
+            ),
+            "BBB": backtest(
+                "BBB",
+                bar(0, signal=Signal.BUY),
+                bar(1, signal=Signal.HOLD, open_price="100", close="110"),
+            ),
+        },
+        atr_values={("AAA", START): Decimal("5"), ("BBB", START): Decimal("5")},
+        ticker_sectors={"AAA": "Technology", "BBB": "Technology"},
+    )
+
+    assert [position.shares for position in result.open_positions] == [100, 100]
+    assert all(position.stop_distance == Decimal("10") for position in result.open_positions)
+    assert all(
+        position.modeled_risk_dollars == Decimal("1000") for position in result.open_positions
+    )
+    assert result.equity_curve[-1].cash == Decimal("80000")
+    assert result.equity_curve[-1].cash >= result.equity_curve[-1].cash_reserve
+    assert result.equity_curve[-1].modeled_portfolio_risk == Decimal("2000")
+    assert result.risk_diagnostics.buy_approved == 2
+
+
+def test_volatility_normalized_backtest_uses_one_ranked_candidate_batch() -> None:
+    result = MultiPortfolioSimulator(
+        MultiPortfolioConfig(
+            initial_capital=Decimal("100000"),
+            max_positions=2,
+            sizing_policy=SizingPolicyName.ATR_VOLATILITY_NORMALIZED,
+            risk_config=PortfolioRiskConfig(max_positions=2),
+        ),
+        selection_policy=RelativeStrength20SelectionPolicy(),
+    ).run(
+        {
+            "LOW": backtest("LOW", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD)),
+            "HIGH": backtest("HIGH", bar(0, signal=Signal.BUY), bar(1, signal=Signal.HOLD)),
+        },
+        ranking_scores={
+            ("LOW", START): Decimal("0.2"),
+            ("HIGH", START): Decimal("0.1"),
+        },
+        atr_values={
+            ("LOW", START): Decimal("2"),
+            ("HIGH", START): Decimal("4"),
+        },
+        ticker_sectors={"LOW": "A", "HIGH": "B"},
+    )
+    assert [item.ticker for item in result.selection_audit] == ["LOW", "HIGH"]
+    weights = [
+        item.normalized_sizing_weight
+        for item in result.selection_audit
+        if item.normalized_sizing_weight is not None
+    ]
+    assert sum(weights, Decimal("0")) == Decimal("1")
+    assert weights[0] > weights[1]
+    assert result.equity_curve[-1].cash >= result.equity_curve[-1].cash_reserve
+    assert result.equity_curve[-1].cash >= 0

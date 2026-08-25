@@ -19,6 +19,18 @@ from alphapilot.backtesting.multi_portfolio_models import (
     MultiPortfolioSimulationResult,
     MultiPortfolioTrade,
     RankingDiagnostics,
+    RiskDecisionDiagnostics,
+)
+from alphapilot.portfolio.decisions import UNCLASSIFIED_SECTOR
+from alphapilot.portfolio.sizing import (
+    AtrRiskPositionSizer,
+    AtrVolatilityNormalizedPositionSizer,
+    PortfolioDecisionReason,
+    SizingContext,
+    SizingDecision,
+    SizingPolicyName,
+    VolatilityBatchContext,
+    VolatilitySizingCandidate,
 )
 from alphapilot.strategy.signal import Signal
 
@@ -44,9 +56,11 @@ class MultiPortfolioSimulator:
         *,
         ranking_scores: dict[tuple[str, date], Decimal | None] | None = None,
         ticker_sectors: dict[str, str | None] | None = None,
+        atr_values: dict[tuple[str, date], Decimal | None] | None = None,
     ) -> MultiPortfolioSimulationResult:
         frozen_scores = ranking_scores if ranking_scores is not None else {}
         sectors = ticker_sectors if ticker_sectors is not None else {}
+        frozen_atr = atr_values if atr_values is not None else {}
         normalized = {ticker.upper(): result for ticker, result in backtests.items()}
         bars_by_ticker_day = {
             ticker: {bar.trading_day: bar for bar in result.bars}
@@ -117,10 +131,60 @@ class MultiPortfolioSimulator:
             if len(buys) > available_slots_at_start:
                 constrained_days += 1
 
-            for candidate_rank, candidate in enumerate(
-                self.selection_policy.order(buys),
-                start=1,
-            ):
+            ordered_buys = self.selection_policy.order(buys)
+            volatility_sizing: dict[str, SizingDecision] = {}
+            if self.config.sizing_policy == SizingPolicyName.ATR_VOLATILITY_NORMALIZED:
+                equity_at_batch_open = cash + sum(
+                    Decimal(position.shares)
+                    * self._valuation_price_at_open(
+                        ticker=ticker,
+                        trading_day=trading_day,
+                        bars_by_ticker_day=bars_by_ticker_day,
+                        latest_closes=latest_closes,
+                    )
+                    for ticker, position in positions.items()
+                )
+                sector_values_at_open: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+                for ticker, position in positions.items():
+                    sector_values_at_open[self._sector(position.sector)] += Decimal(
+                        position.shares
+                    ) * self._valuation_price_at_open(
+                        ticker=ticker,
+                        trading_day=trading_day,
+                        bars_by_ticker_day=bars_by_ticker_day,
+                        latest_closes=latest_closes,
+                    )
+                batch_allocations = AtrVolatilityNormalizedPositionSizer().allocate(
+                    VolatilityBatchContext(
+                        equity=equity_at_batch_open,
+                        cash=cash,
+                        invested_value=equity_at_batch_open - cash,
+                        current_portfolio_risk=sum(
+                            (position.modeled_risk_dollars for position in positions.values()),
+                            Decimal("0"),
+                        ),
+                        sector_market_values=dict(sector_values_at_open),
+                        available_slots=available_slots_at_start,
+                        commission=self.config.commission_per_order,
+                    ),
+                    [
+                        VolatilitySizingCandidate(
+                            ticker=candidate.ticker,
+                            execution_price=self._apply_buy_slippage(candidate.execution_bar.open),
+                            atr=frozen_atr.get(
+                                (candidate.ticker, candidate.signal_bar.trading_day)
+                            ),
+                            sector=self._sector(sectors.get(candidate.ticker)),
+                        )
+                        for candidate in ordered_buys
+                    ],
+                    self.config.risk_config,
+                )
+                volatility_sizing = {
+                    allocation.ticker: allocation.decision for allocation in batch_allocations
+                }
+
+            for candidate_rank, candidate in enumerate(ordered_buys, start=1):
                 available_slots = self.config.max_positions - len(positions)
 
                 equity_at_open = cash + sum(
@@ -148,11 +212,35 @@ class MultiPortfolioSimulator:
                     )
                     continue
 
-                cash, position = self._open_position(
+                raw_sector = sectors.get(candidate.ticker)
+                sector = self._sector(raw_sector)
+                current_risk = sum(
+                    (position.modeled_risk_dollars for position in positions.values()),
+                    Decimal("0"),
+                )
+                sector_value = sum(
+                    (
+                        Decimal(position.shares)
+                        * self._valuation_price_at_open(
+                            ticker=ticker,
+                            trading_day=trading_day,
+                            bars_by_ticker_day=bars_by_ticker_day,
+                            latest_closes=latest_closes,
+                        )
+                        for ticker, position in positions.items()
+                        if self._sector(position.sector) == sector
+                    ),
+                    Decimal("0"),
+                )
+                cash, position, sizing = self._open_position(
                     cash=cash,
                     equity=equity_at_open,
                     candidate=candidate,
-                    sector=sectors.get(candidate.ticker),
+                    sector=raw_sector,
+                    atr=frozen_atr.get((candidate.ticker, candidate.signal_bar.trading_day)),
+                    current_portfolio_risk=current_risk,
+                    sector_market_value=sector_value,
+                    sizing_override=volatility_sizing.get(candidate.ticker),
                 )
 
                 if position is not None:
@@ -166,6 +254,8 @@ class MultiPortfolioSimulator:
                             available_slots=available_slots,
                             cash=cash + position.cost_basis,
                             equity=equity_at_open,
+                            sizing=sizing,
+                            portfolio_risk_before=current_risk,
                         )
                     )
                 else:
@@ -178,6 +268,8 @@ class MultiPortfolioSimulator:
                             available_slots=available_slots,
                             cash=cash,
                             equity=equity_at_open,
+                            sizing=sizing,
+                            portfolio_risk_before=current_risk,
                         )
                     )
 
@@ -195,6 +287,24 @@ class MultiPortfolioSimulator:
                 Decimal("0"),
             )
             equity = cash + invested_value
+            modeled_risk = sum(
+                (position.modeled_risk_dollars for position in positions.values()),
+                Decimal("0"),
+            )
+            reserve = (
+                equity * self.config.risk_config.minimum_cash_reserve_pct / Decimal("100")
+                if self.config.sizing_policy != SizingPolicyName.EQUAL_SLOT
+                else Decimal("0")
+            )
+            sector_values: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+            for ticker, position in positions.items():
+                sector_values[self._sector(position.sector)] += (
+                    Decimal(position.shares) * latest_closes[ticker]
+                )
+            max_sector_weight = max(
+                (value / equity * Decimal("100") for value in sector_values.values()),
+                default=Decimal("0"),
+            )
 
             if cash < 0:
                 raise RuntimeError("multi-stock portfolio cash became negative")
@@ -206,6 +316,9 @@ class MultiPortfolioSimulator:
                     invested_value=invested_value,
                     equity=equity,
                     open_positions=len(positions),
+                    modeled_portfolio_risk=modeled_risk,
+                    cash_reserve=reserve,
+                    max_sector_weight_pct=max_sector_weight,
                 )
             )
 
@@ -223,6 +336,7 @@ class MultiPortfolioSimulator:
                 selection_audit,
                 constrained_days=constrained_days,
             ),
+            risk_diagnostics=self._build_risk_diagnostics(selection_audit, equity_curve),
         )
 
     def _audit_decision(
@@ -235,6 +349,8 @@ class MultiPortfolioSimulator:
         available_slots: int,
         cash: Decimal,
         equity: Decimal,
+        sizing: SizingDecision | None = None,
+        portfolio_risk_before: Decimal = Decimal("0"),
     ) -> CandidateSelectionAudit:
         return CandidateSelectionAudit(
             execution_day=candidate.execution_bar.trading_day,
@@ -248,6 +364,15 @@ class MultiPortfolioSimulator:
             available_slots=available_slots,
             cash=cash,
             equity=equity,
+            decision_reason=(sizing.reason if sizing else None),
+            proposed_shares=(sizing.shares if sizing else 0),
+            target_allocation=(sizing.allocation if sizing else Decimal("0")),
+            target_weight_pct=(sizing.position_weight_pct if sizing else Decimal("0")),
+            modeled_position_risk=(sizing.modeled_risk if sizing else Decimal("0")),
+            portfolio_risk_before=portfolio_risk_before,
+            sector_weight_before_pct=(sizing.sector_weight_before_pct if sizing else Decimal("0")),
+            sector_weight_after_pct=(sizing.sector_weight_after_pct if sizing else Decimal("0")),
+            normalized_sizing_weight=(sizing.normalized_sizing_weight if sizing else None),
         )
 
     def _build_ranking_diagnostics(
@@ -319,19 +444,41 @@ class MultiPortfolioSimulator:
         equity: Decimal,
         candidate: ExecutableCandidate,
         sector: str | None,
-    ) -> tuple[Decimal, MultiPortfolioPosition | None]:
+        atr: Decimal | None,
+        current_portfolio_risk: Decimal,
+        sector_market_value: Decimal,
+        sizing_override: SizingDecision | None = None,
+    ) -> tuple[Decimal, MultiPortfolioPosition | None, SizingDecision | None]:
         commission = self.config.commission_per_order
 
         if cash <= commission:
-            return cash, None
+            return cash, None, None
 
         execution_price = self._apply_buy_slippage(candidate.execution_bar.open)
-        target_budget = equity / Decimal(self.config.max_positions)
-        share_budget = min(target_budget, cash - commission)
-        shares = int(share_budget / execution_price)
+        sizing: SizingDecision | None = sizing_override
+        if sizing_override is not None:
+            shares = sizing_override.shares
+        elif self.config.sizing_policy == SizingPolicyName.ATR_RISK:
+            sizing = AtrRiskPositionSizer().size(
+                SizingContext(
+                    equity=equity,
+                    cash=cash,
+                    execution_price=execution_price,
+                    atr=atr,
+                    current_portfolio_risk=current_portfolio_risk,
+                    sector_market_value=sector_market_value,
+                    commission=commission,
+                ),
+                self.config.risk_config,
+            )
+            shares = sizing.shares
+        else:
+            target_budget = equity / Decimal(self.config.max_positions)
+            share_budget = min(target_budget, cash - commission)
+            shares = int(share_budget / execution_price)
 
         if shares <= 0:
-            return cash, None
+            return cash, None, sizing
 
         total_cost = Decimal(shares) * execution_price + commission
         remaining_cash = cash - total_cost
@@ -339,16 +486,88 @@ class MultiPortfolioSimulator:
         if remaining_cash < 0:
             raise RuntimeError("entry would make portfolio cash negative")
 
-        return remaining_cash, MultiPortfolioPosition(
-            ticker=candidate.ticker,
-            sector=sector,
-            entry_signal_day=candidate.signal_bar.trading_day,
-            entry_day=candidate.execution_bar.trading_day,
-            entry_reference_price=candidate.execution_bar.open,
-            entry_price=execution_price,
-            shares=shares,
-            entry_commission=commission,
-            entry_reason=candidate.signal_bar.evaluation.reason,
+        return (
+            remaining_cash,
+            MultiPortfolioPosition(
+                ticker=candidate.ticker,
+                sector=sector,
+                entry_signal_day=candidate.signal_bar.trading_day,
+                entry_day=candidate.execution_bar.trading_day,
+                entry_reference_price=candidate.execution_bar.open,
+                entry_price=execution_price,
+                shares=shares,
+                entry_commission=commission,
+                entry_reason=candidate.signal_bar.evaluation.reason,
+                atr=(sizing.atr if sizing else None),
+                stop_distance=(sizing.stop_distance if sizing else None),
+                modeled_risk_dollars=(sizing.modeled_risk if sizing else Decimal("0")),
+            ),
+            sizing,
+        )
+
+    @staticmethod
+    def _sector(value: str | None) -> str:
+        return value.strip() if value and value.strip() else UNCLASSIFIED_SECTOR
+
+    @staticmethod
+    def _build_risk_diagnostics(
+        audit: list[CandidateSelectionAudit],
+        equity_curve: list[MultiPortfolioEquityPoint],
+    ) -> RiskDecisionDiagnostics:
+        approved = [item for item in audit if item.selected]
+        skipped = [item for item in audit if not item.selected]
+        reasons: dict[str, int] = defaultdict(int)
+        for item in skipped:
+            reason = item.decision_reason or PortfolioDecisionReason.RANKING_NOT_SELECTED
+            reasons[reason.value] += 1
+
+        def average(values: list[Decimal]) -> Decimal:
+            return sum(values, Decimal("0")) / Decimal(len(values)) if values else Decimal("0")
+
+        return RiskDecisionDiagnostics(
+            buy_approved=len(approved),
+            buy_skipped=len(skipped),
+            skips_by_reason=tuple(sorted(reasons.items())),
+            average_position_weight_pct=average([item.target_weight_pct for item in approved]),
+            average_modeled_position_risk=average(
+                [item.modeled_position_risk for item in approved]
+            ),
+            average_cash_reserve=average([point.cash_reserve for point in equity_curve]),
+            average_portfolio_modeled_risk=average(
+                [point.modeled_portfolio_risk for point in equity_curve]
+            ),
+            max_portfolio_modeled_risk=max(
+                (point.modeled_portfolio_risk for point in equity_curve),
+                default=Decimal("0"),
+            ),
+            average_portfolio_modeled_risk_pct=average(
+                [
+                    point.modeled_portfolio_risk / point.equity * Decimal("100")
+                    for point in equity_curve
+                    if point.equity > 0
+                ]
+            ),
+            max_portfolio_modeled_risk_pct=max(
+                (
+                    point.modeled_portfolio_risk / point.equity * Decimal("100")
+                    for point in equity_curve
+                    if point.equity > 0
+                ),
+                default=Decimal("0"),
+            ),
+            average_cash=average([point.cash for point in equity_curve]),
+            average_cash_pct=average(
+                [
+                    point.cash / point.equity * Decimal("100")
+                    for point in equity_curve
+                    if point.equity > 0
+                ]
+            ),
+            final_cash=(equity_curve[-1].cash if equity_curve else Decimal("0")),
+            max_sector_weight_observed_pct=max(
+                (point.max_sector_weight_pct for point in equity_curve),
+                default=Decimal("0"),
+            ),
         )
 
     def _close_position(

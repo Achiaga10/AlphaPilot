@@ -10,7 +10,12 @@ Sprint 7 — Multi-Stock Portfolio Backtesting — is complete and merged.
 
 Sprint 8 — Candidate Ranking & Portfolio Selection — is complete and merged.
 
-Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution — is in progress on local branch `feature/ranking-robustness-analysis`.
+Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution — is complete and merged.
+
+Sprint 10 — Portfolio Risk, Position Sizing & Decision API — is complete and reviewed.
+
+Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete locally
+and awaiting user review/Git operations. Sprint 11 is not started.
 
 Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not optimize the 20-bar lookback, strategy parameters, portfolio constraints, or use validation to retune the formula.
 
@@ -38,6 +43,49 @@ Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not opt
 - Sprint 9 completed locally without retuning. RS20 beat control at 5 and 15 bps for both strategies on the validation period.
 - Temporal evidence was mixed: RS20 beat control on total return in 2/3 EMA folds and 1/3 Micho folds. RS20 therefore remains a useful research baseline, not a proven universal default.
 - Validation performance was materially concentrated, especially for Micho and in final open positions; future research must retain contributor and realized/unrealized attribution.
+
+## 0.5 Sprint 10 Risk and Decision Decisions
+
+- ATR14 uses the latest 14 true ranges through signal day and requires the preceding close; no future candle may affect it.
+- ATR-risk sizing uses 1% equity risk, 2× ATR stop proxy, 10% position cap, 8% portfolio risk cap, 10% entry cash reserve, 30% sector cap, 10 positions, and whole shares.
+- Equal-slot remains available and unchanged for research compatibility.
+- Position modeled risk is frozen at entry as shares × entry stop distance; portfolio risk is the sum across active positions.
+- Missing sectors form one explicit `Unclassified` bucket subject to the same sector cap; sectors are never inferred.
+- Strategy signals and portfolio decisions are separate typed concepts; entry constraints never block SELL.
+- The decision API is advisory only: no broker execution or persistence.
+- All V1 parameters are frozen for the Sprint 10 experiments and may not be retuned after results.
+- Sprint 10 completed locally without retuning. ATR-risk reduced EMA drawdown but materially reduced return; it did not reduce Micho drawdown and also reduced Micho return.
+- All entry risk, cash-reserve, sector, max-position, whole-share, and cash constraints validated without breaches. Sector weights may drift above the entry cap through appreciation; no forced selling occurs.
+- The typed decision API is suitable for UI consumption as an advisory contract. Automated market-data/signal enrichment and broker synchronization remain separate adapters.
+
+## 0.6 Sprint 10B Frozen Decisions
+
+- Preserve `equal-slot` and Sprint 10 `atr-risk` without formula changes.
+- Add only the predeclared `atr-volatility-normalized` policy: inverse ATR14
+  percentage weights normalized across the same eligible candidate group.
+- Use 10% reserve, 10% position cap, 8% modeled-risk cap, 30% sector cap, and 10
+  positions. Do not search parameters after development or validation results.
+- Volatility normalization requires a batch allocation boundary; it must not be
+  approximated through unrelated one-candidate normalizations.
+- Existing holdings consume investable capital and are not force-rebalanced.
+- The high-level portfolio-plan API must calculate strategy signals, RS20, ATR14,
+  and sector facts in the backend from stored data as of an explicit date.
+- Domain orchestration must use existing service/repository boundaries and must
+  not call external providers directly.
+- Sprint 10B is not Sprint 11. No UI/frontend implementation is authorized.
+- Sprint 10B completed without parameter retuning. Candidate-group weights
+  normalized exactly and every audited entry respected risk, reserve, position,
+  sector, whole-share, and cash constraints.
+- Volatility-normalized sizing improved on ATR-risk V1 consistently for Micho,
+  but not for EMA: EMA results were mixed across development and validation.
+- Policy classifications are strategy-specific: equal-slot is a promising
+  research baseline for EMA and Micho; ATR-risk remains research-only for both;
+  volatility-normalized is research-only for EMA and a promising research
+  baseline for Micho. None is production-ready.
+- The high-level `/api/v1/portfolio/plan` contract passes the UI-readiness gate:
+  stored-data strategy evaluation, RS20, ATR14, sectors, risk constraints, and
+  reason codes are backend-owned. Broker state and authenticated persistence
+  remain future backend adapters.
 
 ## 0.1 Sprint 7 Portfolio Baseline Decisions
 
