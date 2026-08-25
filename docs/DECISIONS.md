@@ -2,6 +2,36 @@
 
 This file records decisions that must not be silently changed.
 
+## 0. Current Phase
+
+Sprint 6 is complete and merged.
+
+Sprint 7 — Multi-Stock Portfolio Backtesting — is in progress on local branch `feature/portfolio-backtesting-engine`.
+
+Sprint 7 is infrastructure-first. Do not optimize strategy parameters, change Micho V1, retune HYBRID 2%, or infer a production strategy winner from the baseline portfolio runs.
+
+## 0.1 Sprint 7 Portfolio Baseline Decisions
+
+- One shared cash balance funds all tickers.
+- Long-only, whole shares, no leverage, and cash may not become negative.
+- Maximum concurrent positions and transaction assumptions are configurable.
+- Signal T executes at that ticker's next available trading-day OPEN.
+- Executable exits run before entries so released cash is available that day.
+- Open positions are marked to market at the end; they are not force-liquidated.
+- Existing Scanner output has no ranking score. Sprint 7 therefore uses a pluggable stable ticker-order baseline selector, explicitly not alpha.
+- Baseline sizing uses fixed equal slots based on current equity divided by configured maximum positions, capped by available cash. Existing positions are not rebalanced.
+- Baseline results are engine validation only and must disclose current-constituent survivorship bias, benchmark alignment limitations, and transaction-cost assumptions.
+
+## 0.2 Sprint 7 Validation Outcome
+
+Sprint 7's shared-cash engine, tests, reports, and two baseline runs completed successfully.
+
+Both baselines used stable ticker-ascending selection, 10 fixed equal slots, zero commission, and zero slippage. They prove shared capital, deterministic execution, accounting, valuation, metrics, and reporting work end to end. They do not establish a production ranking or strategy winner.
+
+Do not use the fact that Micho BOTH returned more than EMA HYBRID 2% in these particular runs to declare Micho superior. Alphabetical slot priority materially affects which signals receive capital.
+
+Open positions remain open and are marked to market at the final close. They are not included as completed trades or force-liquidated.
+
 ## 1. Package / Environment
 
 Use uv.

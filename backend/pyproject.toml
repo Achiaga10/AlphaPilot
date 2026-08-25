@@ -24,6 +24,7 @@ alphapilot-backtest = "alphapilot.cli.backtest:main"
 alphapilot-backtest-universe = "alphapilot.cli.backtest_universe:main"
 alphapilot-backtest-hybrid-thresholds = "alphapilot.cli.backtest_hybrid_thresholds:main"
 alphapilot-backtest-strategy-universe = "alphapilot.cli.backtest_strategy_universe:main"
+alphapilot-backtest-multi-portfolio = "alphapilot.cli.backtest_multi_portfolio:main"
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
