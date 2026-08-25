@@ -5,6 +5,11 @@ from datetime import date
 from decimal import Decimal
 
 from alphapilot.backtesting.candidate_selection import CandidateRejectionReason
+from alphapilot.portfolio.risk import PortfolioRiskConfig
+from alphapilot.portfolio.sizing import (
+    PortfolioDecisionReason,
+    SizingPolicyName,
+)
 from alphapilot.strategy.evaluation import SignalReason
 
 
@@ -16,6 +21,8 @@ class MultiPortfolioConfig:
     max_positions: int = 10
     commission_per_order: Decimal = Decimal("0")
     slippage_bps: Decimal = Decimal("0")
+    sizing_policy: SizingPolicyName = SizingPolicyName.EQUAL_SLOT
+    risk_config: PortfolioRiskConfig = PortfolioRiskConfig()
 
     def __post_init__(self) -> None:
         if self.initial_capital <= 0:
@@ -42,6 +49,9 @@ class MultiPortfolioPosition:
     shares: int
     entry_commission: Decimal
     entry_reason: SignalReason | None
+    atr: Decimal | None = None
+    stop_distance: Decimal | None = None
+    modeled_risk_dollars: Decimal = Decimal("0")
 
     @property
     def cost_basis(self) -> Decimal:
@@ -96,6 +106,9 @@ class MultiPortfolioEquityPoint:
     invested_value: Decimal
     equity: Decimal
     open_positions: int
+    modeled_portfolio_risk: Decimal = Decimal("0")
+    cash_reserve: Decimal = Decimal("0")
+    max_sector_weight_pct: Decimal = Decimal("0")
 
 
 @dataclass(slots=True, frozen=True)
@@ -111,6 +124,15 @@ class CandidateSelectionAudit:
     available_slots: int
     cash: Decimal
     equity: Decimal
+    decision_reason: PortfolioDecisionReason | None = None
+    proposed_shares: int = 0
+    target_allocation: Decimal = Decimal("0")
+    target_weight_pct: Decimal = Decimal("0")
+    modeled_position_risk: Decimal = Decimal("0")
+    portfolio_risk_before: Decimal = Decimal("0")
+    sector_weight_before_pct: Decimal = Decimal("0")
+    sector_weight_after_pct: Decimal = Decimal("0")
+    normalized_sizing_weight: Decimal | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -125,6 +147,24 @@ class RankingDiagnostics:
     average_selected_score: Decimal | None
     average_rejected_score: Decimal | None
     missing_score_candidates: int
+
+
+@dataclass(slots=True, frozen=True)
+class RiskDecisionDiagnostics:
+    buy_approved: int = 0
+    buy_skipped: int = 0
+    skips_by_reason: tuple[tuple[str, int], ...] = ()
+    average_position_weight_pct: Decimal = Decimal("0")
+    average_modeled_position_risk: Decimal = Decimal("0")
+    average_cash_reserve: Decimal = Decimal("0")
+    average_portfolio_modeled_risk: Decimal = Decimal("0")
+    max_portfolio_modeled_risk: Decimal = Decimal("0")
+    average_portfolio_modeled_risk_pct: Decimal = Decimal("0")
+    max_portfolio_modeled_risk_pct: Decimal = Decimal("0")
+    average_cash: Decimal = Decimal("0")
+    average_cash_pct: Decimal = Decimal("0")
+    final_cash: Decimal = Decimal("0")
+    max_sector_weight_observed_pct: Decimal = Decimal("0")
 
 
 @dataclass(slots=True, frozen=True)
@@ -148,6 +188,7 @@ class MultiPortfolioSimulationResult:
         average_rejected_score=None,
         missing_score_candidates=0,
     )
+    risk_diagnostics: RiskDecisionDiagnostics = RiskDecisionDiagnostics()
 
     @property
     def total_return_pct(self) -> Decimal:

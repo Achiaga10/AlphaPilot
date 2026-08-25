@@ -12,6 +12,7 @@ from alphapilot.api.routes.health import (
 from alphapilot.api.routes.market import (
     router as market_router,
 )
+from alphapilot.api.routes.portfolio import router as portfolio_router
 from alphapilot.api.routes.scanner import (
     router as scanner_router,
 )
@@ -49,3 +50,5 @@ router.include_router(
 router.include_router(
     universe_router,
 )
+
+router.include_router(portfolio_router)

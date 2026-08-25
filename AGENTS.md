@@ -24,14 +24,15 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
+Sprint 10B — Risk Model Hardening & Decision Orchestration (complete locally)
 
-Sprints 6 through 8 are complete and merged. Sprint 9 validates the frozen RS20
-baseline through fixed costs, temporal folds, and return attribution. Read
-`docs/SPRINT9_PLAN.md` and `docs/PROJECT_STATE.md` for exact scope.
+Sprint 10 is complete and reviewed. Sprint 10B backend hardening, checks, API
+validation, and the frozen experiment are complete locally and await user
+review/Git operations. Read `docs/SPRINT10B_COMPLETION_REPORT.md` and
+`docs/PROJECT_STATE.md` for exact results.
 
-Do not begin Sprint 10 until Sprint 9 has been completed, documented, and reviewed
-by the user.
+Do not begin Sprint 11 or create frontend code until Sprint 10B has been
+completed, documented, and reviewed by the user.
 
 ## Development Environment
 
@@ -86,7 +87,7 @@ Do not recreate files based on assumptions if the real implementation is availab
 
 Do not change strategy behavior while fixing infrastructure unless absolutely required.
 
-Do not introduce unrelated architectural work during Sprint 9.
+Do not introduce unrelated architectural work during Sprint 10B.
 
 ## Testing Rules
 
@@ -251,27 +252,28 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Current Sprint 9 Completion Task
+## Current Sprint 10B Completion Task
 
-Implement the robustness and attribution work described in `docs/SPRINT9_PLAN.md`,
-validate it with focused tests and `.\run_checks.ps1`, and run the fixed cost and
-temporal-fold matrices for EMA HYBRID 2% and Micho V1 BOTH.
+Implement the batch `atr-volatility-normalized` sizing policy and backend
+portfolio-plan orchestration described in `docs/SPRINT10B_PLAN.md`. Preserve
+equal-slot and ATR-risk V1 behavior, validate with focused tests and
+`.\run_checks.ps1`, then run the frozen 12-run development/validation matrix.
 
-RS20 remains frozen at 20 bars against SPY. Do not optimize ranking, costs, folds,
+Do not optimize ATR14, inverse-volatility weighting, reserve, caps, RS20,
 portfolio constraints, or strategies after observing results.
 
-When complete, create `docs/SPRINT9_COMPLETION_REPORT.md` with architecture,
-tests, exact cost/fold results, attribution and reconciliation, SPY comparisons,
-limitations, technical debt, Git state, and a Sprint 10 recommendation.
+When complete, create `docs/SPRINT10B_COMPLETION_REPORT.md` with architecture,
+tests, API contract, exact experiment results, policy classifications,
+limitations, Git state, and the explicit UI-readiness gate result.
 
 ## End-of-Task Rule
 
 After creating:
 
-docs/SPRINT9_COMPLETION_REPORT.md
+docs/SPRINT10B_COMPLETION_REPORT.md
 
 do not begin another feature.
 
 The user will take that file back to ChatGPT for review.
 
-Sprint 10 will be planned only after that review.
+Sprint 11 will begin only if the user approves it after that review.
