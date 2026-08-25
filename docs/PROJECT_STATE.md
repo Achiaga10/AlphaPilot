@@ -2,16 +2,14 @@
 
 ## Current Phase
 
-Sprint 6 — Backtesting & Strategy Validation
+Sprint 7 — Multi-Stock Portfolio Backtesting
 
 Current development branch:
-feature/backtesting-engine
+feature/portfolio-backtesting-engine
 
-Sprint 6 is nearing completion.
+Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
-The final current experiment is the Micho 150 Entry Mode A/B/C full-universe validation.
-
-Do not begin Sprint 7 yet.
+Sprint 7 implementation and validation are complete locally. The user must review and perform Git operations. See `docs/SPRINT7_PLAN.md` and `docs/SPRINT7_COMPLETION_REPORT.md`.
 
 ## Project Goal
 
@@ -77,7 +75,68 @@ Sprint 5 — S&P 500 Universe & Scanner
 DONE / merged
 
 Sprint 6 — Backtesting & Strategy Validation
-IN PROGRESS
+DONE / merged
+
+Sprint 7 — Multi-Stock Portfolio Backtesting
+COMPLETE locally / awaiting user review and Git operations
+
+## Sprint 7 Portfolio Infrastructure
+
+Implemented:
+
+- one shared cash balance across all tickers
+- multiple simultaneous long positions
+- configurable capital, maximum positions, commission, and slippage
+- whole-share fixed equal-slot allocation
+- ticker-specific next-available-bar OPEN execution
+- deterministic exits-before-entries processing
+- pluggable candidate selection with a non-alpha ticker-ascending baseline
+- one daily cash/invested/equity curve
+- final open-position mark-to-market without forced liquidation
+- portfolio return, CAGR, drawdown, Sharpe, exposure, trade, turnover, and concurrency metrics
+- SPY buy-and-hold comparison
+- reproducible multi-portfolio CLI and summary/equity/trade reports
+
+Focused tests: 22 passed.
+
+Final quality gate: Ruff passed, mypy passed across 101 source files, and 101 tests passed.
+
+## Sprint 7 Engine-Validation Baselines
+
+Shared configuration:
+
+- current active S&P 500 universe (502/502 successful)
+- 2025-01-01 through 2026-08-20 requested; 2025-01-02 through 2026-08-20 actual portfolio curve
+- $100,000 initial capital
+- 10 maximum positions
+- fixed equal-slot sizing
+- $0 commission and 0 bps slippage
+- stable ticker-ascending selection (non-alpha)
+- final positions marked to market
+
+EMA20 Pullback HYBRID 2%:
+
+- final equity: $106,008.04
+- total return: +6.01%
+- CAGR: +3.65%
+- max drawdown: 18.70%
+- Sharpe: 0.30
+- exposure: 90.74%
+- completed trades: 229
+- SPY return: +29.27%
+
+Micho V1 BOTH:
+
+- final equity: $118,335.24
+- total return: +18.34%
+- CAGR: +10.89%
+- max drawdown: 20.26%
+- Sharpe: 0.66
+- exposure: 99.04%
+- completed trades: 126
+- SPY return: +29.27%
+
+These runs validate the engine only. Alphabetical priority is not alpha, results contain current-constituent survivorship bias, and the raw returns must not be used to choose a strategy.
 
 ## Sprint 6 Infrastructure
 

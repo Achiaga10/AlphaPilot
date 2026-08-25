@@ -24,23 +24,14 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 6 — Backtesting & Strategy Validation
+Sprint 7 — Multi-Stock Portfolio Backtesting
 
-Do not begin Sprint 7 until Sprint 6 has been completed, documented, and reviewed
+Sprint 6 is complete and merged. Sprint 7 must build deterministic shared-cash,
+multi-position portfolio infrastructure. Read `docs/SPRINT7_PLAN.md` and
+`docs/PROJECT_STATE.md` for exact scope and semantics.
+
+Do not begin Sprint 8 until Sprint 7 has been completed, documented, and reviewed
 by the user.
-
-The current final Sprint 6 experiment is:
-
-Micho 150 Entry Mode A/B/C Validation
-
-Compare:
-- both
-- breakout-only
-- bounce-only
-
-on the same full S&P 500 universe and validation period.
-
-Read docs/PROJECT_STATE.md for exact details.
 
 ## Development Environment
 
@@ -95,7 +86,7 @@ Do not recreate files based on assumptions if the real implementation is availab
 
 Do not change strategy behavior while fixing infrastructure unless absolutely required.
 
-Do not introduce unrelated architectural work during Sprint 6.
+Do not introduce unrelated architectural work during Sprint 7.
 
 ## Testing Rules
 
@@ -260,133 +251,30 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Current Sprint 6 Completion Task
+## Current Sprint 7 Completion Task
 
-Sprint 6 is not complete until the Micho Entry Mode full-universe validation has
-been completed and analyzed.
+Implement the deterministic shared-cash multi-stock portfolio engine described in
+`docs/SPRINT7_PLAN.md`, validate it with focused tests and `.\run_checks.ps1`, and
+run engine-validation baselines for EMA20 Pullback HYBRID 2% and Micho V1 BOTH on
+the current active S&P 500 universe for 2025-01-01 through 2026-08-20.
 
-The required experiment compares:
+The stable ticker-order selection policy is a non-alpha baseline. Do not optimize
+portfolio constraints, retune strategies, or use the raw baseline returns to select
+a production strategy.
 
-1. BOTH
-2. BREAKOUT_ONLY
-3. BOUNCE_ONLY
-
-Same:
-- S&P 500 universe
-- validation period
-- data
-- capital
-- position sizing
-- transaction assumptions
-- SMA150 exit
-- trend filter
-
-Only entry mode may differ.
-
-Exact commands and current results are documented in:
-
-docs/PROJECT_STATE.md
-
-## Sprint 6 Completion Report
-
-When Sprint 6 work is complete, create:
-
-docs/SPRINT6_COMPLETION_REPORT.md
-
-This file must be written for another engineer/ChatGPT instance that did not
-participate in the coding session.
-
-It must include:
-
-1. Work Completed
-- files created
-- files modified
-- important code behavior added
-- tests added or changed
-
-2. Validation Performed
-- exact commands executed
-- focused tests
-- .\run_checks.ps1
-- relevant backtest commands
-- whether each passed
-
-3. Micho A/B/C Results
-Compare:
-- both
-- breakout-only
-- bounce-only
-
-Include at minimum:
-- successful / failed stocks
-- median total return
-- median CAGR
-- median max drawdown
-- median Sharpe
-- profit factor
-- win rate
-- exposure
-- average holding
-- MFE
-- MAE
-- peak giveback
-- profitable-stock count
-- beats-SPY count
-- beats-own-B&H count
-- no-trade count
-- total completed trades
-
-Also note important large-winner / distribution behavior if relevant.
-
-4. Head-to-Head Conclusion
-State clearly:
-- which mode performed best on this validation experiment
-- which metrics support that conclusion
-- what trade-offs remain
-- whether evidence is strong enough to justify a future Micho V2 experiment
-
-Do NOT silently modify Micho V1 based on the result.
-
-5. Sprint 6 Final Conclusion
-Include:
-- what we learned about EMA20 / EMA50 / HYBRID
-- what we learned about Micho
-- whether strategy infrastructure is ready for the next phase
-- unresolved limitations
-
-6. Known Limitations
-At minimum include:
-- current-constituent survivorship bias
-- incomplete-history / benchmark-alignment issue where applicable
-- single-stock 100%-capital simulations are not yet realistic portfolio simulations
-- zero commission/slippage where applicable
-
-7. Git State
-Include:
-git status
-git diff --stat
-
-Describe what remains uncommitted.
-
-Do NOT commit or push.
-
-Recommend a commit message to the user.
-
-8. Sprint 7 Recommendation
-Recommend what Sprint 7 should contain.
-
-Do not implement Sprint 7.
-
-Stop after writing the report.
+When complete, create `docs/SPRINT7_COMPLETION_REPORT.md` with architecture,
+semantics, files, tests, exact commands/results, SPY comparisons, limitations,
+technical debt, Git state, a commit-message recommendation, and a Sprint 8
+recommendation.
 
 ## End-of-Task Rule
 
 After creating:
 
-docs/SPRINT6_COMPLETION_REPORT.md
+docs/SPRINT7_COMPLETION_REPORT.md
 
 do not begin another feature.
 
 The user will take that file back to ChatGPT for review.
 
-Sprint 7 will be planned only after that review.
+Sprint 8 will be planned only after that review.
