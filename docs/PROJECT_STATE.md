@@ -2,14 +2,16 @@
 
 ## Current Phase
 
-Sprint 7 — Multi-Stock Portfolio Backtesting
+Sprint 8 — Candidate Ranking & Portfolio Selection
 
 Current development branch:
-feature/portfolio-backtesting-engine
+feature/candidate-ranking-engine
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
-Sprint 7 implementation and validation are complete locally. The user must review and perform Git operations. See `docs/SPRINT7_PLAN.md` and `docs/SPRINT7_COMPLETION_REPORT.md`.
+Sprint 7 is complete and merged. Sprint 8 implementation, checks, and fixed
+experiments are complete locally and await user review and Git operations. See
+`docs/SPRINT8_PLAN.md` and `docs/SPRINT8_COMPLETION_REPORT.md`.
 
 ## Project Goal
 
@@ -78,6 +80,9 @@ Sprint 6 — Backtesting & Strategy Validation
 DONE / merged
 
 Sprint 7 — Multi-Stock Portfolio Backtesting
+DONE / merged
+
+Sprint 8 — Candidate Ranking & Portfolio Selection
 COMPLETE locally / awaiting user review and Git operations
 
 ## Sprint 7 Portfolio Infrastructure

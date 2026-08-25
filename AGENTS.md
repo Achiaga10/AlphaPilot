@@ -24,13 +24,13 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 7 — Multi-Stock Portfolio Backtesting
+Sprint 8 — Candidate Ranking & Portfolio Selection
 
-Sprint 6 is complete and merged. Sprint 7 must build deterministic shared-cash,
-multi-position portfolio infrastructure. Read `docs/SPRINT7_PLAN.md` and
-`docs/PROJECT_STATE.md` for exact scope and semantics.
+Sprints 6 and 7 are complete and merged. Sprint 8 must add deterministic,
+explainable candidate ranking while preserving the Sprint 7 shared-cash engine.
+Read `docs/SPRINT8_PLAN.md` and `docs/PROJECT_STATE.md` for exact scope.
 
-Do not begin Sprint 8 until Sprint 7 has been completed, documented, and reviewed
+Do not begin Sprint 9 until Sprint 8 has been completed, documented, and reviewed
 by the user.
 
 ## Development Environment
@@ -86,7 +86,7 @@ Do not recreate files based on assumptions if the real implementation is availab
 
 Do not change strategy behavior while fixing infrastructure unless absolutely required.
 
-Do not introduce unrelated architectural work during Sprint 7.
+Do not introduce unrelated architectural work during Sprint 8.
 
 ## Testing Rules
 
@@ -251,18 +251,17 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Current Sprint 7 Completion Task
+## Current Sprint 8 Completion Task
 
-Implement the deterministic shared-cash multi-stock portfolio engine described in
-`docs/SPRINT7_PLAN.md`, validate it with focused tests and `.\run_checks.ps1`, and
-run engine-validation baselines for EMA20 Pullback HYBRID 2% and Micho V1 BOTH on
-the current active S&P 500 universe for 2025-01-01 through 2026-08-20.
+Implement the deterministic ranking layer described in `docs/SPRINT8_PLAN.md`,
+validate it with focused tests and `.\run_checks.ps1`, and run alphabetical-control
+versus fixed RS20 comparisons for EMA HYBRID 2% and Micho V1 BOTH on the prescribed
+development and validation periods.
 
-The stable ticker-order selection policy is a non-alpha baseline. Do not optimize
-portfolio constraints, retune strategies, or use the raw baseline returns to select
-a production strategy.
+The ticker-order selection policy remains the non-alpha control. RS20 uses exactly
+20 trading bars. Do not optimize its lookback, portfolio constraints, or strategies.
 
-When complete, create `docs/SPRINT7_COMPLETION_REPORT.md` with architecture,
+When complete, create `docs/SPRINT8_COMPLETION_REPORT.md` with architecture,
 semantics, files, tests, exact commands/results, SPY comparisons, limitations,
 technical debt, Git state, a commit-message recommendation, and a Sprint 8
 recommendation.
@@ -271,10 +270,10 @@ recommendation.
 
 After creating:
 
-docs/SPRINT7_COMPLETION_REPORT.md
+docs/SPRINT8_COMPLETION_REPORT.md
 
 do not begin another feature.
 
 The user will take that file back to ChatGPT for review.
 
-Sprint 8 will be planned only after that review.
+Sprint 9 will be planned only after that review.

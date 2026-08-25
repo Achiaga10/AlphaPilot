@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from alphapilot.backtesting.candidate_selection import CandidateRejectionReason
 from alphapilot.strategy.evaluation import SignalReason
 
 
@@ -90,12 +91,54 @@ class MultiPortfolioEquityPoint:
 
 
 @dataclass(slots=True, frozen=True)
+class CandidateSelectionAudit:
+    execution_day: date
+    signal_day: date
+    ticker: str
+    selection_policy: str
+    ranking_score: Decimal | None
+    candidate_rank: int
+    selected: bool
+    rejection_reason: CandidateRejectionReason | None
+    available_slots: int
+    cash: Decimal
+    equity: Decimal
+
+
+@dataclass(slots=True, frozen=True)
+class RankingDiagnostics:
+    total_candidates_considered: int
+    selected_candidates: int
+    rejected_candidates: int
+    selection_rate_pct: Decimal
+    constrained_days: int
+    rejected_slots_full: int
+    rejected_insufficient_allocation: int
+    average_selected_score: Decimal | None
+    average_rejected_score: Decimal | None
+    missing_score_candidates: int
+
+
+@dataclass(slots=True, frozen=True)
 class MultiPortfolioSimulationResult:
     initial_capital: Decimal
     final_equity: Decimal
     equity_curve: tuple[MultiPortfolioEquityPoint, ...]
     trades: tuple[MultiPortfolioTrade, ...]
     open_positions: tuple[MultiPortfolioPosition, ...]
+    selection_audit: tuple[CandidateSelectionAudit, ...] = ()
+    ranking_diagnostics: RankingDiagnostics = RankingDiagnostics(
+        total_candidates_considered=0,
+        selected_candidates=0,
+        rejected_candidates=0,
+        selection_rate_pct=Decimal("0"),
+        constrained_days=0,
+        rejected_slots_full=0,
+        rejected_insufficient_allocation=0,
+        average_selected_score=None,
+        average_rejected_score=None,
+        missing_score_candidates=0,
+    )
 
     @property
     def total_return_pct(self) -> Decimal:

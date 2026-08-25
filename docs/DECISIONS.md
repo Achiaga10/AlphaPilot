@@ -6,9 +6,23 @@ This file records decisions that must not be silently changed.
 
 Sprint 6 is complete and merged.
 
-Sprint 7 — Multi-Stock Portfolio Backtesting — is in progress on local branch `feature/portfolio-backtesting-engine`.
+Sprint 7 — Multi-Stock Portfolio Backtesting — is complete and merged.
 
-Sprint 7 is infrastructure-first. Do not optimize strategy parameters, change Micho V1, retune HYBRID 2%, or infer a production strategy winner from the baseline portfolio runs.
+Sprint 8 — Candidate Ranking & Portfolio Selection — is in progress on local branch `feature/candidate-ranking-engine`.
+
+Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not optimize the 20-bar lookback, strategy parameters, portfolio constraints, or use validation to retune the formula.
+
+## 0.3 Sprint 8 Ranking Decisions
+
+- `ticker-ascending` remains the deterministic, economically meaningless control.
+- `relative-strength-20` uses stock 20-bar return minus SPY 20-bar return.
+- Scores use information through the BUY signal day only and are frozen before next-OPEN execution.
+- Higher score ranks first; equal scores use ticker ascending.
+- Scored candidates rank before candidates lacking history; unscored candidates use ticker ascending and never receive fabricated scores.
+- Ranking features, ordering, allocation, execution, and accounting remain separate concerns.
+- Selection decisions must be auditable with signal/execution dates, score, rank, outcome, rejection reason, slots, cash, and equity context.
+- The fixed experiment is complete locally. RS20 beat the alphabetical control for both strategies in both development and validation without parameter retuning.
+- This validates the ranking infrastructure and supports further research; it does not make RS20 production-ready or change either strategy.
 
 ## 0.1 Sprint 7 Portfolio Baseline Decisions
 

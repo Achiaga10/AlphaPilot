@@ -10,6 +10,10 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from alphapilot.backtesting.candidate_selection import (
+    SelectionPolicyName,
+    create_selection_policy,
+)
 from alphapilot.backtesting.multi_portfolio_models import MultiPortfolioConfig
 from alphapilot.backtesting.multi_portfolio_service import (
     MultiPortfolioBacktestService,
@@ -38,6 +42,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-positions", type=int, default=10)
     parser.add_argument("--commission", type=Decimal, default=Decimal("0"))
     parser.add_argument("--slippage-bps", type=Decimal, default=Decimal("0"))
+    parser.add_argument(
+        "--selection-policy",
+        choices=[item.value for item in SelectionPolicyName],
+        default=SelectionPolicyName.TICKER_ASCENDING.value,
+    )
     parser.add_argument(
         "--exit-mode",
         choices=[item.value for item in TrendExitMode],
@@ -111,7 +120,12 @@ def build_summary(
             f"Commission per order: ${config.commission_per_order:.2f}",
             f"Slippage: {config.slippage_bps:.2f} bps",
             f"Selection policy: {result.selection_policy_name}",
-            "Selection warning: stable ticker ordering is a non-alpha engine-validation baseline.",
+            (
+                "Ranking formula: stock 20-bar return minus SPY 20-bar return; "
+                "signal-day information only."
+                if result.selection_policy_name == SelectionPolicyName.RELATIVE_STRENGTH_20.value
+                else "Selection warning: stable ticker ordering is a non-alpha control."
+            ),
             "Open-position handling: marked to market at final close; not force-closed.",
             "Survivorship warning: current constituents create survivorship bias.",
             (
@@ -136,6 +150,43 @@ def build_summary(
             f"Average open positions: {_format_decimal(metrics.average_open_positions, '')}",
             f"Max concurrent positions: {metrics.max_concurrent_positions}",
             f"Open positions at end: {len(result.portfolio.open_positions)}",
+            "",
+            "RANKING DIAGNOSTICS",
+            "-------------------",
+            (
+                "BUY candidates considered: "
+                f"{result.portfolio.ranking_diagnostics.total_candidates_considered}"
+            ),
+            (f"Selected candidates: {result.portfolio.ranking_diagnostics.selected_candidates}"),
+            (f"Rejected candidates: {result.portfolio.ranking_diagnostics.rejected_candidates}"),
+            (
+                "Candidate selection rate: "
+                f"{_format_decimal(result.portfolio.ranking_diagnostics.selection_rate_pct)}"
+            ),
+            (
+                "Constrained candidate days: "
+                f"{result.portfolio.ranking_diagnostics.constrained_days}"
+            ),
+            (
+                "Rejected because slots full: "
+                f"{result.portfolio.ranking_diagnostics.rejected_slots_full}"
+            ),
+            (
+                "Rejected because allocation could not buy one share: "
+                f"{result.portfolio.ranking_diagnostics.rejected_insufficient_allocation}"
+            ),
+            (
+                "Average selected RS20 score: "
+                f"{_format_decimal(_score_pct(result.portfolio.ranking_diagnostics.average_selected_score))}"
+            ),
+            (
+                "Average rejected RS20 score: "
+                f"{_format_decimal(_score_pct(result.portfolio.ranking_diagnostics.average_rejected_score))}"
+            ),
+            (
+                "Candidates lacking ranking history: "
+                f"{result.portfolio.ranking_diagnostics.missing_score_candidates}"
+            ),
             "",
             "SPY BUY & HOLD",
             "--------------",
@@ -162,6 +213,7 @@ def _base_name(
     micho_entry_mode: MichoEntryMode,
     start: date,
     end: date,
+    selection_policy: SelectionPolicyName,
 ) -> str:
     suffix = strategy_name.value.replace("-", "_")
 
@@ -173,13 +225,19 @@ def _base_name(
     else:
         suffix += f"_{micho_entry_mode.value.replace('-', '_')}"
 
-    return f"multi_portfolio_{suffix}_{start}_{end}"
+    safe_policy = selection_policy.value.replace("-", "_")
+    return f"multi_portfolio_{suffix}_{safe_policy}_{start}_{end}"
+
+
+def _score_pct(value: Decimal | None) -> Decimal | None:
+    return value * Decimal("100") if value is not None else None
 
 
 async def run(args: argparse.Namespace) -> None:
     strategy_name = StrategyName(args.strategy)
     exit_mode = TrendExitMode(args.exit_mode)
     micho_entry_mode = MichoEntryMode(args.micho_entry_mode)
+    selection_policy_name = SelectionPolicyName(args.selection_policy)
     config = MultiPortfolioConfig(
         initial_capital=args.capital,
         max_positions=args.max_positions,
@@ -202,6 +260,7 @@ async def run(args: argparse.Namespace) -> None:
             universe_repository=IndexConstituentRepository(session),
             strategy=strategy,
             stock_warmup_days=get_strategy_stock_warmup_days(strategy_name),
+            selection_policy=create_selection_policy(selection_policy_name),
         )
         result = await service.run(start=args.start, end=args.end, config=config)
         args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -212,10 +271,12 @@ async def run(args: argparse.Namespace) -> None:
             micho_entry_mode,
             args.start,
             args.end,
+            selection_policy_name,
         )
         summary_path = args.output_dir / f"{base_name}_summary.txt"
         equity_path = args.output_dir / f"{base_name}_equity.csv"
         trades_path = args.output_dir / f"{base_name}_trades.csv"
+        audit_path = args.output_dir / f"{base_name}_selection_audit.csv"
         summary_path.write_text(
             build_summary(
                 result,
@@ -286,10 +347,46 @@ async def run(args: argparse.Namespace) -> None:
                     ]
                 )
 
+        with audit_path.open("w", newline="", encoding="utf-8") as output:
+            writer = csv.writer(output)
+            writer.writerow(
+                [
+                    "execution_day",
+                    "signal_day",
+                    "ticker",
+                    "selection_policy",
+                    "ranking_score",
+                    "candidate_rank",
+                    "selected",
+                    "rejection_reason",
+                    "available_slots",
+                    "cash",
+                    "equity",
+                ]
+            )
+
+            for item in result.portfolio.selection_audit:
+                writer.writerow(
+                    [
+                        item.execution_day,
+                        item.signal_day,
+                        item.ticker,
+                        item.selection_policy,
+                        item.ranking_score,
+                        item.candidate_rank,
+                        item.selected,
+                        item.rejection_reason,
+                        item.available_slots,
+                        item.cash,
+                        item.equity,
+                    ]
+                )
+
         print(summary_path.read_text(encoding="utf-8"))
         print(f"Summary: {summary_path}")
         print(f"Equity:  {equity_path}")
         print(f"Trades:  {trades_path}")
+        print(f"Audit:   {audit_path}")
     finally:
         await db_generator.aclose()
 
