@@ -34,8 +34,10 @@ class MultiPortfolioConfig:
 @dataclass(slots=True, frozen=True)
 class MultiPortfolioPosition:
     ticker: str
+    sector: str | None
     entry_signal_day: date
     entry_day: date
+    entry_reference_price: Decimal
     entry_price: Decimal
     shares: int
     entry_commission: Decimal
@@ -45,15 +47,21 @@ class MultiPortfolioPosition:
     def cost_basis(self) -> Decimal:
         return Decimal(self.shares) * self.entry_price + self.entry_commission
 
+    def unrealized_pnl(self, final_price: Decimal) -> Decimal:
+        return Decimal(self.shares) * final_price - self.cost_basis
+
 
 @dataclass(slots=True, frozen=True)
 class MultiPortfolioTrade:
     ticker: str
+    sector: str | None
     entry_signal_day: date
     entry_day: date
+    entry_reference_price: Decimal
     entry_price: Decimal
     exit_signal_day: date
     exit_day: date
+    exit_reference_price: Decimal
     exit_price: Decimal
     shares: int
     entry_commission: Decimal
@@ -126,6 +134,7 @@ class MultiPortfolioSimulationResult:
     equity_curve: tuple[MultiPortfolioEquityPoint, ...]
     trades: tuple[MultiPortfolioTrade, ...]
     open_positions: tuple[MultiPortfolioPosition, ...]
+    final_prices: tuple[tuple[str, Decimal], ...] = ()
     selection_audit: tuple[CandidateSelectionAudit, ...] = ()
     ranking_diagnostics: RankingDiagnostics = RankingDiagnostics(
         total_candidates_considered=0,

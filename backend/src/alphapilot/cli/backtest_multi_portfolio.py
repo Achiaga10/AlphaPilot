@@ -14,6 +14,7 @@ from alphapilot.backtesting.candidate_selection import (
     SelectionPolicyName,
     create_selection_policy,
 )
+from alphapilot.backtesting.cost_scenarios import CostScenarioName, get_cost_scenario
 from alphapilot.backtesting.multi_portfolio_models import MultiPortfolioConfig
 from alphapilot.backtesting.multi_portfolio_service import (
     MultiPortfolioBacktestService,
@@ -42,6 +43,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-positions", type=int, default=10)
     parser.add_argument("--commission", type=Decimal, default=Decimal("0"))
     parser.add_argument("--slippage-bps", type=Decimal, default=Decimal("0"))
+    parser.add_argument(
+        "--cost-scenario",
+        choices=[item.value for item in CostScenarioName],
+        default=None,
+        help="Named Sprint 9 cost scenario; overrides commission/slippage when set.",
+    )
+    parser.add_argument("--fold-label", default="full-period")
     parser.add_argument(
         "--selection-policy",
         choices=[item.value for item in SelectionPolicyName],
@@ -84,6 +92,8 @@ def build_summary(
     start: date,
     end: date,
     config: MultiPortfolioConfig,
+    cost_scenario: str = "custom",
+    fold_label: str = "full-period",
 ) -> str:
     metrics = result.metrics
     lines = [
@@ -119,6 +129,8 @@ def build_summary(
             "Sizing method: fixed equal slot (current equity / max positions)",
             f"Commission per order: ${config.commission_per_order:.2f}",
             f"Slippage: {config.slippage_bps:.2f} bps",
+            f"Cost scenario: {cost_scenario}",
+            f"Temporal fold: {fold_label}",
             f"Selection policy: {result.selection_policy_name}",
             (
                 "Ranking formula: stock 20-bar return minus SPY 20-bar return; "
@@ -150,6 +162,33 @@ def build_summary(
             f"Average open positions: {_format_decimal(metrics.average_open_positions, '')}",
             f"Max concurrent positions: {metrics.max_concurrent_positions}",
             f"Open positions at end: {len(result.portfolio.open_positions)}",
+            "",
+            "RETURN ATTRIBUTION",
+            "------------------",
+            f"Gross realized P&L: ${result.attribution.gross_realized_pnl:.2f}",
+            f"Gross unrealized P&L: ${result.attribution.gross_unrealized_pnl:.2f}",
+            f"Transaction friction: ${result.attribution.transaction_friction:.2f}",
+            f"Net realized P&L: ${result.attribution.realized_pnl:.2f}",
+            f"Net unrealized P&L: ${result.attribution.unrealized_pnl:.2f}",
+            f"Combined P&L: ${result.attribution.total_pnl:.2f}",
+            f"Reconciliation residual: ${result.attribution.reconciliation_residual:.8f}",
+            f"Unique tickers held: {result.attribution.unique_tickers_held}",
+            f"Positive contributors: {result.attribution.positive_tickers}",
+            f"Negative contributors: {result.attribution.negative_tickers}",
+            f"Top 1 P&L: ${result.attribution.top_1_pnl:.2f}",
+            f"Top 5 P&L: ${result.attribution.top_5_pnl:.2f}",
+            f"Top 10 P&L: ${result.attribution.top_10_pnl:.2f}",
+            "Top 1 share of portfolio gain: "
+            f"{_format_decimal(result.attribution.top_1_gain_share_pct)}",
+            "Top 5 share of portfolio gain: "
+            f"{_format_decimal(result.attribution.top_5_gain_share_pct)}",
+            "Top 10 share of portfolio gain: "
+            f"{_format_decimal(result.attribution.top_10_gain_share_pct)}",
+            "Top 1 share of positive P&L: "
+            f"{_format_decimal(result.attribution.top_1_positive_pnl_share_pct)}",
+            "Top 5 share of positive P&L: "
+            f"{_format_decimal(result.attribution.top_5_positive_pnl_share_pct)}",
+            f"Positive-P&L HHI: {_format_decimal(result.attribution.positive_pnl_hhi, '')}",
             "",
             "RANKING DIAGNOSTICS",
             "-------------------",
@@ -214,6 +253,8 @@ def _base_name(
     start: date,
     end: date,
     selection_policy: SelectionPolicyName,
+    cost_scenario: str,
+    fold_label: str,
 ) -> str:
     suffix = strategy_name.value.replace("-", "_")
 
@@ -226,7 +267,9 @@ def _base_name(
         suffix += f"_{micho_entry_mode.value.replace('-', '_')}"
 
     safe_policy = selection_policy.value.replace("-", "_")
-    return f"multi_portfolio_{suffix}_{safe_policy}_{start}_{end}"
+    safe_cost = cost_scenario.replace("-", "_")
+    safe_fold = fold_label.replace("-", "_")
+    return f"multi_portfolio_{suffix}_{safe_policy}_{safe_cost}_{safe_fold}_{start}_{end}"
 
 
 def _score_pct(value: Decimal | None) -> Decimal | None:
@@ -238,11 +281,13 @@ async def run(args: argparse.Namespace) -> None:
     exit_mode = TrendExitMode(args.exit_mode)
     micho_entry_mode = MichoEntryMode(args.micho_entry_mode)
     selection_policy_name = SelectionPolicyName(args.selection_policy)
+    scenario_name = CostScenarioName(args.cost_scenario) if args.cost_scenario is not None else None
+    scenario = get_cost_scenario(scenario_name) if scenario_name is not None else None
     config = MultiPortfolioConfig(
         initial_capital=args.capital,
         max_positions=args.max_positions,
-        commission_per_order=args.commission,
-        slippage_bps=args.slippage_bps,
+        commission_per_order=(scenario.commission_per_order if scenario else args.commission),
+        slippage_bps=(scenario.slippage_bps if scenario else args.slippage_bps),
     )
     strategy = create_strategy(
         strategy_name,
@@ -272,11 +317,15 @@ async def run(args: argparse.Namespace) -> None:
             args.start,
             args.end,
             selection_policy_name,
+            scenario.name.value if scenario else "custom",
+            args.fold_label,
         )
         summary_path = args.output_dir / f"{base_name}_summary.txt"
         equity_path = args.output_dir / f"{base_name}_equity.csv"
         trades_path = args.output_dir / f"{base_name}_trades.csv"
         audit_path = args.output_dir / f"{base_name}_selection_audit.csv"
+        attribution_path = args.output_dir / f"{base_name}_attribution.csv"
+        sector_path = args.output_dir / f"{base_name}_sector_attribution.csv"
         summary_path.write_text(
             build_summary(
                 result,
@@ -287,6 +336,8 @@ async def run(args: argparse.Namespace) -> None:
                 start=args.start,
                 end=args.end,
                 config=config,
+                cost_scenario=scenario.name.value if scenario else "custom",
+                fold_label=args.fold_label,
             ),
             encoding="utf-8",
         )
@@ -382,11 +433,73 @@ async def run(args: argparse.Namespace) -> None:
                     ]
                 )
 
+        with attribution_path.open("w", newline="", encoding="utf-8") as output:
+            writer = csv.writer(output)
+            writer.writerow(
+                [
+                    "ticker",
+                    "sector",
+                    "completed_trades",
+                    "open_positions",
+                    "gross_realized_pnl",
+                    "gross_unrealized_pnl",
+                    "transaction_friction",
+                    "realized_pnl",
+                    "unrealized_pnl",
+                    "total_pnl",
+                    "contribution_pct",
+                ]
+            )
+            for attribution_item in result.attribution.tickers:
+                writer.writerow(
+                    [
+                        attribution_item.ticker,
+                        attribution_item.sector,
+                        attribution_item.completed_trades,
+                        attribution_item.open_positions,
+                        attribution_item.gross_realized_pnl,
+                        attribution_item.gross_unrealized_pnl,
+                        attribution_item.transaction_friction,
+                        attribution_item.realized_pnl,
+                        attribution_item.unrealized_pnl,
+                        attribution_item.total_pnl,
+                        attribution_item.contribution_pct,
+                    ]
+                )
+
+        with sector_path.open("w", newline="", encoding="utf-8") as output:
+            writer = csv.writer(output)
+            writer.writerow(
+                [
+                    "sector",
+                    "unique_tickers",
+                    "completed_trades",
+                    "realized_pnl",
+                    "unrealized_pnl",
+                    "total_pnl",
+                    "contribution_pct",
+                ]
+            )
+            for sector_item in result.attribution.sectors:
+                writer.writerow(
+                    [
+                        sector_item.sector,
+                        sector_item.unique_tickers,
+                        sector_item.completed_trades,
+                        sector_item.realized_pnl,
+                        sector_item.unrealized_pnl,
+                        sector_item.total_pnl,
+                        sector_item.contribution_pct,
+                    ]
+                )
+
         print(summary_path.read_text(encoding="utf-8"))
         print(f"Summary: {summary_path}")
         print(f"Equity:  {equity_path}")
         print(f"Trades:  {trades_path}")
         print(f"Audit:   {audit_path}")
+        print(f"Attribution: {attribution_path}")
+        print(f"Sectors:     {sector_path}")
     finally:
         await db_generator.aclose()
 

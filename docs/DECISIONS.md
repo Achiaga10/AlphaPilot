@@ -8,7 +8,9 @@ Sprint 6 is complete and merged.
 
 Sprint 7 — Multi-Stock Portfolio Backtesting — is complete and merged.
 
-Sprint 8 — Candidate Ranking & Portfolio Selection — is in progress on local branch `feature/candidate-ranking-engine`.
+Sprint 8 — Candidate Ranking & Portfolio Selection — is complete and merged.
+
+Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution — is in progress on local branch `feature/ranking-robustness-analysis`.
 
 Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not optimize the 20-bar lookback, strategy parameters, portfolio constraints, or use validation to retune the formula.
 
@@ -23,6 +25,19 @@ Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not opt
 - Selection decisions must be auditable with signal/execution dates, score, rank, outcome, rejection reason, slots, cash, and equity context.
 - The fixed experiment is complete locally. RS20 beat the alphabetical control for both strategies in both development and validation without parameter retuning.
 - This validates the ranking infrastructure and supports further research; it does not make RS20 production-ready or change either strategy.
+
+## 0.4 Sprint 9 Robustness Decisions
+
+- RS20 is frozen as Ranking Baseline V1: 20 stock bars minus 20 SPY bars, using signal-day information only.
+- Fixed per-side scenarios are COST_0 = 0 bps, COST_LOW = 5 bps, and COST_CONSERVATIVE = 15 bps; all use zero commission.
+- Fixed folds are 2021-08-20–2022-12-31, 2023-01-01–2024-12-31, and 2025-01-01–2026-08-20.
+- Attribution uses additive dollar P&L and distinguishes gross P&L, friction, net realized P&L, and final open unrealized P&L.
+- Positive-contributor HHI is the sum of squared shares of total positive ticker P&L.
+- Stored sector values may be reported; missing values are `Unknown` and are never inferred.
+- Strategy rules, 2% HYBRID, Micho BOTH, 10 positions, equal-slot sizing, costs, folds, and RS20 may not be retuned after results.
+- Sprint 9 completed locally without retuning. RS20 beat control at 5 and 15 bps for both strategies on the validation period.
+- Temporal evidence was mixed: RS20 beat control on total return in 2/3 EMA folds and 1/3 Micho folds. RS20 therefore remains a useful research baseline, not a proven universal default.
+- Validation performance was materially concentrated, especially for Micho and in final open positions; future research must retain contributor and realized/unrealized attribution.
 
 ## 0.1 Sprint 7 Portfolio Baseline Decisions
 

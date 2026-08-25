@@ -43,8 +43,10 @@ class MultiPortfolioSimulator:
         backtests: dict[str, BacktestResult],
         *,
         ranking_scores: dict[tuple[str, date], Decimal | None] | None = None,
+        ticker_sectors: dict[str, str | None] | None = None,
     ) -> MultiPortfolioSimulationResult:
         frozen_scores = ranking_scores if ranking_scores is not None else {}
+        sectors = ticker_sectors if ticker_sectors is not None else {}
         normalized = {ticker.upper(): result for ticker, result in backtests.items()}
         bars_by_ticker_day = {
             ticker: {bar.trading_day: bar for bar in result.bars}
@@ -150,6 +152,7 @@ class MultiPortfolioSimulator:
                     cash=cash,
                     equity=equity_at_open,
                     candidate=candidate,
+                    sector=sectors.get(candidate.ticker),
                 )
 
                 if position is not None:
@@ -214,6 +217,7 @@ class MultiPortfolioSimulator:
             equity_curve=tuple(equity_curve),
             trades=tuple(trades),
             open_positions=tuple(positions[ticker] for ticker in sorted(positions)),
+            final_prices=tuple((ticker, latest_closes[ticker]) for ticker in sorted(positions)),
             selection_audit=tuple(selection_audit),
             ranking_diagnostics=self._build_ranking_diagnostics(
                 selection_audit,
@@ -314,6 +318,7 @@ class MultiPortfolioSimulator:
         cash: Decimal,
         equity: Decimal,
         candidate: ExecutableCandidate,
+        sector: str | None,
     ) -> tuple[Decimal, MultiPortfolioPosition | None]:
         commission = self.config.commission_per_order
 
@@ -336,8 +341,10 @@ class MultiPortfolioSimulator:
 
         return remaining_cash, MultiPortfolioPosition(
             ticker=candidate.ticker,
+            sector=sector,
             entry_signal_day=candidate.signal_bar.trading_day,
             entry_day=candidate.execution_bar.trading_day,
+            entry_reference_price=candidate.execution_bar.open,
             entry_price=execution_price,
             shares=shares,
             entry_commission=commission,
@@ -361,11 +368,14 @@ class MultiPortfolioSimulator:
 
         return updated_cash, MultiPortfolioTrade(
             ticker=position.ticker,
+            sector=position.sector,
             entry_signal_day=position.entry_signal_day,
             entry_day=position.entry_day,
+            entry_reference_price=position.entry_reference_price,
             entry_price=position.entry_price,
             exit_signal_day=candidate.signal_bar.trading_day,
             exit_day=candidate.execution_bar.trading_day,
+            exit_reference_price=candidate.execution_bar.open,
             exit_price=execution_price,
             shares=position.shares,
             entry_commission=position.entry_commission,
