@@ -67,6 +67,14 @@ class UniverseMarketSyncSummary:
     completed: bool
 
 
+class UniverseMarketSyncError(RuntimeError):
+    def __init__(self, *, stage: str, ticker: str, failure: MarketBatchSyncFailure) -> None:
+        super().__init__(failure.error)
+        self.stage = stage
+        self.ticker = ticker
+        self.failure = failure
+
+
 class UniverseMarketSyncRunner:
     """Runs market synchronization across an entire index universe."""
 
@@ -202,10 +210,23 @@ class UniverseMarketSyncRunner:
         )
 
         if result.failure is not None:
-            raise RuntimeError(f"Failed to synchronize SPY benchmark: {result.failure.error}")
+            raise UniverseMarketSyncError(
+                stage="benchmark",
+                ticker=self.MARKET_BENCHMARK_TICKER,
+                failure=result.failure,
+            )
 
         if result.skipped:
-            raise RuntimeError("SPY benchmark synchronization was skipped")
+            raise UniverseMarketSyncError(
+                stage="benchmark",
+                ticker=self.MARKET_BENCHMARK_TICKER,
+                failure=MarketBatchSyncFailure(
+                    ticker=self.MARKET_BENCHMARK_TICKER,
+                    error="SPY benchmark synchronization returned no market data.",
+                    code="BENCHMARK_DATA_UNAVAILABLE",
+                    provider="Alpaca",
+                ),
+            )
 
     def _load_checkpoint(
         self,

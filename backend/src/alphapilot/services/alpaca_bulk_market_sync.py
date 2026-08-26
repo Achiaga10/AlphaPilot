@@ -10,6 +10,8 @@ from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.database.models.index_constituent import IndexConstituent
 from alphapilot.market.dto.candle import MarketCandle
+from alphapilot.market.providers.errors import MarketDataProviderError
+from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.services.market_batch_sync import (
     MarketBatchSyncFailure,
     MarketBatchSyncResult,
@@ -65,11 +67,13 @@ class AlpacaBulkMarketSyncService:
         universe_repository: UniverseRepository,
         company_service: CompanyLookupService,
         candle_service: CandleUpsertService,
+        session_policy: CompletedDailySessionPolicy | None = None,
     ) -> None:
         self.provider = provider
         self.universe_repository = universe_repository
         self.company_service = company_service
         self.candle_service = candle_service
+        self.session_policy = session_policy or CompletedDailySessionPolicy()
 
     async def sync_ticker(
         self,
@@ -84,59 +88,85 @@ class AlpacaBulkMarketSyncService:
 
         normalized_ticker = ticker.strip().upper()
 
-        company = await self.company_service.get_company(normalized_ticker)
-
-        if company is None:
-            return MarketTickerSyncResult(
-                ticker=normalized_ticker,
-                synced=False,
-                skipped=True,
-                failure=None,
-            )
-
-        try:
-            market_data = await self.provider.get_history_many(
-                tickers=[normalized_ticker],
-                start=start,
-                end=end,
-            )
-        except httpx.HTTPError as exc:
-            return MarketTickerSyncResult(
-                ticker=normalized_ticker,
-                synced=False,
-                skipped=False,
-                failure=MarketBatchSyncFailure(
-                    ticker=normalized_ticker,
-                    error=str(exc),
-                ),
-            )
-
-        market_candles = market_data.get(
-            normalized_ticker,
-            [],
-        )
-
-        if not market_candles:
-            return MarketTickerSyncResult(
-                ticker=normalized_ticker,
-                synced=False,
-                skipped=True,
-                failure=None,
-            )
-
-        candles = self._build_daily_candles(
-            company_id=company.id,
-            market_candles=market_candles,
-        )
-
-        await self.candle_service.upsert_many(candles)
-
+        result = await self.sync_tickers([normalized_ticker], start, end)
+        failure = result.failures[0] if result.failures else None
         return MarketTickerSyncResult(
             ticker=normalized_ticker,
-            synced=True,
-            skipped=False,
-            failure=None,
+            synced=result.synced == 1,
+            skipped=result.skipped == 1,
+            failure=failure,
         )
+
+    async def sync_tickers(
+        self,
+        tickers: list[str],
+        start: date,
+        end: date,
+    ) -> MarketBatchSyncResult:
+        """Synchronize an explicit ticker group with one Alpaca bulk request."""
+        self._validate_date_range(start=start, end=end)
+        normalized = sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()})
+        companies = await self.company_service.list_companies()
+        companies_by_ticker = {company.ticker.strip().upper(): company for company in companies}
+        available = [ticker for ticker in normalized if ticker in companies_by_ticker]
+        skipped = len(normalized) - len(available)
+        if not available:
+            return MarketBatchSyncResult(len(normalized), len(normalized), 0, skipped, (), None)
+        try:
+            market_data = await self.provider.get_history_many(available, start, end)
+        except MarketDataProviderError as exc:
+            failure = exc.failure
+            return MarketBatchSyncResult(
+                len(normalized),
+                len(normalized),
+                0,
+                skipped,
+                tuple(
+                    MarketBatchSyncFailure(
+                        ticker=ticker,
+                        error=failure.message,
+                        code=failure.code,
+                        provider=failure.provider,
+                        feed=failure.feed,
+                    )
+                    for ticker in available
+                ),
+                None,
+            )
+        except httpx.HTTPError:
+            return MarketBatchSyncResult(
+                len(normalized),
+                len(normalized),
+                0,
+                skipped,
+                tuple(
+                    MarketBatchSyncFailure(
+                        ticker=ticker,
+                        error="Alpaca market-data request failed.",
+                        provider="Alpaca",
+                    )
+                    for ticker in available
+                ),
+                None,
+            )
+        candles_to_upsert: list[DailyCandle] = []
+        synced = 0
+        for ticker in available:
+            candles = [
+                candle
+                for candle in market_data.get(ticker, [])
+                if self.session_policy.is_complete(candle.date)
+            ]
+            if not candles:
+                skipped += 1
+                continue
+            candles_to_upsert.extend(
+                self._build_daily_candles(companies_by_ticker[ticker].id, candles)
+            )
+            synced += 1
+        if candles_to_upsert:
+            await self.candle_service.upsert_many(candles_to_upsert)
+        return MarketBatchSyncResult(len(normalized), len(normalized), synced, skipped, (), None)
 
     async def sync_batch(
         self,
@@ -174,78 +204,16 @@ class AlpacaBulkMarketSyncService:
                 next_offset=None,
             )
 
-        companies = await self.company_service.list_companies()
-
-        companies_by_ticker = {company.ticker.strip().upper(): company for company in companies}
-
         batch_tickers = [constituent.ticker.strip().upper() for constituent in batch]
-
-        available_tickers = [ticker for ticker in batch_tickers if ticker in companies_by_ticker]
-
-        skipped = len(batch_tickers) - len(available_tickers)
-
-        failures: list[MarketBatchSyncFailure] = []
-
-        synced = 0
-
-        if available_tickers:
-            try:
-                market_data = await self.provider.get_history_many(
-                    tickers=available_tickers,
-                    start=start,
-                    end=end,
-                )
-            except httpx.HTTPError as exc:
-                failures.extend(
-                    MarketBatchSyncFailure(
-                        ticker=ticker,
-                        error=str(exc),
-                    )
-                    for ticker in available_tickers
-                )
-
-                return self._build_batch_result(
-                    total_active=total_active,
-                    batch_size=len(batch),
-                    offset=offset,
-                    synced=0,
-                    skipped=skipped,
-                    failures=failures,
-                )
-
-            candles_to_upsert: list[DailyCandle] = []
-
-            for ticker in available_tickers:
-                company = companies_by_ticker[ticker]
-
-                market_candles = market_data.get(
-                    ticker,
-                    [],
-                )
-
-                if not market_candles:
-                    skipped += 1
-                    continue
-
-                candles_to_upsert.extend(
-                    self._build_daily_candles(
-                        company_id=company.id,
-                        market_candles=market_candles,
-                    )
-                )
-
-                synced += 1
-
-            if candles_to_upsert:
-                await self.candle_service.upsert_many(candles_to_upsert)
+        explicit = await self.sync_tickers(batch_tickers, start, end)
 
         return self._build_batch_result(
             total_active=total_active,
             batch_size=len(batch),
             offset=offset,
-            synced=synced,
-            skipped=skipped,
-            failures=failures,
+            synced=explicit.synced,
+            skipped=explicit.skipped,
+            failures=list(explicit.failures),
         )
 
     @staticmethod

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -10,6 +10,7 @@ from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.market.dto.candle import MarketCandle
 from alphapilot.market.providers.base import MarketProvider
+from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.services.company import CompanyService
@@ -117,3 +118,41 @@ async def test_market_sync_inserts_candles(
     assert candles[1].low == Decimal("102.00")
     assert candles[1].close == Decimal("107.00")
     assert candles[1].volume == 120000
+
+
+@pytest.mark.asyncio
+async def test_market_sync_does_not_insert_current_open_session_bar(
+    db_session: AsyncSession,
+) -> None:
+    ticker = f"T{uuid4().hex[:8].upper()}"
+    company = Company(id=uuid4(), ticker=ticker, name="Test", exchange="NASDAQ", is_active=True)
+    db_session.add(company)
+    await db_session.commit()
+
+    class CurrentDayProvider(FakeMarketProvider):
+        async def get_history(self, ticker: str, start: date, end: date) -> list[MarketCandle]:
+            del ticker, start, end
+            return [
+                MarketCandle(
+                    date=date(2026, 8, 26),
+                    open=Decimal("100"),
+                    high=Decimal("101"),
+                    low=Decimal("99"),
+                    close=Decimal("100.5"),
+                    volume=10,
+                )
+            ]
+
+    policy = CompletedDailySessionPolicy(
+        now_provider=lambda: datetime(2026, 8, 26, 18, 0, tzinfo=UTC)
+    )
+    repository = DailyCandleRepository(db_session, policy)
+    service = MarketSyncService(
+        provider=CurrentDayProvider(),
+        company_service=CompanyService(CompanyRepository(db_session)),
+        candle_service=DailyCandleService(repository),
+        session_policy=policy,
+    )
+
+    assert await service.sync_company(ticker, date(2026, 8, 26), date(2026, 8, 26)) is False
+    assert await repository.get_latest(company.id) is None

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
+from alphapilot.portfolio.exit_guidance import StrategyExitContext
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.portfolio.sizing import (
     AtrRiskPositionSizer,
@@ -54,6 +55,7 @@ class PortfolioCandidate:
     atr: Decimal | None = None
     sector: str | None = None
     pre_decision_reason: PortfolioDecisionReason | None = None
+    exit_context: StrategyExitContext | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -77,6 +79,13 @@ class PortfolioDecision:
     current_shares: int
     estimated_proceeds: Decimal | None
     normalized_sizing_weight: Decimal | None = None
+    estimated_cash_outlay: Decimal | None = None
+    cash_after_decision: Decimal | None = None
+    modeled_stop_reference_price: Decimal | None = None
+    action_id: str | None = None
+    application_order: int | None = None
+    depends_on_action_ids: tuple[str, ...] = ()
+    exit_context: StrategyExitContext | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -220,6 +229,7 @@ class PortfolioDecisionEngine:
                     current_shares=0,
                     estimated_proceeds=None,
                     normalized_sizing_weight=sizing.normalized_sizing_weight,
+                    exit_context=candidate.exit_context,
                 )
             )
             if approved:
@@ -251,7 +261,7 @@ class PortfolioDecisionEngine:
                 Decimal("0"),
             ),
             open_positions=len(state.positions),
-            decisions=tuple(decisions),
+            decisions=self._workflow_decisions(state, tuple(decisions)),
         )
 
     def _build_volatility_plan(
@@ -398,6 +408,7 @@ class PortfolioDecisionEngine:
             current_shares=0,
             estimated_proceeds=None,
             normalized_sizing_weight=sizing.normalized_sizing_weight,
+            exit_context=candidate.exit_context,
         )
 
     @staticmethod
@@ -416,8 +427,56 @@ class PortfolioDecisionEngine:
             current_portfolio_risk=current_risk,
             available_portfolio_risk=max(risk_limit - current_risk, Decimal("0")),
             open_positions=len(state.positions),
-            decisions=decisions,
+            decisions=PortfolioDecisionEngine._workflow_decisions(state, decisions),
         )
+
+    @staticmethod
+    def _workflow_decisions(
+        state: CurrentPortfolioState,
+        decisions: tuple[PortfolioDecision, ...],
+    ) -> tuple[PortfolioDecision, ...]:
+        """Add exact research-draft action values without synthetic rank dependencies."""
+        enriched: list[PortfolioDecision] = []
+        cash = state.cash
+        action_order = 0
+        for decision in decisions:
+            outlay: Decimal | None = None
+            cash_after: Decimal | None = None
+            stop_reference: Decimal | None = None
+            if decision.decision == PortfolioDecisionType.BUY and decision.proposed_shares > 0:
+                action_order += 1
+                outlay = decision.target_allocation_dollars
+                candidate_cash = cash - outlay
+                cash_after = candidate_cash if candidate_cash >= 0 else None
+                if cash_after is not None:
+                    cash = cash_after
+                if decision.stop_distance is not None:
+                    candidate_stop = decision.reference_price - decision.stop_distance
+                    stop_reference = candidate_stop if candidate_stop > 0 else None
+            elif (
+                decision.decision == PortfolioDecisionType.SELL
+                and decision.estimated_proceeds is not None
+            ):
+                action_order += 1
+                cash += decision.estimated_proceeds
+                cash_after = cash
+            action_id = (
+                f"{action_order}:{decision.decision.value}:{decision.ticker}"
+                if action_order > 0 and (outlay is not None or cash_after is not None)
+                else None
+            )
+            enriched.append(
+                replace(
+                    decision,
+                    estimated_cash_outlay=outlay,
+                    cash_after_decision=cash_after,
+                    modeled_stop_reference_price=stop_reference,
+                    action_id=action_id,
+                    application_order=action_order if action_id is not None else None,
+                    depends_on_action_ids=(),
+                )
+            )
+        return tuple(enriched)
 
     @staticmethod
     def _sector(value: str | None) -> str:
@@ -471,4 +530,5 @@ class PortfolioDecisionEngine:
             current_shares=(held.shares if held else 0),
             estimated_proceeds=None,
             normalized_sizing_weight=None,
+            exit_context=candidate.exit_context,
         )

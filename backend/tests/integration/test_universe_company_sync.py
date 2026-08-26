@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from alphapilot.database.models.company import Company
 from alphapilot.market.dto import IndexConstituentData
 from alphapilot.market.providers.base import (
     IndexConstituentDetailsProvider,
@@ -72,3 +73,29 @@ async def test_universe_company_sync_creates_missing_companies(
     )
 
     assert second_run == 0
+
+
+@pytest.mark.asyncio
+async def test_universe_company_sync_refreshes_existing_metadata(
+    db_session: AsyncSession,
+) -> None:
+    company_service = CompanyService(CompanyRepository(db_session))
+    existing = await company_service.create(
+        Company(
+            ticker="AAPL",
+            name="Old Name",
+            exchange="NYSE",
+            sector="Old Sector",
+            industry="Old Industry",
+            is_active=False,
+        )
+    )
+    service = UniverseCompanySyncService(FakeDetailsProvider(), company_service)
+    assert await service.sync_companies("^GSPC") == 1
+    refreshed = await company_service.get_company("AAPL")
+    assert refreshed is not None
+    assert refreshed.id == existing.id
+    assert refreshed.name == "Apple Inc."
+    assert refreshed.exchange == "NASDAQ"
+    assert refreshed.sector == "Information Technology"
+    assert refreshed.is_active is True

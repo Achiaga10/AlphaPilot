@@ -2,6 +2,7 @@ from alphapilot.database.models.company import Company
 from alphapilot.market.providers.base import (
     IndexConstituentDetailsProvider,
 )
+from alphapilot.schemas.company import CompanyUpdate
 from alphapilot.services.company import CompanyService
 
 
@@ -35,6 +36,16 @@ class UniverseCompanySyncService:
             )
 
             if existing is not None:
+                await self.company_service.update_company(
+                    existing.id,
+                    CompanyUpdate(
+                        name=item.name,
+                        exchange=item.exchange,
+                        sector=item.sector,
+                        industry=item.industry,
+                        is_active=True,
+                    ),
+                )
                 continue
 
             company = Company(

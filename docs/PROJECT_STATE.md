@@ -2,18 +2,24 @@
 
 ## Current Phase
 
-Sprint 10B — Risk Model Hardening & Decision Orchestration (COMPLETE locally)
+Sprint 11D — Data Readiness, Sync UX & Portfolio Visualization (COMPLETE LOCALLY)
 
 Current development branch:
-feature/portfolio-risk-decision-api (Sprint 10 remains local and uncommitted)
+feature/ui-mvp
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
-Sprints 7 through 9 are complete and merged. Sprint 10 is complete and reviewed;
-its local changes are the foundation for Sprint 10B. Sprint 10B implementation,
-checks, orchestration/API validation, and the frozen 12-run experiment are
-complete locally and await user review/Git operations. Sprint 11 is NOT STARTED.
-See `docs/SPRINT10B_PLAN.md` and `docs/SPRINT10B_COMPLETION_REPORT.md`.
+Sprints 7 through 10B are complete, reviewed, and merged. Sprint 11's first
+React/TypeScript UI and Sprint 11B product hardening remain complete locally.
+Sprint 11C is complete locally with portfolio actions, custom ticker management,
+split synchronization, explicit Alpaca feed behavior, and explainability.
+Further real-browser review opened and completed Sprint 11D on the same
+uncommitted `feature/ui-mvp` working tree, adding readiness semantics, sync
+progress, portfolio visualization, safe same-plan multi-apply, and manual sale
+bookkeeping. The final Part AB hardening also quarantines incomplete current-day
+Alpaca daily bars throughout persistence, repository reads, orchestration,
+latest-price, and admin-freshness paths. See
+`docs/SPRINT11D_COMPLETION_REPORT.md`.
 
 ## Project Goal
 
@@ -91,12 +97,41 @@ Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution
 DONE / merged
 
 Sprint 10 — Portfolio Risk, Position Sizing & Decision API
-COMPLETE / reviewed (changes remain local in the current working tree)
+COMPLETE / merged
 
 Sprint 10B — Risk Model Hardening & Decision Orchestration
-COMPLETE locally / awaiting user review and Git operations
+COMPLETE / merged
 
 Sprint 11 — UI MVP
+COMPLETE locally / awaiting user review and Git operations
+
+Sprint 11B — UI Product Hardening & Admin Data Operations
+COMPLETE locally / awaiting user review and Git operations
+
+Sprint 11C — Portfolio Actions, Ticker Management & UI Explainability
+COMPLETE locally / awaiting user review and Git operations
+
+Sprint 11D — Data Readiness, Sync UX & Portfolio Visualization
+COMPLETE locally / awaiting user review and Git operations
+
+Post-completion manual-review hardening is also complete locally: BUY candidate
+rank is advisory rather than forced order; user-selected whole-share quantities
+receive backend preview and current-draft constraint validation; frozen EMA20
+HYBRID/Micho exit guidance is backend-owned; Equal-slot risk metrics use explicit
+not-applicable semantics; and proposed sector weights no longer display false
+zero values. Sprint 12 remains not started.
+
+The critical Part AA single-stock identity blocker is fixed locally. Evaluate
+Stock no longer assumes the first portfolio-plan status is the requested ticker.
+The response carries an explicit normalized evaluation target and authoritative
+Company ID; React matches the submitted ticker explicitly, keeps the evaluated
+snapshot separate from editable input, and rejects mismatched responses instead
+of rendering another holding. Latest-request-wins protection prevents an older
+response from replacing a newer evaluation. Real stored-data acceptance passed
+with LDOS held: SBET rendered Sharplink Inc, then AAPL replaced SBET only after
+an explicit second evaluation.
+
+Sprint 12
 NOT STARTED
 
 ## Sprint 7 Portfolio Infrastructure
@@ -535,79 +570,48 @@ Its main purpose was to verify:
 - reports are reproducible
 - original BOTH behavior remains available
 
-## CURRENT TASK — FINAL SPRINT 6 EXPERIMENT
+## Sprint 11C Completion
 
-Run full-universe validation for all three modes.
+Sprint 11 and Sprint 11B remain preserved locally. Sprint 11C completed:
 
-Period:
-2025-01-01 -> 2026-08-20
+- preserve backend ownership of strategy, signal, RS20, ATR14, ranking, sizing,
+  risk constraints, and portfolio decisions;
+- use the exact user-provided AlphaPilot PNG through Vite without modification;
+- make decision priority, all-evaluated A-Z ordering, counts, filters, data
+  status, and single-stock evaluation explicit;
+- mark displayed plan results stale whenever plan-affecting form state changes;
+- expose research-admin freshness and sync operations only behind the safe
+  disabled-by-default `ADMIN_TOOLS_ENABLED` gate;
+- reuse existing data/provider/service boundaries and never fabricate arbitrary
+  company metadata; and
+- fix tooltip clipping with a viewport-aware accessible popover;
+- distinguish approved SELL decisions from SELL signals;
+- apply one backend-approved BUY/SELL at a time to research draft state, then
+  require regeneration;
+- keep S&P membership separate from custom tracked companies and never delete
+  historical candles during deactivation;
+- split universe and candle synchronization while retaining safe typed jobs;
+- remove hardcoded Alpaca SIP, expose the configured IEX/SIP feed, never fall
+  back silently, and report benchmark/feed failures safely; and
+- keep Sprint 12 not started.
 
-Universe:
-current active S&P 500 constituents
+The detailed frozen protocol is in `docs/SPRINT11C_PLAN.md`; final evidence is
+in `docs/SPRINT11C_COMPLETION_REPORT.md`. All work remains local on
+`feature/ui-mvp`. Sprint 12 is not started.
 
-Expected approximately:
-502 tickers
+## Sprint 11D Complete Locally
 
-Same assumptions for every mode.
-
-Command 1 — BOTH
-
-From backend/:
-
-uv run alphapilot-backtest-strategy-universe `
-    --strategy micho-150 `
-    --micho-entry-mode both `
-    --start 2025-01-01 `
-    --end 2026-08-20 `
-    --output-dir backtest_reports/micho_entry_modes_validation
-
-Command 2 — BREAKOUT ONLY
-
-uv run alphapilot-backtest-strategy-universe `
-    --strategy micho-150 `
-    --micho-entry-mode breakout-only `
-    --start 2025-01-01 `
-    --end 2026-08-20 `
-    --output-dir backtest_reports/micho_entry_modes_validation
-
-Command 3 — BOUNCE ONLY
-
-uv run alphapilot-backtest-strategy-universe `
-    --strategy micho-150 `
-    --micho-entry-mode bounce-only `
-    --start 2025-01-01 `
-    --end 2026-08-20 `
-    --output-dir backtest_reports/micho_entry_modes_validation
-
-Expected output names:
-- strategy_universe_micho_150_both_...
-- strategy_universe_micho_150_breakout_only_...
-- strategy_universe_micho_150_bounce_only_...
-
-## Sprint 6 Completion Condition
-
-After all three full-universe runs:
-
-1. Verify all three reports.
-2. Compare results.
-3. Run final project checks.
-4. Create:
-
-docs/SPRINT6_COMPLETION_REPORT.md
-
-The report must clearly explain:
-- what was done
-- exact results
-- bottom-line conclusion
-- limitations
-- Git state
-- recommended commit message
-- recommended Sprint 7 direction
-
-Do NOT start Sprint 7.
-
-Do NOT Git Push.
-
-The user will return the completion report to ChatGPT.
-
-After review, Sprint 7 will begin.
+Sprint 11D preserves every prior Sprint 11 deliverable and added backend-owned
+plan readiness/coverage, explicit SPY-session freshness, contextual zero-BUY
+recovery, a reactive backend-valued portfolio allocation donut, accessible
+Admin progress, backend-validated ordered same-plan action application, and
+typed partial/full manual sale bookkeeping. It does not weaken freshness,
+change research rules, execute broker orders, or begin Sprint 12. Full frontend
+and backend gates pass, controlled browser acceptance passes, and real stored
+data produced 501 normally evaluated current-universe tickers plus one
+insufficient-history ticker, 61 BUY signals, and 10 approved BUYs.
+The final review addendum removed synthetic rank dependencies, added backend
+quantity preview/override semantics and hard-constraint revalidation, exposed
+stored-date strategy exit context for BUY/HOLD/SELL decisions, and corrected
+Equal-slot sector/not-applicable display semantics without changing any strategy
+or sizing formula.

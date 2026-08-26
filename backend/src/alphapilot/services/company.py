@@ -30,6 +30,9 @@ class CompanyService(BaseService[CompanyRepository]):
     ) -> list[Company]:
         return await self.repository.list()
 
+    async def list_custom_tracked(self, *, active_only: bool = True) -> list[Company]:
+        return await self.repository.list_custom_tracked(active_only=active_only)
+
     async def update_company(
         self,
         company_id: UUID,

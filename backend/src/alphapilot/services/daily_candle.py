@@ -4,6 +4,7 @@ from uuid import UUID
 
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.repositories.daily_candle import DailyCandleRepository
+from alphapilot.services.company import CompanyService
 
 
 class DailyCandleService:
@@ -23,6 +24,8 @@ class DailyCandleService:
         close: Decimal,
         volume: int,
     ) -> DailyCandle:
+        if not self.repository.session_policy.is_complete(trading_day):
+            raise ValueError("Daily candle does not represent a completed market session")
         candle = DailyCandle(
             company_id=company_id,
             trading_day=trading_day,
@@ -52,3 +55,22 @@ class DailyCandleService:
         candles: list[DailyCandle],
     ) -> None:
         await self.repository.upsert_many(candles)
+
+
+class LatestStoredPriceService:
+    def __init__(
+        self,
+        company_service: CompanyService,
+        candle_repository: DailyCandleRepository,
+    ) -> None:
+        self.company_service = company_service
+        self.candle_repository = candle_repository
+
+    async def get_latest_stored_price(self, ticker: str) -> tuple[Decimal, date] | None:
+        company = await self.company_service.get_company(ticker.strip().upper())
+        if company is None:
+            return None
+        candle = await self.candle_repository.get_latest(company.id)
+        if candle is None:
+            return None
+        return candle.close, candle.trading_day

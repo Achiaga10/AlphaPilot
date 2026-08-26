@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.database.models.daily_candle import DailyCandle
+from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.repositories.base import BaseRepository
 
 
@@ -15,11 +16,13 @@ class DailyCandleRepository(BaseRepository[DailyCandle]):
     def __init__(
         self,
         session: AsyncSession,
+        session_policy: CompletedDailySessionPolicy | None = None,
     ) -> None:
         super().__init__(
             session,
             DailyCandle,
         )
+        self.session_policy = session_policy or CompletedDailySessionPolicy()
 
     async def get_history(
         self,
@@ -33,16 +36,32 @@ class DailyCandleRepository(BaseRepository[DailyCandle]):
                 DailyCandle.company_id == company_id,
                 DailyCandle.trading_day >= start,
                 DailyCandle.trading_day <= end,
+                DailyCandle.trading_day <= self.session_policy.completed_through(),
             )
             .order_by(DailyCandle.trading_day),
         )
 
         return list(result.scalars().all())
 
+    async def get_latest(self, company_id: UUID) -> DailyCandle | None:
+        result = await self.session.execute(
+            select(DailyCandle)
+            .where(
+                DailyCandle.company_id == company_id,
+                DailyCandle.trading_day <= self.session_policy.completed_through(),
+            )
+            .order_by(DailyCandle.trading_day.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def upsert_many(
         self,
         candles: list[DailyCandle],
     ) -> None:
+        candles = [
+            candle for candle in candles if self.session_policy.is_complete(candle.trading_day)
+        ]
         if not candles:
             return
 

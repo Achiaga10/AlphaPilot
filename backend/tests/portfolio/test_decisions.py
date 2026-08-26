@@ -56,6 +56,14 @@ def test_plan_respects_sell_ranking_held_sector_and_risk_constraints() -> None:
     assert decisions["TECH"].reason == PortfolioDecisionReason.SECTOR_LIMIT
     assert decisions["NEW"].decision == PortfolioDecisionType.BUY
     assert decisions["NEW"].proposed_shares == 100
+    assert decisions["NEW"].estimated_cash_outlay == Decimal("10000")
+    assert decisions["NEW"].cash_after_decision == Decimal("60000")
+    assert decisions["SELL"].application_order == 1
+    assert decisions["NEW"].application_order == 2
+    assert decisions["NEW"].depends_on_action_ids == ()
+    assert decisions["NEW"].modeled_stop_reference_price == Decimal("90")
+    assert decisions["SELL"].estimated_proceeds == Decimal("40000")
+    assert decisions["SELL"].cash_after_decision == Decimal("70000")
     assert plan.equity == Decimal("100000")
     assert plan.current_portfolio_risk == Decimal("7000")
     assert plan.available_portfolio_risk == Decimal("1000")
@@ -102,3 +110,22 @@ def test_volatility_normalized_plan_allocates_candidate_group() -> None:
     assert [item.ticker for item in plan.decisions] == ["LOW", "HIGH"]
     assert all(item.decision == PortfolioDecisionType.BUY for item in plan.decisions)
     assert all(item.target_weight_pct <= Decimal("10") for item in plan.decisions)
+
+
+def test_equal_slot_reports_actual_sector_weights_without_changing_share_formula() -> None:
+    state = CurrentPortfolioState(
+        cash=Decimal("90000"),
+        positions=(PortfolioStatePosition("HELD", 100, Decimal("100"), sector="Technology"),),
+    )
+    decision = (
+        PortfolioDecisionEngine()
+        .build_plan(
+            state,
+            (PortfolioCandidate("NEW", Signal.BUY, Decimal("100"), sector="Technology"),),
+            sizing_policy=SizingPolicyName.EQUAL_SLOT,
+        )
+        .decisions[0]
+    )
+    assert decision.proposed_shares == 100
+    assert decision.sector_weight_before_pct == Decimal("10.0")
+    assert decision.sector_weight_after_pct == Decimal("20.0")

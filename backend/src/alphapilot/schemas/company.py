@@ -14,6 +14,7 @@ class CompanyCreate(BaseModel):
     industry: str | None = None
     market_cap: Decimal | None = None
     is_active: bool = True
+    is_custom_tracked: bool = False
 
 
 class CompanyResponse(BaseModel):
@@ -27,6 +28,7 @@ class CompanyResponse(BaseModel):
     industry: str | None
     market_cap: Decimal | None
     is_active: bool
+    is_custom_tracked: bool
 
 
 class CompanyUpdate(BaseModel):
@@ -36,3 +38,4 @@ class CompanyUpdate(BaseModel):
     industry: str | None = None
     market_cap: Decimal | None = None
     is_active: bool | None = None
+    is_custom_tracked: bool | None = None

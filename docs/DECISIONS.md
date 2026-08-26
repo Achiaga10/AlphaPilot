@@ -14,8 +14,20 @@ Sprint 9 — Ranking Robustness, Transaction Costs & Return Attribution — is c
 
 Sprint 10 — Portfolio Risk, Position Sizing & Decision API — is complete and reviewed.
 
-Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete locally
-and awaiting user review/Git operations. Sprint 11 is not started.
+Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete and merged.
+
+Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete locally on the
+same uncommitted `feature/ui-mvp` working tree. Sprint 12 is not started.
+
+Daily-candle research decisions use completed U.S. market sessions only. The
+backend's `CompletedDailySessionPolicy` uses `America/New_York` and a
+conservative 16:15 completion boundary. Before that boundary, today's daily bar
+is in progress and is excluded from provider persistence and every normal
+research/latest/admin read. Stored SPY dates provide the actual session calendar
+for weekends and holidays. Existing partial rows are quarantined, not deleted;
+the normal `(company_id, trading_day)` upsert replaces a row with final OHLCV
+after completion. Frontends must display backend-provided completed-session
+dates and must not infer market completion from browser time.
 
 Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not optimize the 20-bar lookback, strategy parameters, portfolio constraints, or use validation to retune the formula.
 
@@ -86,6 +98,152 @@ Sprint 8 compares the non-alpha alphabetical control with fixed RS20. Do not opt
   stored-data strategy evaluation, RS20, ATR14, sectors, risk constraints, and
   reason codes are backend-owned. Broker state and authenticated persistence
   remain future backend adapters.
+
+## 0.7 Sprint 11 UI Decisions
+
+- The frontend is presentation-only. EMA/SMA rules, strategy signals, RS20,
+  ATR14, stop/risk calculations, sizing, constraints, and portfolio decisions
+  remain exclusively backend-owned.
+- The normal UI workflow consumes high-level `POST /api/v1/portfolio/plan`;
+  users never supply ATR, RS20, sector, risk distance, or strategy signals.
+- Required routes are Dashboard, Portfolio Plan, and Settings/Research
+  Configuration. Company detail and backtest explorer are deferred unless the
+  existing API supports them without expanding scope.
+- React, strict TypeScript, Vite, React Router, TanStack Query, and project-owned
+  styling form the UI stack. Server requests go through one typed API layer.
+- Research policy classifications are strategy-specific and none may be labeled
+  production-ready. UI language must describe advisory research decisions, not
+  live trading or submitted orders.
+- Current portfolio input remains client-supplied because no broker sync or
+  authenticated persistence exists. Local form state is not a live account.
+- Small backend presentation-contract additions and configurable local CORS are
+  allowed; backend research/strategy architecture must not be redesigned.
+- Sprint 11 completed with Dashboard, Portfolio Plan, and Research Settings;
+  frontend lint, 17 tests, production build, 142 backend tests, and the real
+  stored-data browser smoke all passed.
+- The backend response now owns display-ready current-position values and marks
+  whether existing-position modeled risk is complete. Missing frozen entry-risk
+  facts are disclosed, never fabricated.
+- The largest remaining product/backend limitation is manually supplied current
+  portfolio state: there is no broker/account adapter, authenticated persistence,
+  or original entry-risk recovery for manually entered holdings.
+
+## 0.8 Sprint 11B Hardening Decisions
+
+- Sprint 11B continues Sprint 11 before commit/merge and does not authorize
+  Sprint 12 or frontend financial-domain calculations.
+- The exact user-provided `frontend/src/assets/images/alphapilot-logo.png` is the
+  primary application brand asset and must remain byte-for-byte unchanged.
+- Approved BUY results preserve backend priority order. Full universe evaluation
+  defaults to visibly disclosed ticker A-Z order, which is not recommendation
+  priority.
+- The high-level plan endpoint remains the single-stock evaluation engine; React
+  does not compute strategy, RS20, ATR, ranking, sizing, or decisions.
+- A successful plan records its input snapshot. Any later plan-affecting input
+  change makes the visible result explicitly stale until regeneration succeeds.
+- Research-admin operations are gated by `ADMIN_TOOLS_ENABLED`, disabled by
+  default. This is a feature gate, not authentication or authorization.
+- Sync endpoints reuse existing provider/service/repository abstractions,
+  prevent duplicate full-sync jobs within the process, and return safe typed
+  status without credentials or raw tracebacks.
+- Existing services can sync stored companies but cannot reliably discover
+  arbitrary custom-ticker metadata. Unknown tickers therefore remain explicit
+  `COMPANY_NOT_FOUND`; Sprint 11B must not fabricate company records.
+- Full-sync job state is process-local research infrastructure, not a durable or
+  distributed production queue.
+- Existing-position reference price remains required because the portfolio-state
+  contract needs it before orchestration and automatic repricing would not
+  recover frozen entry-risk facts.
+- Sprint 11B completed locally with the official PNG unchanged, all frontend and
+  backend quality gates green, and a successful real stored-data browser smoke.
+- Approved BUYs are the default opportunity view when present; all evaluated
+  stocks remain searchable and paginated in explicitly disclosed ticker A-Z
+  order.
+- The research-admin workflow is ready for deliberately enabled local research
+  use, but its feature flag is not an authentication boundary and full-sync job
+  state remains process-local.
+
+## 0.9 Sprint 11C Decisions
+
+- Research portfolio actions mutate browser draft state only and never send a
+  broker order. One exact backend-approved BUY or SELL may be applied from a
+  clean plan; the plan then becomes stale and no second action is allowed before
+  regeneration.
+- React must use backend-provided shares and cash impact. It must not reproduce
+  allocation, slippage, cost, sizing, stop, or risk formulas.
+- Approved Sells means `decision == SELL`; Sell Signals means `signal == SELL`.
+  These concepts may overlap but must never be conflated.
+- Custom research tracking is independent of current S&P 500 membership. Use an
+  explicit persisted tracking flag; deactivation preserves Company, candles,
+  membership, and historical referential integrity.
+- Metadata discovery uses a configured provider abstraction. Unknown/invalid
+  symbols are rejected before persistence; optional sector/industry may remain
+  unavailable and are never fabricated.
+- `ALPACA_DATA_FEED` must be explicitly validated as `iex` or `sip`. Historical
+  requests use exactly that feed and never silently fall back. Feed entitlement
+  failure is safe, typed, and identifies benchmark stage when SPY fails.
+- DailyCandle rows do not currently retain per-row Alpaca feed provenance. This
+  limitation is disclosed; each admin job records its configured provider/feed.
+- S&P universe refresh and market-candle refresh are separate job operations.
+  Full sync may compose them. Process-local job state remains a documented
+  research limitation.
+- The 2×ATR14 stop distance and derived stop reference are research sizing
+  proxies only, not executable or validated stop-loss instructions.
+- Sprint 11C completed locally with all backend/frontend gates green. Real local
+  validation used configured Alpaca IEX successfully; an explicit SIP request
+  returned `MARKET_DATA_FEED_NOT_AUTHORIZED` and did not retry another feed.
+- Real SBET acceptance created one custom-tracked Company outside S&P membership,
+  synchronized 276 stored candles, supported EMA and Micho evaluation, and
+  preserved all candles through deactivate/reactivate. SBET remains actively
+  custom tracked after the acceptance cycle.
+- Sprint 12 remains not started pending user review and Git publication of the
+  combined Sprint 11/11B/11C working tree.
+
+## 0.10 Sprint 11D Decisions
+
+- Sprint 11D overrides Sprint 11C's one-action-then-stale rule: approved actions
+  from one active plan may be selected in any user-chosen order while each
+  remains valid. Candidate rank is advisory recommendation priority; it is not
+  an execution dependency. Manual/configuration changes still invalidate the
+  plan.
+- Freshness is defined against the newest stored SPY trading session on or
+  before the requested date, never raw calendar-day age. A stock must have a
+  candle on that exact benchmark session to be eligible.
+- Stale/no-data tickers remain excluded; missing sessions are never fabricated,
+  forward-filled, or bypassed.
+- Plan readiness and coverage counts are backend-owned and must distinguish a
+  fully evaluated zero-opportunity result from partial/all-unusable data.
+- Portfolio allocation values/weights come from a typed backend draft summary;
+  React owns only SVG geometry and presentation.
+- Each same-plan action is backend-previewed and revalidated against current
+  draft cash, positions, duplicate holdings, whole shares, max position count,
+  max position/sector weight, and policy-applicable reserve/modeled-risk limits.
+  Duplicate application is rejected deterministically.
+- A requested BUY quantity equal to the recommendation is a `SAME_PLAN_ACTION`;
+  another whole-share quantity is a `USER_QUANTITY_OVERRIDE` and makes the draft
+  `DEVIATED_FROM_PLAN` without hiding remaining recommendations. No quantity is
+  silently clamped.
+- Strategy exit guidance is backend-owned and exposes the actual frozen EMA20
+  HYBRID 2% or Micho close-below-SMA150 semantics as of stored daily data. No
+  fixed take-profit target exists. The 2×ATR14 reference is research-only, not
+  an active stop.
+- Equal-slot's sizing formula remains unchanged. Risk-only metrics are not
+  represented as zero risk in the UI, and sector before/after uses actual
+  current/proposed sector market value.
+- Manual partial/full sales are backend-owned bookkeeping using a stored
+  DailyCandle close/date or explicit user override. They never submit a broker
+  order and always invalidate existing analysis.
+- Admin progress uses meaningful totals/stages only; no time-based fake
+  percentage is allowed. Job state remains process-local.
+- Sprint 11D changes no EMA, Micho, RS20, ATR, sizing, ranking, risk, backtest,
+  or T+1 execution rule and does not start Sprint 12.
+- Single-stock evaluation identity is an explicit invariant: normalized requested
+  ticker must equal the backend evaluation target and the rendered candidate
+  ticker. Held positions may remain in the plan for portfolio context, but array
+  order never selects the evaluation target. A missing/mismatched target renders
+  a safe error, never another company. Candidate status includes authoritative
+  Company ID where a Company exists, and only the latest active evaluation
+  request may update the displayed snapshot.
 
 ## 0.1 Sprint 7 Portfolio Baseline Decisions
 

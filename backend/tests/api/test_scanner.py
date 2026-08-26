@@ -13,6 +13,20 @@ from alphapilot.repositories.index_constituent import (
 )
 from alphapilot.scanner.scanner import Scanner
 
+SCANNER_FIXTURE_END_DATE = date(2025, 6, 30)
+
+
+def freeze_scanner_today(
+    monkeypatch: pytest.MonkeyPatch,
+    value: date,
+) -> None:
+    class FixedDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return value
+
+    monkeypatch.setattr("alphapilot.scanner.scanner.date", FixedDate)
+
 
 def create_candle(
     company_id: UUID,
@@ -40,6 +54,7 @@ async def seed_market_and_stock(
     stock_ticker: str,
     *,
     pullback: bool,
+    end_date: date,
 ) -> None:
     benchmark_company = Company(
         id=uuid4(),
@@ -70,9 +85,7 @@ async def seed_market_and_stock(
 
     await db_session.commit()
 
-    today = date.today()
-
-    benchmark_start = today - timedelta(days=219)
+    benchmark_start = end_date - timedelta(days=219)
 
     benchmark_candles = [
         create_candle(
@@ -87,7 +100,7 @@ async def seed_market_and_stock(
     benchmark_candles[-1].high = Decimal("352.00")
     benchmark_candles[-1].low = Decimal("348.00")
 
-    stock_start = today - timedelta(days=59)
+    stock_start = end_date - timedelta(days=59)
 
     stock_candles = [
         create_candle(
@@ -123,12 +136,14 @@ async def test_scanner_returns_buy_signal(
         "MARKET_BENCHMARK_TICKER",
         benchmark_ticker,
     )
+    freeze_scanner_today(monkeypatch, SCANNER_FIXTURE_END_DATE)
 
     await seed_market_and_stock(
         db_session,
         benchmark_ticker,
         stock_ticker,
         pullback=True,
+        end_date=SCANNER_FIXTURE_END_DATE,
     )
 
     universe_repository = IndexConstituentRepository(
@@ -188,12 +203,14 @@ async def test_scanner_evaluate_returns_hold_reason(
         "MARKET_BENCHMARK_TICKER",
         benchmark_ticker,
     )
+    freeze_scanner_today(monkeypatch, SCANNER_FIXTURE_END_DATE)
 
     await seed_market_and_stock(
         db_session,
         benchmark_ticker,
         stock_ticker,
         pullback=False,
+        end_date=SCANNER_FIXTURE_END_DATE,
     )
 
     # Intentionally do NOT add stock_ticker

@@ -83,3 +83,13 @@ class IndexConstituentRepository(
         return await self.list_active(
             normalized_index_symbol,
         )
+
+    async def is_active_member(self, index_symbol: str, ticker: str) -> bool:
+        result = await self.session.execute(
+            select(IndexConstituent.id).where(
+                IndexConstituent.index_symbol == index_symbol.strip().upper(),
+                IndexConstituent.ticker == ticker.strip().upper(),
+                IndexConstituent.is_active.is_(True),
+            )
+        )
+        return result.scalar_one_or_none() is not None
