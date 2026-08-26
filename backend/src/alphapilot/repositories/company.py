@@ -36,3 +36,10 @@ class CompanyRepository(BaseRepository[Company]):
         await self.session.refresh(company)
 
         return company
+
+    async def list_custom_tracked(self, *, active_only: bool = True) -> list[Company]:
+        statement = select(Company).where(Company.is_custom_tracked.is_(True))
+        if active_only:
+            statement = statement.where(Company.is_active.is_(True))
+        result = await self.session.execute(statement.order_by(Company.ticker))
+        return list(result.scalars().all())

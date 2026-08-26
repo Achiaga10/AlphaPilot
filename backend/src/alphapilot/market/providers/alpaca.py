@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any, cast
 
 import httpx
@@ -9,12 +10,27 @@ import httpx
 from alphapilot.core.config import settings
 from alphapilot.market.dto import MarketCandle
 from alphapilot.market.providers.base import MarketProvider
+from alphapilot.market.providers.errors import (
+    MarketDataFeedNotAuthorizedError,
+    MarketDataProviderFailure,
+)
+
+
+class AlpacaDataFeed(StrEnum):
+    IEX = "iex"
+    SIP = "sip"
 
 
 class AlpacaProvider(MarketProvider):
     """Market data provider backed by Alpaca Market Data API."""
 
     BASE_URL = "https://data.alpaca.markets"
+
+    def __init__(self, feed: AlpacaDataFeed | str | None = None) -> None:
+        try:
+            self.feed = AlpacaDataFeed(feed or settings.ALPACA_DATA_FEED)
+        except ValueError as exc:
+            raise ValueError("Alpaca data feed must be 'iex' or 'sip'") from exc
 
     async def get_quote(
         self,
@@ -81,7 +97,7 @@ class AlpacaProvider(MarketProvider):
                     "end": end.isoformat(),
                     "limit": 10000,
                     "adjustment": "split",
-                    "feed": "sip",
+                    "feed": self.feed.value,
                     "sort": "asc",
                 }
 
@@ -93,7 +109,23 @@ class AlpacaProvider(MarketProvider):
                     params=params,
                 )
 
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 403:
+                        raise MarketDataFeedNotAuthorizedError(
+                            MarketDataProviderFailure(
+                                code="MARKET_DATA_FEED_NOT_AUTHORIZED",
+                                provider="Alpaca",
+                                feed=self.feed.value,
+                                message=(
+                                    f"Alpaca rejected the configured {self.feed.value.upper()} "
+                                    "data feed for the current credentials. Check "
+                                    "ALPACA_DATA_FEED and the Alpaca market-data entitlement."
+                                ),
+                            )
+                        ) from exc
+                    raise
 
                 data = cast(
                     dict[str, Any],

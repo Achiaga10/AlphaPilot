@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -11,6 +11,7 @@ from alphapilot.database.models.index_constituent import (
     IndexConstituent,
 )
 from alphapilot.market.dto.candle import MarketCandle
+from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.services.alpaca_bulk_market_sync import (
     AlpacaBulkMarketSyncService,
 )
@@ -425,3 +426,33 @@ async def test_sync_batch_respects_offset_and_limit() -> None:
     assert result.next_offset == 2
 
     assert provider.calls[0][0] == ["MSFT"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_sync_excludes_provider_current_session_partial_bar() -> None:
+    spy = create_company("SPY")
+    provider = FakeBulkProvider(
+        {
+            "SPY": [
+                create_market_candle(date(2026, 8, 25), "760"),
+                create_market_candle(date(2026, 8, 26), "999"),
+            ]
+        }
+    )
+    candles = FakeCandleService()
+    policy = CompletedDailySessionPolicy(
+        now_provider=lambda: datetime(2026, 8, 26, 18, 0, tzinfo=UTC)
+    )
+    service = AlpacaBulkMarketSyncService(
+        provider=provider,
+        universe_repository=FakeUniverseRepository([]),
+        company_service=FakeCompanyService([spy]),
+        candle_service=candles,
+        session_policy=policy,
+    )
+
+    result = await service.sync_ticker(ticker="SPY", start=date(2026, 8, 25), end=date(2026, 8, 26))
+
+    assert result.synced is True
+    assert len(candles.upsert_calls) == 1
+    assert [item.trading_day for item in candles.upsert_calls[0]] == [date(2026, 8, 25)]

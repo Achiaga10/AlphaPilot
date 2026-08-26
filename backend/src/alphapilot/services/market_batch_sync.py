@@ -27,6 +27,9 @@ class CompanyMarketSync(Protocol):
 class MarketBatchSyncFailure:
     ticker: str
     error: str
+    code: str = "MARKET_DATA_PROVIDER_ERROR"
+    provider: str | None = None
+    feed: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

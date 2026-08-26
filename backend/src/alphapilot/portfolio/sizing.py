@@ -201,6 +201,16 @@ class EqualSlotPositionSizer:
                 / context.execution_price
             )
         allocation = Decimal(shares) * context.execution_price
+        before = (
+            context.sector_market_value / context.equity * Decimal("100")
+            if context.equity > 0
+            else Decimal("0")
+        )
+        after = (
+            (context.sector_market_value + allocation) / context.equity * Decimal("100")
+            if context.equity > 0
+            else Decimal("0")
+        )
         reason = (
             PortfolioDecisionReason.BUY_APPROVED
             if shares > 0
@@ -218,8 +228,8 @@ class EqualSlotPositionSizer:
             ),
             modeled_risk=Decimal("0"),
             cash_reserve=Decimal("0"),
-            sector_weight_before_pct=Decimal("0"),
-            sector_weight_after_pct=Decimal("0"),
+            sector_weight_before_pct=before,
+            sector_weight_after_pct=after,
         )
 
 

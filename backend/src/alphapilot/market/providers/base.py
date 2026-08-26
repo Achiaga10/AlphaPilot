@@ -3,6 +3,7 @@ from datetime import date
 from typing import Any
 
 from alphapilot.market.dto import (
+    CompanyMetadata,
     IndexConstituentData,
     MarketCandle,
 )
@@ -48,3 +49,11 @@ class IndexConstituentDetailsProvider(ABC):
         index_symbol: str,
     ) -> list[IndexConstituentData]:
         """Return current constituents with company metadata."""
+
+
+class CompanyMetadataProvider(ABC):
+    """Discovers validated company identity metadata for one symbol."""
+
+    @abstractmethod
+    async def get_company_metadata(self, ticker: str) -> CompanyMetadata | None:
+        """Return provider metadata, or None when the symbol is not found."""

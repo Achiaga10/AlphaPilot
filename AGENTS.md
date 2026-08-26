@@ -24,15 +24,15 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 10B — Risk Model Hardening & Decision Orchestration (complete locally)
+Sprint 11D — Data Readiness, Sync UX & Portfolio Visualization (COMPLETE LOCALLY)
 
-Sprint 10 is complete and reviewed. Sprint 10B backend hardening, checks, API
-validation, and the frozen experiment are complete locally and await user
-review/Git operations. Read `docs/SPRINT10B_COMPLETION_REPORT.md` and
-`docs/PROJECT_STATE.md` for exact results.
-
-Do not begin Sprint 11 or create frontend code until Sprint 10B has been
-completed, documented, and reviewed by the user.
+Sprint 10 and Sprint 10B are complete, reviewed, and merged. Sprint 11 is
+technically complete and its Sprint 11B/Sprint 11C hardening work is preserved
+on the uncommitted `feature/ui-mvp` branch. Sprint 11D is complete locally on
+that same working tree after further real-browser review, including the final
+selectable-recommendation, exit-guidance, not-applicable-metric, and critical
+single-stock identity addenda. Read
+`docs/SPRINT11D_COMPLETION_REPORT.md`; do not begin Sprint 12.
 
 ## Development Environment
 
@@ -87,7 +87,7 @@ Do not recreate files based on assumptions if the real implementation is availab
 
 Do not change strategy behavior while fixing infrastructure unless absolutely required.
 
-Do not introduce unrelated architectural work during Sprint 10B.
+Do not introduce unrelated backend or research work during Sprint 11D.
 
 ## Testing Rules
 
@@ -252,28 +252,27 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Current Sprint 10B Completion Task
+## Completed Sprint 11D Task
 
-Implement the batch `atr-volatility-normalized` sizing policy and backend
-portfolio-plan orchestration described in `docs/SPRINT10B_PLAN.md`. Preserve
-equal-slot and ATR-risk V1 behavior, validate with focused tests and
-`.\run_checks.ps1`, then run the frozen 12-run development/validation matrix.
-
-Do not optimize ATR14, inverse-volatility weighting, reserve, caps, RS20,
-portfolio constraints, or strategies after observing results.
-
-When complete, create `docs/SPRINT10B_COMPLETION_REPORT.md` with architecture,
-tests, API contract, exact experiment results, policy classifications,
-limitations, Git state, and the explicit UI-readiness gate result.
+Sprint 11D completed data-readiness semantics, session-aware recovery UX,
+portfolio allocation visualization, observable sync progress, safe same-plan
+user-selectable action preview/application, frozen-strategy exit guidance,
+truthful not-applicable risk metrics, manual partial/full research-position sales,
+exact requested/returned/rendered single-stock identity, and completed-daily-session
+integrity. Daily strategy, ranking, ATR, decision, latest-price, and admin-freshness
+reads must exclude an in-progress U.S. session; provider writes must not persist
+that partial daily bar. All strategy/research
+rules, the official logo, and Sprint 11/11B/11C work remain
+preserved. Do not begin Sprint 12.
 
 ## End-of-Task Rule
 
 After creating:
 
-docs/SPRINT10B_COMPLETION_REPORT.md
+docs/SPRINT11D_COMPLETION_REPORT.md
 
 do not begin another feature.
 
 The user will take that file back to ChatGPT for review.
 
-Sprint 11 will begin only if the user approves it after that review.
+Sprint 12 will begin only if the user approves it after that review.

@@ -9,6 +9,7 @@ from alphapilot.core.config import settings
 from alphapilot.market.providers.alpaca import (
     AlpacaProvider,
 )
+from alphapilot.market.providers.errors import MarketDataFeedNotAuthorizedError
 
 
 @pytest.mark.asyncio
@@ -104,7 +105,7 @@ async def test_alpaca_get_history(
         create_client,
     )
 
-    provider = AlpacaProvider()
+    provider = AlpacaProvider("sip")
 
     candles = await provider.get_history(
         ticker="AAPL",
@@ -354,3 +355,48 @@ async def test_alpaca_get_history_many_with_pagination(
     assert result["AAPL"][1].close == Decimal("310.03")
 
     assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("feed", ["iex", "sip"])
+async def test_alpaca_passes_configured_feed(monkeypatch: pytest.MonkeyPatch, feed: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["feed"] == feed
+        return httpx.Response(200, json={"bars": {"SPY": []}, "next_page_token": None})
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    def create_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", create_client)
+    await AlpacaProvider(feed).get_history("SPY", date(2026, 8, 20), date(2026, 8, 20))
+
+
+def test_alpaca_rejects_invalid_feed() -> None:
+    with pytest.raises(ValueError, match="must be 'iex' or 'sip'"):
+        AlpacaProvider("delayed")
+
+
+@pytest.mark.asyncio
+async def test_alpaca_403_is_safe_typed_feed_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, request=request, text="secret provider response")
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    def create_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", create_client)
+    with pytest.raises(MarketDataFeedNotAuthorizedError) as captured:
+        await AlpacaProvider("sip").get_history("SPY", date(2026, 8, 20), date(2026, 8, 20))
+    failure = captured.value.failure
+    assert failure.code == "MARKET_DATA_FEED_NOT_AUTHORIZED"
+    assert failure.provider == "Alpaca"
+    assert failure.feed == "sip"
+    assert "secret provider response" not in failure.message

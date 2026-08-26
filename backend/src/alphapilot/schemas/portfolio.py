@@ -1,10 +1,19 @@
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
-from alphapilot.portfolio.orchestration import CandidateDataStatus
+from alphapilot.portfolio.actions import (
+    ManualSellPriceSource,
+    ManualSellReason,
+    PlanActionApplyReason,
+    PlanActionQuantitySemantics,
+    PlanActionValidationStatus,
+)
+from alphapilot.portfolio.exit_guidance import FixedTakeProfitPolicy, StrategyExitState
+from alphapilot.portfolio.orchestration import CandidateDataStatus, PlanReadinessStatus
 from alphapilot.portfolio.sizing import (
     PortfolioDecisionReason,
     PortfolioDecisionType,
@@ -60,6 +69,26 @@ class PortfolioDecisionRequest(BaseModel):
     candidates: list[PortfolioCandidateSchema]
 
 
+class StrategyExitContextSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    strategy: StrategyName
+    data_as_of_date: date
+    reference_close: Decimal
+    current_signal: Signal
+    signal_reason: str
+    exit_mode: str
+    current_exit_state: StrategyExitState
+    fixed_take_profit_policy: FixedTakeProfitPolicy
+    ema20: Decimal | None = None
+    ema50: Decimal | None = None
+    ema_spread_pct: Decimal | None = None
+    hybrid_threshold_pct: Decimal | None = None
+    distance_to_ema20_pct: Decimal | None = None
+    distance_to_ema50_pct: Decimal | None = None
+    sma150: Decimal | None = None
+    distance_to_sma150_pct: Decimal | None = None
+
+
 class PortfolioDecisionSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     ticker: str
@@ -81,15 +110,50 @@ class PortfolioDecisionSchema(BaseModel):
     current_shares: int
     estimated_proceeds: Decimal | None
     normalized_sizing_weight: Decimal | None = None
+    estimated_cash_outlay: Decimal | None = None
+    cash_after_decision: Decimal | None = None
+    modeled_stop_reference_price: Decimal | None = None
+    action_id: str | None = None
+    application_order: int | None = None
+    depends_on_action_ids: list[str] = []
+    exit_context: StrategyExitContextSchema | None = None
+
+
+class PortfolioPositionSummarySchema(BaseModel):
+    ticker: str
+    shares: int
+    reference_price: Decimal
+    market_value: Decimal
+    portfolio_weight_pct: Decimal
+    cost_basis: Decimal | None
+    sector: str
+    modeled_risk_dollars: Decimal
 
 
 class PortfolioSummarySchema(BaseModel):
     equity: Decimal
     cash: Decimal
+    cash_pct: Decimal
+    invested_value: Decimal
+    invested_pct: Decimal
     cash_reserve_requirement: Decimal
     current_portfolio_risk: Decimal
+    current_portfolio_risk_pct: Decimal
     available_portfolio_risk: Decimal
+    available_portfolio_risk_pct: Decimal
+    modeled_risk_complete: bool
     open_positions: int
+    positions: list[PortfolioPositionSummarySchema]
+
+
+class PortfolioDraftSummarySchema(BaseModel):
+    equity: Decimal
+    cash: Decimal
+    cash_pct: Decimal
+    invested_value: Decimal
+    invested_pct: Decimal
+    open_positions: int
+    positions: list[PortfolioPositionSummarySchema]
 
 
 class PortfolioDecisionPlanSchema(BaseModel):
@@ -133,9 +197,106 @@ class CandidateOrchestrationStatusSchema(BaseModel):
     data_as_of_date: date | None
     signal: Signal | None
     reason: str
+    company_name: str | None = None
+    sector: str | None = None
+    ranking_score: Decimal | None = None
+    atr: Decimal | None = None
+    decision: PortfolioDecisionType | None = None
+    decision_reason: PortfolioDecisionReason | None = None
+    candidate_rank: int | None = None
+    is_custom_tracked: bool = False
+    company_id: UUID | None = None
+
+
+class PortfolioPlanReadinessSchema(BaseModel):
+    status: PlanReadinessStatus
+    requested_tickers: int
+    evaluated_tickers: int
+    fresh_tickers: int
+    stale_tickers: int
+    no_data_tickers: int
+    insufficient_history_tickers: int
+    company_not_found_tickers: int
+    buy_signals: int
+    approved_buys: int
+    approved_sells: int
+    actionable_decisions: int
+    latest_ticker_data_date: date | None
+    buy_rejections_by_reason: dict[str, int]
 
 
 class PortfolioPlanSchema(PortfolioDecisionPlanSchema):
+    plan_id: str
     requested_as_of_date: date
     analysis_as_of_date: date
     candidate_statuses: list[CandidateOrchestrationStatusSchema]
+    readiness: PortfolioPlanReadinessSchema
+    evaluation_target_ticker: str | None = None
+
+
+class PortfolioPlanActionRequest(BaseModel):
+    plan_id: str = Field(min_length=1)
+    portfolio: CurrentPortfolioSchema
+    decision: PortfolioDecisionSchema
+    applied_action_ids: list[str] = []
+    requested_shares: int | None = Field(default=None, gt=0)
+    sizing_policy: SizingPolicyName = SizingPolicyName.ATR_RISK
+    risk_config: PortfolioRiskConfigSchema = PortfolioRiskConfigSchema()
+
+
+class PortfolioPlanActionResultSchema(BaseModel):
+    plan_id: str
+    applied: bool
+    reason: PlanActionApplyReason
+    action_id: str | None
+    action_type: PortfolioDecisionType
+    cash_before: Decimal
+    cash_impact: Decimal
+    cash_after: Decimal
+    position_before: PortfolioPositionSchema | None
+    position_after: PortfolioPositionSchema | None
+    portfolio: CurrentPortfolioSchema
+    summary: PortfolioDraftSummarySchema
+    validation_status: PlanActionValidationStatus
+    quantity_semantics: PlanActionQuantitySemantics
+    recommended_shares: int
+    requested_shares: int
+    recommended_allocation_dollars: Decimal
+    requested_allocation_dollars: Decimal
+    resulting_position_weight_pct: Decimal
+    sector_weight_before_pct: Decimal
+    sector_weight_after_pct: Decimal
+    modeled_position_risk_dollars: Decimal | None
+    portfolio_risk_after_dollars: Decimal | None
+    cash_reserve_requirement: Decimal | None
+
+
+class LatestStoredPriceSchema(BaseModel):
+    ticker: str
+    price: Decimal | None
+    price_date: date | None
+    source: str = "LATEST_STORED_CANDLE"
+
+
+class ManualSellRequestSchema(BaseModel):
+    portfolio: CurrentPortfolioSchema
+    ticker: str = Field(min_length=1, max_length=10)
+    shares_to_sell: int = Field(gt=0)
+    execution_price: Decimal | None = Field(default=None, gt=0)
+
+
+class ManualSellResultSchema(BaseModel):
+    applied: bool
+    reason: ManualSellReason
+    ticker: str
+    shares_sold: int
+    shares_remaining: int
+    execution_price: Decimal | None
+    price_source: ManualSellPriceSource | None
+    price_date: date | None
+    gross_proceeds: Decimal
+    cash_before: Decimal
+    cash_after: Decimal
+    position_removed: bool
+    portfolio: CurrentPortfolioSchema
+    summary: PortfolioDraftSummarySchema

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Index, Numeric, String
+from sqlalchemy import Boolean, Index, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from alphapilot.database.base import Base
@@ -55,6 +55,13 @@ class Company(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
+        nullable=False,
+    )
+
+    is_custom_tracked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
         nullable=False,
     )
 

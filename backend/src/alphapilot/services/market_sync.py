@@ -2,6 +2,7 @@ from datetime import date
 
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.market.providers.base import MarketProvider
+from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
 
@@ -12,10 +13,12 @@ class MarketSyncService:
         provider: MarketProvider,
         company_service: CompanyService,
         candle_service: DailyCandleService,
+        session_policy: CompletedDailySessionPolicy | None = None,
     ) -> None:
         self.provider = provider
         self.company_service = company_service
         self.candle_service = candle_service
+        self.session_policy = session_policy or CompletedDailySessionPolicy()
 
     async def sync_company(
         self,
@@ -45,8 +48,11 @@ class MarketSyncService:
                 volume=candle.volume,
             )
             for candle in market_candles
+            if self.session_policy.is_complete(candle.date)
         ]
 
+        if not candles:
+            return False
         await self.candle_service.upsert_many(candles)
 
         return True

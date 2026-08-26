@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,6 +12,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     LOG_LEVEL: str = "INFO"
+
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    ADMIN_TOOLS_ENABLED: bool = False
 
     DATABASE_URL: str = "postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot"
     TEST_DATABASE_URL: str | None = None
@@ -29,6 +34,7 @@ class Settings(BaseSettings):
 
     ALPACA_API_KEY: str = ""
     ALPACA_SECRET_KEY: str = ""
+    ALPACA_DATA_FEED: Literal["iex", "sip"] = "iex"
 
     model_config = SettingsConfigDict(
         env_file=".env",

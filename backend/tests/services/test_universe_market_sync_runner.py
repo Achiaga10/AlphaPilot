@@ -10,6 +10,7 @@ from alphapilot.services.market_batch_sync import (
     MarketTickerSyncResult,
 )
 from alphapilot.services.universe_market_sync_runner import (
+    UniverseMarketSyncError,
     UniverseMarketSyncRunner,
 )
 
@@ -363,16 +364,16 @@ async def test_runner_stops_when_benchmark_sync_fails(
         checkpoint_path=checkpoint,
     )
 
-    with pytest.raises(
-        RuntimeError,
-        match=("Failed to synchronize SPY benchmark"),
-    ):
+    with pytest.raises(UniverseMarketSyncError) as captured:
         await runner.run(
             index_symbol="^GSPC",
             start=date(2026, 4, 1),
             end=date(2026, 8, 19),
             batch_size=5,
         )
+
+    assert captured.value.stage == "benchmark"
+    assert captured.value.ticker == "SPY"
 
     assert batch_service.synced_tickers == [
         "SPY",
