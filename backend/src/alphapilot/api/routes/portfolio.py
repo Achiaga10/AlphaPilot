@@ -1,4 +1,5 @@
 import hashlib
+import json
 from decimal import Decimal
 from typing import Annotated
 
@@ -41,11 +42,35 @@ from alphapilot.schemas.portfolio import (
     PortfolioPositionSummarySchema,
     PortfolioRiskConfigSchema,
     PortfolioSummarySchema,
+    StrategyProfileSchema,
 )
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
+from alphapilot.strategy.exit_mode import TrendExitMode
+from alphapilot.strategy.micho_entry_mode import MichoEntryMode
+from alphapilot.strategy.profile import (
+    StrategyProfile,
+    list_strategy_profiles,
+    resolve_strategy_profile,
+    resolve_strategy_profile_identity,
+)
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+
+
+def strategy_profile_plan_id(
+    request: PortfolioPlanRequest,
+    profile: StrategyProfile,
+) -> str:
+    payload = {
+        "request": request.model_dump(mode="json"),
+        "strategy_profile": StrategyProfileSchema.model_validate(
+            profile, from_attributes=True
+        ).model_dump(mode="json"),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:24]
 
 
 def build_portfolio_summary(
@@ -157,6 +182,14 @@ async def get_risk_config() -> PortfolioRiskConfigSchema:
     return PortfolioRiskConfigSchema()
 
 
+@router.get("/strategy-profiles", response_model=list[StrategyProfileSchema])
+async def get_strategy_profiles() -> list[StrategyProfileSchema]:
+    return [
+        StrategyProfileSchema.model_validate(profile, from_attributes=True)
+        for profile in list_strategy_profiles()
+    ]
+
+
 @router.post("/state-summary", response_model=PortfolioDraftSummarySchema)
 async def summarize_portfolio_state(
     portfolio: CurrentPortfolioSchema,
@@ -203,6 +236,9 @@ async def build_portfolio_plan(
         Depends(get_portfolio_decision_orchestrator),
     ],
 ) -> PortfolioPlanSchema:
+    profile = resolve_strategy_profile(request.strategy)
+    if request.selection_policy not in profile.allowed_selection_policies:
+        raise HTTPException(status_code=422, detail="Selection policy is not allowed")
     config = PortfolioRiskConfig(**request.risk_config.model_dump())
     state = _state(request.portfolio)
     try:
@@ -210,19 +246,20 @@ async def build_portfolio_plan(
             state=state,
             strategy_name=request.strategy,
             selection_policy=request.selection_policy,
-            sizing_policy=request.sizing_policy,
+            sizing_policy=profile.sizing_policy,
             risk_config=config,
             requested_as_of_date=request.as_of_date,
             tickers=tuple(request.tickers) if request.tickers is not None else None,
-            exit_mode=request.exit_mode,
-            hybrid_trend_threshold_pct=request.hybrid_trend_threshold_pct,
-            micho_entry_mode=request.micho_entry_mode,
+            exit_mode=profile.ema_exit_mode or TrendExitMode.HYBRID,
+            hybrid_trend_threshold_pct=(profile.hybrid_trend_threshold_pct or Decimal("2")),
+            micho_entry_mode=profile.micho_entry_mode or MichoEntryMode.BOTH,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     plan = result.plan
     return PortfolioPlanSchema(
-        plan_id=hashlib.sha256(request.model_dump_json().encode()).hexdigest()[:24],
+        plan_id=strategy_profile_plan_id(request, profile),
+        strategy_profile=StrategyProfileSchema.model_validate(profile, from_attributes=True),
         portfolio=build_portfolio_summary(
             state,
             plan.equity,
@@ -233,7 +270,7 @@ async def build_portfolio_plan(
         config=request.risk_config,
         strategy=request.strategy.value,
         selection_policy=request.selection_policy.value,
-        sizing_policy=request.sizing_policy,
+        sizing_policy=profile.sizing_policy,
         decisions=[PortfolioDecisionSchema.model_validate(item) for item in plan.decisions],
         requested_as_of_date=result.requested_as_of_date,
         analysis_as_of_date=result.analysis_as_of_date,
@@ -253,6 +290,24 @@ def _plan_action_result(
     *,
     apply: bool,
 ) -> PortfolioPlanActionResultSchema:
+    try:
+        profile = resolve_strategy_profile_identity(
+            request.strategy_profile_id,
+            request.strategy_profile_version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if request.sizing_policy != profile.sizing_policy:
+        raise HTTPException(
+            status_code=422,
+            detail="Sizing policy does not match the authoritative strategy profile",
+        )
+    exit_context = request.decision.exit_context
+    if exit_context is not None and exit_context.strategy != profile.strategy:
+        raise HTTPException(
+            status_code=422,
+            detail="Decision strategy does not match the authoritative strategy profile",
+        )
     decision_data = request.decision.model_dump()
     decision_data["depends_on_action_ids"] = tuple(decision_data["depends_on_action_ids"])
     exit_context = decision_data.get("exit_context")

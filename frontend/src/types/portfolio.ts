@@ -3,6 +3,26 @@ export type SelectionPolicy = 'relative-strength-20' | 'ticker-ascending'
 export type SizingPolicy = 'equal-slot' | 'atr-risk' | 'atr-volatility-normalized'
 export type StrategySignal = 'BUY' | 'HOLD' | 'SELL'
 export type PortfolioDecisionType = 'BUY' | 'HOLD' | 'SELL' | 'SKIP'
+export type ResearchClassification = 'PROMISING_RESEARCH_BASELINE' | 'RESEARCH_ONLY'
+
+export interface StrategyProfile {
+  profile_id: string
+  version: number
+  strategy: StrategyName
+  display_name: string
+  classification: ResearchClassification
+  entry_description: string
+  recommended_selection_policy: SelectionPolicy
+  allowed_selection_policies: SelectionPolicy[]
+  sizing_policy: SizingPolicy
+  strategy_exit_description: string
+  ema_exit_mode: 'hybrid' | null
+  hybrid_trend_threshold_pct: string | null
+  micho_entry_mode: 'both' | null
+  protective_stop_default: 'NONE'
+  profit_management_default: 'NONE'
+  research_only_stop_candidate: string
+}
 
 export type DecisionReason =
   | 'BUY_APPROVED'
@@ -57,11 +77,7 @@ export interface CurrentPortfolioInput {
 
 export interface PortfolioPlanRequest {
   strategy: StrategyName
-  exit_mode: 'hybrid'
-  hybrid_trend_threshold_pct: '2'
-  micho_entry_mode: 'both'
   selection_policy: SelectionPolicy
-  sizing_policy: SizingPolicy
   as_of_date: string
   tickers: string[] | null
   portfolio: CurrentPortfolioInput
@@ -184,6 +200,7 @@ export interface PortfolioPlan {
   strategy: StrategyName
   selection_policy: SelectionPolicy
   sizing_policy: SizingPolicy
+  strategy_profile: StrategyProfile
   decisions: PortfolioDecision[]
   requested_as_of_date: string
   analysis_as_of_date: string
@@ -235,6 +252,8 @@ export interface PortfolioPlanActionRequest {
   decision: PortfolioDecision
   applied_action_ids: string[]
   requested_shares: number | null
+  strategy_profile_id: string
+  strategy_profile_version: number
   sizing_policy: SizingPolicy
   risk_config: PortfolioRiskConfig
 }
@@ -307,7 +326,6 @@ export interface PlanDraft {
   positions: PortfolioPositionInput[]
   strategy: StrategyName
   selectionPolicy: SelectionPolicy
-  sizingPolicy: SizingPolicy
   asOfDate: string
   tickerScope: string
 }

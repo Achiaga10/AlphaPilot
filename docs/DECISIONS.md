@@ -18,9 +18,35 @@ Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete and
 
 Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete and merged.
 Sprint 12 is complete, reviewed, and merged; its research-only stop candidates
-do not replace existing strategy exits. Sprint 13 is complete locally on
-`feature/research-data-versioning` and awaits user review/publishing. Sprint 14
-is not started.
+do not replace existing strategy exits. Sprint 13 is complete, reviewed, and
+merged. Sprint 14 is complete locally on `feature/strategy-profiles` and awaits
+user review/publishing. Sprint 15 is not started.
+
+## 0.13 Sprint 14 Frozen Strategy-Profile Protocol
+
+- The normal Portfolio Plan workflow resolves an immutable, versioned backend
+  strategy profile; browser-supplied sizing or strategy-rule parameters are not
+  authoritative.
+- `ema20-pullback-v1` uses existing EMA20 Pullback entry, HYBRID 2%, equal-slot
+  sizing, no default protective stop, and no profit management.
+- `micho-150-v1` uses Micho V1 BOTH entry, close-below-SMA150 exit,
+  ATR-volatility-normalized sizing, no default protective stop, and no profit
+  management.
+- Both profiles are `PROMISING_RESEARCH_BASELINE`; selection remains
+  user-selectable with RS20 recommended. RS20 remains a research baseline, not
+  universal production alpha.
+- Sprint 12's EMA static 3× ATR14 and Micho static 1.5× ATR14 stops remain
+  informational research-only candidates and are not enabled defaults.
+- Global `PortfolioRiskConfig` stays separate and unchanged. Sprint 14 invents
+  no strategy-specific risk parameters.
+- Profile identity/version/resolved configuration participate in plan identity
+  and stateless action validation.
+- The lower-level decision endpoint remains explicitly configurable for research
+  compatibility. Strategy factory and Scanner defaults remain unchanged.
+- Sprint 13 immutable dataset, provenance, completed-session, and snapshot
+  semantics remain unchanged.
+- Sprint 15 Strategy Lab is recommendation-only and must not begin during
+  Sprint 14.
 
 ## 0.12 Sprint 13 Frozen Data-Reproducibility Protocol
 

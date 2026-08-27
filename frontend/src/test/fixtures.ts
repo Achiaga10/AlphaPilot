@@ -1,4 +1,23 @@
-import type { PortfolioPlan, PortfolioRiskConfig } from '../types/portfolio'
+import type { PortfolioPlan, PortfolioRiskConfig, StrategyProfile } from '../types/portfolio'
+
+export const strategyProfilesFixture: StrategyProfile[] = [
+  {
+    profile_id: 'ema20-pullback-v1', version: 1, strategy: 'ema20-pullback', display_name: 'EMA20 Pullback',
+    classification: 'PROMISING_RESEARCH_BASELINE', entry_description: 'Existing EMA20 Pullback reclaim entry',
+    recommended_selection_policy: 'relative-strength-20', allowed_selection_policies: ['relative-strength-20', 'ticker-ascending'],
+    sizing_policy: 'equal-slot', strategy_exit_description: 'HYBRID exit with frozen 2% threshold',
+    ema_exit_mode: 'hybrid', hybrid_trend_threshold_pct: '2', micho_entry_mode: null,
+    protective_stop_default: 'NONE', profit_management_default: 'NONE', research_only_stop_candidate: 'Static 3 × ATR14',
+  },
+  {
+    profile_id: 'micho-150-v1', version: 1, strategy: 'micho-150', display_name: 'Micho 150',
+    classification: 'PROMISING_RESEARCH_BASELINE', entry_description: 'Micho V1 BOTH entry mode',
+    recommended_selection_policy: 'relative-strength-20', allowed_selection_policies: ['relative-strength-20', 'ticker-ascending'],
+    sizing_policy: 'atr-volatility-normalized', strategy_exit_description: 'Close below SMA150',
+    ema_exit_mode: null, hybrid_trend_threshold_pct: null, micho_entry_mode: 'both',
+    protective_stop_default: 'NONE', profit_management_default: 'NONE', research_only_stop_candidate: 'Static 1.5 × ATR14',
+  },
+]
 
 export const riskConfigFixture: PortfolioRiskConfig = {
   risk_per_position_pct: '1',
@@ -53,6 +72,7 @@ export const planFixture: PortfolioPlan = {
   strategy: 'ema20-pullback',
   selection_policy: 'relative-strength-20',
   sizing_policy: 'equal-slot',
+  strategy_profile: strategyProfilesFixture[0]!,
   requested_as_of_date: '2026-08-23',
   analysis_as_of_date: '2026-08-20',
   evaluation_target_ticker: null,

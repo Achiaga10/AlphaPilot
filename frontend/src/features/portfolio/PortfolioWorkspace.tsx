@@ -15,6 +15,7 @@ import type {
   PortfolioDraftSummary,
   PortfolioPlan,
   PortfolioPlanActionResult,
+  PortfolioPositionInput,
 } from '../../types/portfolio'
 
 const STORAGE_KEY = 'alphapilot.plan-draft.v1'
@@ -28,7 +29,6 @@ export const defaultDraft: PlanDraft = {
   positions: [],
   strategy: 'ema20-pullback',
   selectionPolicy: 'relative-strength-20',
-  sizingPolicy: 'equal-slot',
   asOfDate: today(),
   tickerScope: '',
 }
@@ -38,8 +38,39 @@ function loadDraft(): PlanDraft {
     const saved = window.localStorage.getItem(STORAGE_KEY)
     if (!saved) return defaultDraft
     const parsed: unknown = JSON.parse(saved)
-    if (typeof parsed !== 'object' || parsed === null || !('cash' in parsed)) return defaultDraft
-    return { ...defaultDraft, ...(parsed as Partial<PlanDraft>) }
+    if (typeof parsed !== 'object' || parsed === null) return defaultDraft
+    const value = parsed as Record<string, unknown>
+    const positions = Array.isArray(value.positions)
+      ? value.positions.flatMap((item): PortfolioPositionInput[] => {
+        if (typeof item !== 'object' || item === null) return []
+        const position = item as Record<string, unknown>
+        if (
+          typeof position.ticker !== 'string'
+          || typeof position.shares !== 'number'
+          || typeof position.reference_price !== 'string'
+        ) return []
+        return [{
+          ticker: position.ticker,
+          shares: position.shares,
+          reference_price: position.reference_price,
+          cost_basis: typeof position.cost_basis === 'string' ? position.cost_basis : null,
+          sector: typeof position.sector === 'string' ? position.sector : null,
+          modeled_risk_dollars: typeof position.modeled_risk_dollars === 'string'
+            ? position.modeled_risk_dollars
+            : '0',
+        }]
+      })
+      : defaultDraft.positions
+    return {
+      cash: typeof value.cash === 'string' ? value.cash : defaultDraft.cash,
+      positions,
+      strategy: value.strategy === 'micho-150' ? 'micho-150' : 'ema20-pullback',
+      selectionPolicy: value.selectionPolicy === 'ticker-ascending'
+        ? 'ticker-ascending'
+        : 'relative-strength-20',
+      asOfDate: typeof value.asOfDate === 'string' ? value.asOfDate : defaultDraft.asOfDate,
+      tickerScope: typeof value.tickerScope === 'string' ? value.tickerScope : '',
+    }
   } catch {
     return defaultDraft
   }
@@ -150,6 +181,8 @@ export function PortfolioWorkspaceProvider({ children }: { children: ReactNode }
             decision,
             applied_action_ids: [...appliedActionIds],
             requested_shares: requestedShares,
+            strategy_profile_id: plan.strategy_profile.profile_id,
+            strategy_profile_version: plan.strategy_profile.version,
             sizing_policy: plan.sizing_policy,
             risk_config: plan.config,
           })
@@ -173,6 +206,8 @@ export function PortfolioWorkspaceProvider({ children }: { children: ReactNode }
             decision,
             applied_action_ids: [...appliedActionIds],
             requested_shares: requestedShares,
+            strategy_profile_id: plan.strategy_profile.profile_id,
+            strategy_profile_version: plan.strategy_profile.version,
             sizing_policy: plan.sizing_policy,
             risk_config: plan.config,
           })
