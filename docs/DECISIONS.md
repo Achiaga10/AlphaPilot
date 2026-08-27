@@ -19,8 +19,31 @@ Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete and
 Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete and merged.
 Sprint 12 is complete, reviewed, and merged; its research-only stop candidates
 do not replace existing strategy exits. Sprint 13 is complete, reviewed, and
-merged. Sprint 14 is complete locally on `feature/strategy-profiles` and awaits
-user review/publishing. Sprint 15 is not started.
+merged. Sprint 14 is complete, reviewed, and merged. Sprint 15 Strategy Lab is
+complete locally on `feature/strategy-lab` and awaits user review/publishing.
+Sprint 16 is not started.
+
+## 0.14 Sprint 15 Frozen Strategy-Lab Protocol
+
+- Formal Strategy Lab experiments require a finalized Sprint 13 frozen dataset;
+  operational-current data is not formal evidence.
+- Every parameter and allowed candidate value is declared before execution.
+  Undeclared parameters and values are rejected.
+- The lifecycle is `DEFINED`, `DEVELOPMENT`, `FROZEN`, `VALIDATION`, `FOLDS`,
+  then `CLASSIFIED`. Validation and folds use only the explicitly frozen
+  declared configuration.
+- Development, validation, and named temporal folds are predeclared and
+  validated for ordering and prohibited overlap.
+- Experiment identity is SHA-256 over canonical JSON containing protocol,
+  strategy/version, dataset/hash identities, periods/folds, candidate space,
+  selection, sizing, and costs.
+- Classification is limited to `REJECTED`, `RESEARCH_ONLY`, and
+  `PROMISING_RESEARCH_BASELINE`; reasons, limitations, and complete evidence are
+  mandatory.
+- A promising result may produce a typed profile candidate for human review. It
+  never mutates `strategy/profile.py` or normal defaults.
+- Sprint 15 adds no strategy, tuning, migration, frontend, provider call, or
+  Sprint 16 implementation.
 
 ## 0.13 Sprint 14 Frozen Strategy-Profile Protocol
 
