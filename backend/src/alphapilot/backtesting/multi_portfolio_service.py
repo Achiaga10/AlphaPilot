@@ -10,7 +10,7 @@ from alphapilot.backtesting.candidate_selection import (
     TickerAscendingSelectionPolicy,
 )
 from alphapilot.backtesting.engine import BacktestingEngine
-from alphapilot.backtesting.models import PortfolioConfig, PortfolioSimulationResult
+from alphapilot.backtesting.models import BacktestResult, PortfolioConfig, PortfolioSimulationResult
 from alphapilot.backtesting.multi_portfolio import MultiPortfolioSimulator
 from alphapilot.backtesting.multi_portfolio_metrics import (
     MultiPortfolioPerformanceMetrics,
@@ -30,8 +30,9 @@ from alphapilot.backtesting.portfolio_metrics import (
 )
 from alphapilot.backtesting.ranking_features import RelativeStrength20Calculator
 from alphapilot.backtesting.service import CandleHistoryService, CompanyLookupService
+from alphapilot.backtesting.trade_management import TradeManagementExitReason
+from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.portfolio.risk import AverageTrueRangeCalculator
-from alphapilot.portfolio.sizing import SizingPolicyName
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
 from alphapilot.strategy.base import TradingStrategy
 from alphapilot.strategy.signal import Signal
@@ -47,6 +48,36 @@ class MultiPortfolioRunResult:
     failed_tickers: tuple[tuple[str, str], ...]
     selection_policy_name: str
     attribution: AttributionSummary
+    exit_recovery_diagnostics: tuple[ExitRecoveryDiagnostic, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class ExitRecoveryDiagnostic:
+    """Ex-post diagnostic only; never consulted by portfolio execution."""
+
+    ticker: str
+    exit_day: date
+    exit_price: Decimal
+    entry_price: Decimal
+    return_5_sessions_pct: Decimal | None
+    return_10_sessions_pct: Decimal | None
+    return_20_sessions_pct: Decimal | None
+    recovered_entry_price_within_20_sessions: bool | None
+    later_strategy_exit_signal_day: date | None
+
+
+@dataclass(slots=True, frozen=True)
+class PreparedMultiPortfolioData:
+    start: date
+    end: date
+    backtests: dict[str, BacktestResult]
+    stock_histories: dict[str, list[DailyCandle]]
+    benchmark_candles: list[DailyCandle]
+    ticker_sectors: dict[str, str | None]
+    ranking_scores: dict[tuple[str, date], Decimal | None]
+    atr_values: dict[tuple[str, date], Decimal | None]
+    successful_tickers: tuple[str, ...]
+    failed_tickers: tuple[tuple[str, str], ...]
 
 
 class MultiPortfolioBacktestService:
@@ -83,6 +114,12 @@ class MultiPortfolioBacktestService:
         end: date,
         config: MultiPortfolioConfig,
     ) -> MultiPortfolioRunResult:
+        prepared = await self.prepare(start=start, end=end)
+        return self.run_prepared(prepared, config=config)
+
+    async def prepare(self, *, start: date, end: date) -> PreparedMultiPortfolioData:
+        """Load/evaluate immutable strategy data once for an exit-policy matrix."""
+
         if start > end:
             raise ValueError("start must be before or equal to end")
 
@@ -156,25 +193,41 @@ class MultiPortfolioBacktestService:
                         signal_day=bar.trading_day,
                     )
 
-        if config.sizing_policy != SizingPolicyName.EQUAL_SLOT:
-            atr_calculator = AverageTrueRangeCalculator()
-            for ticker, backtest in backtests.items():
-                for bar in backtest.bars:
-                    if bar.signal == Signal.BUY:
-                        atr_values[(ticker, bar.trading_day)] = atr_calculator.calculate(
-                            stock_histories[ticker],
-                            signal_day=bar.trading_day,
-                            period=config.risk_config.atr_period,
-                        )
+        atr_calculator = AverageTrueRangeCalculator()
+        for ticker, backtest in backtests.items():
+            atr_series = atr_calculator.calculate_series(stock_histories[ticker], period=14)
+            for bar in backtest.bars:
+                atr_values[(ticker, bar.trading_day)] = atr_series.get(bar.trading_day)
+
+        return PreparedMultiPortfolioData(
+            start=start,
+            end=end,
+            backtests=backtests,
+            stock_histories=stock_histories,
+            benchmark_candles=benchmark_candles,
+            ticker_sectors=ticker_sectors,
+            ranking_scores=ranking_scores,
+            atr_values=atr_values,
+            successful_tickers=tuple(successful),
+            failed_tickers=tuple(failed),
+        )
+
+    def run_prepared(
+        self,
+        prepared: PreparedMultiPortfolioData,
+        *,
+        config: MultiPortfolioConfig,
+    ) -> MultiPortfolioRunResult:
+        """Simulate one policy without reloading or regenerating strategy signals."""
 
         portfolio = MultiPortfolioSimulator(
             config=config,
             selection_policy=self.selection_policy,
         ).run(
-            backtests,
-            ranking_scores=ranking_scores,
-            ticker_sectors=ticker_sectors,
-            atr_values=atr_values,
+            prepared.backtests,
+            ranking_scores=prepared.ranking_scores,
+            ticker_sectors=prepared.ticker_sectors,
+            atr_values=prepared.atr_values,
         )
         metrics = MultiPortfolioPerformanceMetricsCalculator().calculate(portfolio)
         attribution = PortfolioAttributionCalculator().calculate(portfolio)
@@ -187,9 +240,13 @@ class MultiPortfolioBacktestService:
         )
         spy = BuyAndHoldSimulator().run(
             ticker=self.MARKET_BENCHMARK_TICKER,
-            candles=benchmark_candles,
-            start=(portfolio.equity_curve[0].trading_day if portfolio.equity_curve else start),
-            end=(portfolio.equity_curve[-1].trading_day if portfolio.equity_curve else end),
+            candles=prepared.benchmark_candles,
+            start=(
+                portfolio.equity_curve[0].trading_day if portfolio.equity_curve else prepared.start
+            ),
+            end=(
+                portfolio.equity_curve[-1].trading_day if portfolio.equity_curve else prepared.end
+            ),
             config=benchmark_config,
         )
         spy_metrics = PortfolioPerformanceMetricsCalculator().calculate(spy)
@@ -199,8 +256,75 @@ class MultiPortfolioBacktestService:
             metrics=metrics,
             spy_buy_and_hold=spy,
             spy_metrics=spy_metrics,
-            successful_tickers=tuple(successful),
-            failed_tickers=tuple(failed),
+            successful_tickers=prepared.successful_tickers,
+            failed_tickers=prepared.failed_tickers,
             selection_policy_name=self.selection_policy.name,
             attribution=attribution,
+            exit_recovery_diagnostics=self._build_exit_recovery_diagnostics(
+                portfolio,
+                prepared,
+            ),
         )
+
+    @staticmethod
+    def _build_exit_recovery_diagnostics(
+        portfolio: MultiPortfolioSimulationResult,
+        prepared: PreparedMultiPortfolioData,
+    ) -> tuple[ExitRecoveryDiagnostic, ...]:
+        diagnostics: list[ExitRecoveryDiagnostic] = []
+        stop_reasons = {
+            TradeManagementExitReason.INITIAL_ATR_STOP,
+            TradeManagementExitReason.ATR_TRAILING_STOP,
+        }
+        for trade in portfolio.trades:
+            if trade.exit_reason not in stop_reasons:
+                continue
+            future = sorted(
+                (
+                    candle
+                    for candle in prepared.stock_histories[trade.ticker]
+                    if candle.trading_day > trade.exit_day
+                ),
+                key=lambda candle: candle.trading_day,
+            )
+
+            def future_return(
+                session: int,
+                *,
+                future_candles: list[DailyCandle] = future,
+                exit_price: Decimal = trade.exit_price,
+            ) -> Decimal | None:
+                if len(future_candles) < session or exit_price <= 0:
+                    return None
+                return (
+                    (future_candles[session - 1].close - exit_price) / exit_price * Decimal("100")
+                )
+
+            first_twenty = future[:20]
+            recovered = (
+                any(candle.close >= trade.entry_price for candle in first_twenty)
+                if first_twenty
+                else None
+            )
+            later_exit = next(
+                (
+                    bar.trading_day
+                    for bar in prepared.backtests[trade.ticker].bars
+                    if bar.trading_day > trade.exit_day and bar.signal == Signal.SELL
+                ),
+                None,
+            )
+            diagnostics.append(
+                ExitRecoveryDiagnostic(
+                    ticker=trade.ticker,
+                    exit_day=trade.exit_day,
+                    exit_price=trade.exit_price,
+                    entry_price=trade.entry_price,
+                    return_5_sessions_pct=future_return(5),
+                    return_10_sessions_pct=future_return(10),
+                    return_20_sessions_pct=future_return(20),
+                    recovered_entry_price_within_20_sessions=recovered,
+                    later_strategy_exit_signal_day=later_exit,
+                )
+            )
+        return tuple(diagnostics)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -20,6 +21,13 @@ from alphapilot.backtesting.multi_portfolio_models import (
     MultiPortfolioTrade,
     RankingDiagnostics,
     RiskDecisionDiagnostics,
+    TradeManagementDiagnostics,
+)
+from alphapilot.backtesting.trade_management import (
+    ConfiguredTradeManagementPolicy,
+    TradeManagementAction,
+    TradeManagementExitReason,
+    TradeManagementPolicy,
 )
 from alphapilot.portfolio.decisions import UNCLASSIFIED_SECTOR
 from alphapilot.portfolio.sizing import (
@@ -32,6 +40,7 @@ from alphapilot.portfolio.sizing import (
     VolatilityBatchContext,
     VolatilitySizingCandidate,
 )
+from alphapilot.strategy.evaluation import SignalReason
 from alphapilot.strategy.signal import Signal
 
 
@@ -44,10 +53,16 @@ class MultiPortfolioSimulator:
         self,
         config: MultiPortfolioConfig | None = None,
         selection_policy: CandidateSelectionPolicy | None = None,
+        trade_management_policy: TradeManagementPolicy | None = None,
     ) -> None:
         self.config = config if config is not None else MultiPortfolioConfig()
         self.selection_policy = (
             selection_policy if selection_policy is not None else TickerAscendingSelectionPolicy()
+        )
+        self.trade_management_policy = (
+            trade_management_policy
+            if trade_management_policy is not None
+            else ConfiguredTradeManagementPolicy(self.config.trade_management)
         )
 
     def run(
@@ -93,32 +108,83 @@ class MultiPortfolioSimulator:
         equity_curve: list[MultiPortfolioEquityPoint] = []
         selection_audit: list[CandidateSelectionAudit] = []
         constrained_days = 0
+        pending_stop_reentry: dict[str, int] = {}
+        reentry_sessions: list[int] = []
+        calendar_index = {trading_day: index for index, trading_day in enumerate(calendar)}
 
         for trading_day in calendar:
             candidates = executable_by_day[trading_day]
+            positions_at_session_start = set(positions)
+            strategy_exits = {
+                candidate.ticker: candidate
+                for candidate in candidates
+                if candidate.signal_bar.signal == Signal.SELL
+            }
 
-            exits = sorted(
-                (
-                    candidate
-                    for candidate in candidates
-                    if candidate.signal_bar.signal == Signal.SELL
-                ),
-                key=lambda candidate: candidate.ticker,
-            )
+            # Opening events are processed before new entries. A pre-known gap
+            # stop has conservative priority over a pending strategy exit.
+            for ticker in sorted(positions_at_session_start):
+                position = positions.get(ticker)
+                bar = bars_by_ticker_day[ticker].get(trading_day)
+                if position is None or bar is None:
+                    continue
+                action = self.trade_management_policy.evaluate(
+                    open_price=bar.open,
+                    high_price=bar.effective_high,
+                    low_price=bar.effective_low,
+                    effective_stop=position.effective_stop,
+                    initial_stop=position.initial_stop,
+                    profit_target=position.profit_target,
+                    shares=position.shares,
+                    partial_profit_taken=position.partial_profit_taken,
+                )
+                opening_action = action if self._is_opening_action(action, bar.open) else None
+                strategy_candidate = strategy_exits.get(ticker)
 
-            for candidate in exits:
-                position = positions.get(candidate.ticker)
-
-                if position is None:
+                if strategy_candidate is not None:
+                    if opening_action is not None and opening_action.gap_through_stop:
+                        cash, trade, remaining = self._apply_management_action(
+                            cash=cash,
+                            position=position,
+                            action=opening_action,
+                            trading_day=trading_day,
+                        )
+                    else:
+                        cash, trade = self._close_position(
+                            cash=cash,
+                            position=position,
+                            candidate=strategy_candidate,
+                        )
+                        remaining = None
+                    trades.append(trade)
+                    if remaining is None:
+                        del positions[ticker]
+                        self._remember_stop_exit(
+                            trade,
+                            calendar_index[trading_day],
+                            pending_stop_reentry,
+                        )
+                    else:
+                        positions[ticker] = remaining
                     continue
 
-                cash, trade = self._close_position(
-                    cash=cash,
-                    position=position,
-                    candidate=candidate,
-                )
-                trades.append(trade)
-                del positions[candidate.ticker]
+                if opening_action is not None:
+                    cash, trade, remaining = self._apply_management_action(
+                        cash=cash,
+                        position=position,
+                        action=opening_action,
+                        trading_day=trading_day,
+                    )
+                    trades.append(trade)
+                    if remaining is None:
+                        del positions[ticker]
+                        self._remember_stop_exit(
+                            trade,
+                            calendar_index[trading_day],
+                            pending_stop_reentry,
+                        )
+                    else:
+                        positions[ticker] = remaining
 
             buys = [
                 candidate
@@ -245,6 +311,9 @@ class MultiPortfolioSimulator:
 
                 if position is not None:
                     positions[candidate.ticker] = position
+                    prior_stop_index = pending_stop_reentry.pop(candidate.ticker, None)
+                    if prior_stop_index is not None:
+                        reentry_sessions.append(calendar_index[trading_day] - prior_stop_index)
                     selection_audit.append(
                         self._audit_decision(
                             candidate=candidate,
@@ -273,11 +342,75 @@ class MultiPortfolioSimulator:
                         )
                     )
 
+            # Intraday management cannot fund same-open entries and does not
+            # apply on the entry session. Same-bar stop/target ambiguity is
+            # resolved inside the policy with stop-first priority.
+            for ticker in sorted(positions_at_session_start):
+                position = positions.get(ticker)
+                bar = bars_by_ticker_day[ticker].get(trading_day)
+                if position is None or bar is None or position.entry_day == trading_day:
+                    continue
+                action = self.trade_management_policy.evaluate(
+                    open_price=bar.open,
+                    high_price=bar.effective_high,
+                    low_price=bar.effective_low,
+                    effective_stop=position.effective_stop,
+                    initial_stop=position.initial_stop,
+                    profit_target=position.profit_target,
+                    shares=position.shares,
+                    partial_profit_taken=position.partial_profit_taken,
+                )
+                if action is None or self._is_opening_action(action, bar.open):
+                    continue
+                cash, trade, remaining = self._apply_management_action(
+                    cash=cash,
+                    position=position,
+                    action=action,
+                    trading_day=trading_day,
+                )
+                trades.append(trade)
+                if remaining is None:
+                    del positions[ticker]
+                    self._remember_stop_exit(
+                        trade,
+                        calendar_index[trading_day],
+                        pending_stop_reentry,
+                    )
+                else:
+                    positions[ticker] = remaining
+
             for ticker, bars_by_day in bars_by_ticker_day.items():
                 bar = bars_by_day.get(trading_day)
 
                 if bar is not None:
                     latest_closes[ticker] = bar.close
+
+            for ticker, position in tuple(positions.items()):
+                bar = bars_by_ticker_day[ticker].get(trading_day)
+                if bar is None:
+                    continue
+                highest_close = max(
+                    position.highest_completed_close or position.entry_price,
+                    bar.close,
+                )
+                positions[ticker] = replace(
+                    position,
+                    highest_completed_close=highest_close,
+                    highest_observed_price=max(
+                        position.highest_observed_price or position.entry_price,
+                        bar.effective_high,
+                    ),
+                    lowest_observed_price=min(
+                        position.lowest_observed_price or position.entry_price,
+                        bar.effective_low,
+                    ),
+                    effective_stop=self.trade_management_policy.next_effective_stop(
+                        initial_stop=position.initial_stop,
+                        previous_effective_stop=position.effective_stop,
+                        highest_completed_close=highest_close,
+                        atr_through_close=frozen_atr.get((ticker, trading_day)),
+                    ),
+                )
 
             invested_value = sum(
                 (
@@ -337,6 +470,11 @@ class MultiPortfolioSimulator:
                 constrained_days=constrained_days,
             ),
             risk_diagnostics=self._build_risk_diagnostics(selection_audit, equity_curve),
+            trade_management_diagnostics=self._build_trade_management_diagnostics(
+                trades,
+                positions,
+                reentry_sessions,
+            ),
         )
 
     def _audit_decision(
@@ -486,6 +624,17 @@ class MultiPortfolioSimulator:
         if remaining_cash < 0:
             raise RuntimeError("entry would make portfolio cash negative")
 
+        initial_stop = self.trade_management_policy.initial_stop(
+            entry_price=execution_price,
+            atr=atr,
+        )
+        if self.config.trade_management.requires_atr and initial_stop is None:
+            return cash, None, sizing
+        profit_target = self.trade_management_policy.profit_target(
+            entry_price=execution_price,
+            initial_stop=initial_stop,
+        )
+
         return (
             remaining_cash,
             MultiPortfolioPosition(
@@ -501,6 +650,18 @@ class MultiPortfolioSimulator:
                 atr=(sizing.atr if sizing else None),
                 stop_distance=(sizing.stop_distance if sizing else None),
                 modeled_risk_dollars=(sizing.modeled_risk if sizing else Decimal("0")),
+                initial_shares=shares,
+                initial_atr=atr,
+                initial_stop=initial_stop,
+                effective_stop=initial_stop,
+                profit_target=profit_target,
+                highest_completed_close=execution_price,
+                highest_observed_price=execution_price,
+                lowest_observed_price=execution_price,
+                trade_id=(
+                    f"{candidate.ticker}:{candidate.signal_bar.trading_day}:"
+                    f"{candidate.execution_bar.trading_day}"
+                ),
             ),
             sizing,
         )
@@ -585,22 +746,177 @@ class MultiPortfolioSimulator:
         if updated_cash < 0:
             raise RuntimeError("exit would make portfolio cash negative")
 
-        return updated_cash, MultiPortfolioTrade(
+        return updated_cash, self._build_trade(
+            position=position,
+            reference_price=candidate.execution_bar.open,
+            execution_price=execution_price,
+            exit_day=candidate.execution_bar.trading_day,
+            exit_signal_day=candidate.signal_bar.trading_day,
+            shares=position.shares,
+            entry_commission=position.entry_commission,
+            exit_commission=commission,
+            exit_reason=TradeManagementExitReason.STRATEGY_EXIT,
+            strategy_exit_reason=candidate.signal_bar.evaluation.reason,
+        )
+
+    def _apply_management_action(
+        self,
+        *,
+        cash: Decimal,
+        position: MultiPortfolioPosition,
+        action: TradeManagementAction,
+        trading_day: date,
+    ) -> tuple[Decimal, MultiPortfolioTrade, MultiPortfolioPosition | None]:
+        shares = min(action.shares, position.shares)
+        entry_commission = position.entry_commission * Decimal(shares) / Decimal(position.shares)
+        execution_price = self._apply_sell_slippage(action.reference_price)
+        exit_commission = self.config.commission_per_order
+        proceeds = Decimal(shares) * execution_price - exit_commission
+        updated_cash = cash + proceeds
+        closes_position = action.closes_position or shares == position.shares
+        trade = self._build_trade(
+            position=position,
+            reference_price=action.reference_price,
+            execution_price=execution_price,
+            exit_day=trading_day,
+            shares=shares,
+            entry_commission=entry_commission,
+            exit_commission=exit_commission,
+            exit_reason=action.reason,
+            gap_through_stop=action.gap_through_stop,
+            position_closed=closes_position,
+        )
+        if updated_cash < 0:
+            raise RuntimeError("managed exit would make portfolio cash negative")
+        if closes_position:
+            return updated_cash, trade, None
+
+        remaining_shares = position.shares - shares
+        remaining = replace(
+            position,
+            shares=remaining_shares,
+            entry_commission=position.entry_commission - entry_commission,
+            modeled_risk_dollars=(
+                position.modeled_risk_dollars * Decimal(remaining_shares) / Decimal(position.shares)
+            ),
+            partial_profit_taken=True,
+        )
+        return updated_cash, trade, remaining
+
+    def _build_trade(
+        self,
+        *,
+        position: MultiPortfolioPosition,
+        reference_price: Decimal,
+        execution_price: Decimal,
+        exit_day: date,
+        exit_signal_day: date | None = None,
+        shares: int,
+        entry_commission: Decimal,
+        exit_commission: Decimal,
+        exit_reason: TradeManagementExitReason,
+        strategy_exit_reason: SignalReason | None = None,
+        gap_through_stop: bool = False,
+        position_closed: bool = True,
+    ) -> MultiPortfolioTrade:
+        peak = max(position.highest_observed_price or position.entry_price, reference_price)
+        trough = min(position.lowest_observed_price or position.entry_price, reference_price)
+        mfe = (peak - position.entry_price) / position.entry_price * Decimal("100")
+        mae = (trough - position.entry_price) / position.entry_price * Decimal("100")
+        giveback = (peak - execution_price) / peak * Decimal("100") if peak > 0 else Decimal("0")
+        return MultiPortfolioTrade(
             ticker=position.ticker,
             sector=position.sector,
             entry_signal_day=position.entry_signal_day,
             entry_day=position.entry_day,
             entry_reference_price=position.entry_reference_price,
             entry_price=position.entry_price,
-            exit_signal_day=candidate.signal_bar.trading_day,
-            exit_day=candidate.execution_bar.trading_day,
-            exit_reference_price=candidate.execution_bar.open,
+            exit_signal_day=exit_signal_day or exit_day,
+            exit_day=exit_day,
+            exit_reference_price=reference_price,
             exit_price=execution_price,
-            shares=position.shares,
-            entry_commission=position.entry_commission,
-            exit_commission=commission,
+            shares=shares,
+            entry_commission=entry_commission,
+            exit_commission=exit_commission,
             entry_reason=position.entry_reason,
-            exit_reason=candidate.signal_bar.evaluation.reason,
+            exit_reason=exit_reason,
+            trade_id=position.trade_id,
+            initial_atr=position.initial_atr,
+            initial_stop=position.initial_stop,
+            profit_target=position.profit_target,
+            gap_through_stop=gap_through_stop,
+            position_closed=position_closed,
+            holding_days=(exit_day - position.entry_day).days,
+            mfe_pct=mfe,
+            mae_pct=mae,
+            peak_giveback_pct=giveback,
+            strategy_exit_reason=strategy_exit_reason,
+        )
+
+    @staticmethod
+    def _is_opening_action(
+        action: TradeManagementAction | None,
+        open_price: Decimal,
+    ) -> bool:
+        return action is not None and (
+            action.gap_through_stop or action.reference_price == open_price
+        )
+
+    @staticmethod
+    def _remember_stop_exit(
+        trade: MultiPortfolioTrade,
+        day_index: int,
+        pending_stop_reentry: dict[str, int],
+    ) -> None:
+        if trade.exit_reason in (
+            TradeManagementExitReason.INITIAL_ATR_STOP,
+            TradeManagementExitReason.ATR_TRAILING_STOP,
+        ):
+            pending_stop_reentry[trade.ticker] = day_index
+
+    @staticmethod
+    def _build_trade_management_diagnostics(
+        trades: list[MultiPortfolioTrade],
+        positions: dict[str, MultiPortfolioPosition],
+        reentry_sessions: list[int],
+    ) -> TradeManagementDiagnostics:
+        counts: dict[str, int] = defaultdict(int)
+        stop_counts_by_ticker: dict[str, int] = defaultdict(int)
+        for trade in trades:
+            reason = str(trade.exit_reason) if trade.exit_reason is not None else "UNKNOWN"
+            counts[reason] += 1
+            if trade.exit_reason in (
+                TradeManagementExitReason.INITIAL_ATR_STOP,
+                TradeManagementExitReason.ATR_TRAILING_STOP,
+            ):
+                stop_counts_by_ticker[trade.ticker] += 1
+        stop_reasons = (
+            TradeManagementExitReason.INITIAL_ATR_STOP,
+            TradeManagementExitReason.ATR_TRAILING_STOP,
+        )
+        return TradeManagementDiagnostics(
+            exit_reasons=tuple(sorted(counts.items())),
+            stop_hit_count=sum(trade.exit_reason in stop_reasons for trade in trades),
+            gap_through_stop_count=sum(trade.gap_through_stop for trade in trades),
+            strategy_exit_count=sum(
+                trade.exit_reason == TradeManagementExitReason.STRATEGY_EXIT for trade in trades
+            ),
+            partial_profit_count=sum(
+                trade.exit_reason == TradeManagementExitReason.PARTIAL_PROFIT_2R for trade in trades
+            ),
+            full_profit_count=sum(
+                trade.exit_reason == TradeManagementExitReason.FULL_PROFIT_3R for trade in trades
+            ),
+            final_open_count=len(positions),
+            reentry_count=len(reentry_sessions),
+            repeated_stopout_count=sum(
+                max(count - 1, 0) for count in stop_counts_by_ticker.values()
+            ),
+            average_sessions_to_reentry=(
+                Decimal(sum(reentry_sessions)) / Decimal(len(reentry_sessions))
+                if reentry_sessions
+                else None
+            ),
         )
 
     def _apply_buy_slippage(self, price: Decimal) -> Decimal:

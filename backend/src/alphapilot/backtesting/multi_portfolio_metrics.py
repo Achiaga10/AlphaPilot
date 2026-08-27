@@ -26,6 +26,14 @@ class MultiPortfolioPerformanceMetrics:
     turnover_pct: Decimal
     average_open_positions: Decimal
     max_concurrent_positions: int
+    calmar_ratio: Decimal | None = None
+    median_trade_pct: Decimal | None = None
+    average_holding_days: Decimal | None = None
+    worst_trade_pct: Decimal | None = None
+    fifth_percentile_trade_pct: Decimal | None = None
+    median_mae_pct: Decimal | None = None
+    median_mfe_pct: Decimal | None = None
+    median_giveback_pct: Decimal | None = None
 
 
 class MultiPortfolioPerformanceMetricsCalculator:
@@ -43,12 +51,14 @@ class MultiPortfolioPerformanceMetricsCalculator:
             sum((trade.pnl for trade in portfolio.trades if trade.pnl < 0), Decimal("0"))
         )
 
+        cagr = self._cagr(portfolio)
+        drawdown = self._max_drawdown(portfolio)
         return MultiPortfolioPerformanceMetrics(
             initial_equity=portfolio.initial_capital,
             final_equity=portfolio.final_equity,
             total_return_pct=portfolio.total_return_pct,
-            cagr_pct=self._cagr(portfolio),
-            max_drawdown_pct=self._max_drawdown(portfolio),
+            cagr_pct=cagr,
+            max_drawdown_pct=drawdown,
             sharpe_ratio=self._sharpe(portfolio),
             exposure_pct=self._exposure(portfolio),
             completed_trades=len(portfolio.trades),
@@ -67,7 +77,40 @@ class MultiPortfolioPerformanceMetricsCalculator:
                 (point.open_positions for point in portfolio.equity_curve),
                 default=0,
             ),
+            calmar_ratio=(cagr / drawdown if cagr is not None and drawdown > 0 else None),
+            median_trade_pct=self._median(returns),
+            average_holding_days=(
+                sum((Decimal(trade.holding_days) for trade in portfolio.trades), Decimal("0"))
+                / Decimal(len(portfolio.trades))
+                if portfolio.trades
+                else None
+            ),
+            worst_trade_pct=min(returns) if returns else None,
+            fifth_percentile_trade_pct=self._percentile(returns, Decimal("0.05")),
+            median_mae_pct=self._median([trade.mae_pct for trade in portfolio.trades]),
+            median_mfe_pct=self._median([trade.mfe_pct for trade in portfolio.trades]),
+            median_giveback_pct=self._median(
+                [trade.peak_giveback_pct for trade in portfolio.trades]
+            ),
         )
+
+    @staticmethod
+    def _median(values: list[Decimal]) -> Decimal | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        middle = len(ordered) // 2
+        if len(ordered) % 2:
+            return ordered[middle]
+        return (ordered[middle - 1] + ordered[middle]) / Decimal("2")
+
+    @staticmethod
+    def _percentile(values: list[Decimal], quantile: Decimal) -> Decimal | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        index = int(quantile * Decimal(len(ordered) - 1))
+        return ordered[index]
 
     def _cagr(
         self,

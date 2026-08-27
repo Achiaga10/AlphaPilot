@@ -14,6 +14,16 @@ class BacktestBarResult:
     open: Decimal
     close: Decimal
     evaluation: StrategyEvaluation
+    high: Decimal | None = None
+    low: Decimal | None = None
+
+    @property
+    def effective_high(self) -> Decimal:
+        return self.high if self.high is not None else max(self.open, self.close)
+
+    @property
+    def effective_low(self) -> Decimal:
+        return self.low if self.low is not None else min(self.open, self.close)
 
     @property
     def signal(self) -> Signal:

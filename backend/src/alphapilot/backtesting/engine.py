@@ -81,6 +81,8 @@ class BacktestingEngine:
                     open=current_candle.open,
                     close=current_candle.close,
                     evaluation=evaluation,
+                    high=current_candle.high,
+                    low=current_candle.low,
                 )
             )
 

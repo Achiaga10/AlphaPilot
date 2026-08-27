@@ -24,15 +24,14 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 11D — Data Readiness, Sync UX & Portfolio Visualization (COMPLETE LOCALLY)
+Sprint 12 — Deep Strategy Research: Protective Stops, Exit Optimization &
+Profit Management (COMPLETE LOCALLY)
 
-Sprint 10 and Sprint 10B are complete, reviewed, and merged. Sprint 11 is
-technically complete and its Sprint 11B/Sprint 11C hardening work is preserved
-on the uncommitted `feature/ui-mvp` branch. Sprint 11D is complete locally on
-that same working tree after further real-browser review, including the final
-selectable-recommendation, exit-guidance, not-applicable-metric, and critical
-single-stock identity addenda. Read
-`docs/SPRINT11D_COMPLETION_REPORT.md`; do not begin Sprint 12.
+Sprint 11 and all 11B/11C/11D hardening are complete, reviewed, and merged.
+Sprint 12 completed the frozen backend/backtesting research protocol in
+`docs/SPRINT12_PLAN.md`; its evidence and conclusions are in
+`docs/SPRINT12_COMPLETION_REPORT.md`. Strategy entries, UI configuration, RS20,
+and sizing baselines remain unchanged. Do not begin Sprint 13.
 
 ## Development Environment
 
@@ -252,27 +251,15 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Completed Sprint 11D Task
+## Sprint 12 Task
 
-Sprint 11D completed data-readiness semantics, session-aware recovery UX,
-portfolio allocation visualization, observable sync progress, safe same-plan
-user-selectable action preview/application, frozen-strategy exit guidance,
-truthful not-applicable risk metrics, manual partial/full research-position sales,
-exact requested/returned/rendered single-stock identity, and completed-daily-session
-integrity. Daily strategy, ranking, ATR, decision, latest-price, and admin-freshness
-reads must exclude an in-progress U.S. session; provider writes must not persist
-that partial daily bar. All strategy/research
-rules, the official logo, and Sprint 11/11B/11C work remain
-preserved. Do not begin Sprint 12.
+Implement replaceable backtest trade-management overlays for the exact declared
+ATR protective, ATR trailing, and R-profit candidates. Preserve original
+strategy exits, completed sessions, T+1 strategy execution, ranking, sizing,
+costs, accounting, and survivorship disclosure. Freeze development selections
+before validation. Do not wire experimental exits into strategy classes or UI.
 
 ## End-of-Task Rule
 
-After creating:
-
-docs/SPRINT11D_COMPLETION_REPORT.md
-
-do not begin another feature.
-
-The user will take that file back to ChatGPT for review.
-
-Sprint 12 will begin only if the user approves it after that review.
+After creating `docs/SPRINT12_COMPLETION_REPORT.md`, stop. The user will review
+the evidence before Git publishing or Sprint 13.
