@@ -5,6 +5,10 @@ from datetime import date
 from decimal import Decimal
 
 from alphapilot.backtesting.candidate_selection import CandidateRejectionReason
+from alphapilot.backtesting.trade_management import (
+    TradeManagementConfig,
+    TradeManagementExitReason,
+)
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.portfolio.sizing import (
     PortfolioDecisionReason,
@@ -23,6 +27,7 @@ class MultiPortfolioConfig:
     slippage_bps: Decimal = Decimal("0")
     sizing_policy: SizingPolicyName = SizingPolicyName.EQUAL_SLOT
     risk_config: PortfolioRiskConfig = PortfolioRiskConfig()
+    trade_management: TradeManagementConfig = TradeManagementConfig()
 
     def __post_init__(self) -> None:
         if self.initial_capital <= 0:
@@ -52,6 +57,16 @@ class MultiPortfolioPosition:
     atr: Decimal | None = None
     stop_distance: Decimal | None = None
     modeled_risk_dollars: Decimal = Decimal("0")
+    initial_shares: int = 0
+    initial_atr: Decimal | None = None
+    initial_stop: Decimal | None = None
+    effective_stop: Decimal | None = None
+    profit_target: Decimal | None = None
+    highest_completed_close: Decimal | None = None
+    highest_observed_price: Decimal | None = None
+    lowest_observed_price: Decimal | None = None
+    partial_profit_taken: bool = False
+    trade_id: str = ""
 
     @property
     def cost_basis(self) -> Decimal:
@@ -77,7 +92,18 @@ class MultiPortfolioTrade:
     entry_commission: Decimal
     exit_commission: Decimal
     entry_reason: SignalReason | None
-    exit_reason: SignalReason | None
+    exit_reason: SignalReason | TradeManagementExitReason | None
+    trade_id: str = ""
+    initial_atr: Decimal | None = None
+    initial_stop: Decimal | None = None
+    profit_target: Decimal | None = None
+    gap_through_stop: bool = False
+    position_closed: bool = True
+    holding_days: int = 0
+    mfe_pct: Decimal = Decimal("0")
+    mae_pct: Decimal = Decimal("0")
+    peak_giveback_pct: Decimal = Decimal("0")
+    strategy_exit_reason: SignalReason | None = None
 
     @property
     def cost_basis(self) -> Decimal:
@@ -168,6 +194,20 @@ class RiskDecisionDiagnostics:
 
 
 @dataclass(slots=True, frozen=True)
+class TradeManagementDiagnostics:
+    exit_reasons: tuple[tuple[str, int], ...] = ()
+    stop_hit_count: int = 0
+    gap_through_stop_count: int = 0
+    strategy_exit_count: int = 0
+    partial_profit_count: int = 0
+    full_profit_count: int = 0
+    final_open_count: int = 0
+    reentry_count: int = 0
+    repeated_stopout_count: int = 0
+    average_sessions_to_reentry: Decimal | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class MultiPortfolioSimulationResult:
     initial_capital: Decimal
     final_equity: Decimal
@@ -189,6 +229,7 @@ class MultiPortfolioSimulationResult:
         missing_score_candidates=0,
     )
     risk_diagnostics: RiskDecisionDiagnostics = RiskDecisionDiagnostics()
+    trade_management_diagnostics: TradeManagementDiagnostics = TradeManagementDiagnostics()
 
     @property
     def total_return_pct(self) -> Decimal:

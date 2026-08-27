@@ -2,24 +2,19 @@
 
 ## Current Phase
 
-Sprint 11D — Data Readiness, Sync UX & Portfolio Visualization (COMPLETE LOCALLY)
+Sprint 12 — Deep Strategy Research: Protective Stops, Exit Optimization &
+Profit Management (COMPLETE LOCALLY)
 
 Current development branch:
-feature/ui-mvp
+feature/strategy-exit-research
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
-Sprints 7 through 10B are complete, reviewed, and merged. Sprint 11's first
-React/TypeScript UI and Sprint 11B product hardening remain complete locally.
-Sprint 11C is complete locally with portfolio actions, custom ticker management,
-split synchronization, explicit Alpaca feed behavior, and explainability.
-Further real-browser review opened and completed Sprint 11D on the same
-uncommitted `feature/ui-mvp` working tree, adding readiness semantics, sync
-progress, portfolio visualization, safe same-plan multi-apply, and manual sale
-bookkeeping. The final Part AB hardening also quarantines incomplete current-day
-Alpaca daily bars throughout persistence, repository reads, orchestration,
-latest-price, and admin-freshness paths. See
-`docs/SPRINT11D_COMPLETION_REPORT.md`.
+Sprints 7 through 10B are complete, reviewed, and merged. Sprint 11, including
+11B/11C/11D and completed-session hardening, is complete, reviewed, and merged.
+Sprint 12 completed the frozen research protocol in `docs/SPRINT12_PLAN.md`.
+The evidence is recorded in `docs/SPRINT12_COMPLETION_REPORT.md`; production
+strategy and UI behavior remain unchanged.
 
 ## Project Goal
 
@@ -103,23 +98,23 @@ Sprint 10B — Risk Model Hardening & Decision Orchestration
 COMPLETE / merged
 
 Sprint 11 — UI MVP
-COMPLETE locally / awaiting user review and Git operations
+COMPLETE / merged
 
 Sprint 11B — UI Product Hardening & Admin Data Operations
-COMPLETE locally / awaiting user review and Git operations
+COMPLETE / merged
 
 Sprint 11C — Portfolio Actions, Ticker Management & UI Explainability
-COMPLETE locally / awaiting user review and Git operations
+COMPLETE / merged
 
 Sprint 11D — Data Readiness, Sync UX & Portfolio Visualization
-COMPLETE locally / awaiting user review and Git operations
+COMPLETE / merged
 
 Post-completion manual-review hardening is also complete locally: BUY candidate
 rank is advisory rather than forced order; user-selected whole-share quantities
 receive backend preview and current-draft constraint validation; frozen EMA20
 HYBRID/Micho exit guidance is backend-owned; Equal-slot risk metrics use explicit
 not-applicable semantics; and proposed sector weights no longer display false
-zero values. Sprint 12 remains not started.
+zero values. This work was complete before Sprint 12 began.
 
 The critical Part AA single-stock identity blocker is fixed locally. Evaluate
 Stock no longer assumes the first portfolio-plan status is the requested ticker.
@@ -131,7 +126,11 @@ response from replacing a newer evaluation. Real stored-data acceptance passed
 with LDOS held: SBET rendered Sharplink Inc, then AAPL replaced SBET only after
 an explicit second evaluation.
 
-Sprint 12
+Sprint 12 — Deep Strategy Research: Protective Stops, Exit Optimization &
+Profit Management
+COMPLETE LOCALLY
+
+Sprint 13
 NOT STARTED
 
 ## Sprint 7 Portfolio Infrastructure

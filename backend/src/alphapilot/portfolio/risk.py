@@ -62,3 +62,21 @@ class AverageTrueRangeCalculator:
         ]
         atr = sum(ranges, Decimal("0")) / Decimal(period)
         return atr if atr > 0 else None
+
+    def calculate_series(
+        self,
+        candles: list[DailyCandle],
+        *,
+        period: int = 14,
+    ) -> dict[date, Decimal | None]:
+        if period <= 0:
+            raise ValueError("period must be greater than zero")
+        ordered = sorted(candles, key=lambda candle: candle.trading_day)
+        result: dict[date, Decimal | None] = {candle.trading_day: None for candle in ordered}
+        ranges: list[Decimal] = []
+        for previous, current in zip(ordered, ordered[1:], strict=False):
+            ranges.append(self.true_range(current, previous.close))
+            if len(ranges) >= period:
+                atr = sum(ranges[-period:], Decimal("0")) / Decimal(period)
+                result[current.trading_day] = atr if atr > 0 else None
+        return result

@@ -46,3 +46,15 @@ def test_zero_atr_is_invalid() -> None:
     assert (
         AverageTrueRangeCalculator().calculate(flat, signal_day=START + timedelta(days=14)) is None
     )
+
+
+def test_atr_series_value_for_completed_day_cannot_change_with_future_candle() -> None:
+    completed = [candle(day, "102", "100", "101") for day in range(15)]
+    calculator = AverageTrueRangeCalculator()
+
+    before = calculator.calculate_series(completed)[START + timedelta(days=14)]
+    after = calculator.calculate_series([*completed, candle(15, "1000", "1", "500")])[
+        START + timedelta(days=14)
+    ]
+
+    assert before == after == Decimal("2")

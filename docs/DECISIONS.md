@@ -16,8 +16,87 @@ Sprint 10 — Portfolio Risk, Position Sizing & Decision API — is complete and
 
 Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete and merged.
 
-Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete locally on the
-same uncommitted `feature/ui-mvp` working tree. Sprint 12 is not started.
+Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete and merged.
+Sprint 12 is complete locally on `feature/strategy-exit-research`. Its frozen
+experiment selected research-only protective-stop candidates; existing strategy
+exits remain the defaults. Sprint 13 is not started.
+
+## 0.11 Sprint 12 Frozen Research Protocol
+
+- Strategy entries remain EMA20 Pullback and Micho V1 BOTH. EMA control remains
+  HYBRID 2%; Micho control remains close-below-SMA150.
+- Primary portfolios are EMA RS20/equal-slot and Micho RS20/
+  ATR-volatility-normalized at COST_LOW, $100,000, 10 positions.
+- Research exits are simulator overlays, never embedded in strategy classes or
+  UI during Sprint 12.
+- Protective candidates are control, ATR14 1.5x, 2.0x, and 3.0x static stops.
+  Highest development Calmar selects, with Sharpe/drawdown/CAGR tie-breaks.
+- Stop fills are open on gap-through, otherwise the pre-known stop; stop has
+  conservative priority. Entry-created orders activate the following session.
+- Trailing candidates are none, ATR 2.0x, and ATR 3.0x; only T-1 closes/ATR may
+  move a monotonic stop.
+- Profit candidates are none, one 50%-whole-share partial at +2R, and full exit
+  at +3R. Same-bar ambiguous stop/target ordering is stop-first.
+- At most one trailing or fixed/partial overlay accompanies the selected
+  protective stop. Positive-CAGR candidates must retain at least 80% of the
+  relevant development control CAGR to be eligible.
+- Development is 2021-08-20–2024-12-31; untouched validation is
+  2025-01-01–2026-08-20; folds are 2021-08-20–2022-12-31,
+  2023-01-01–2024-12-31, and 2025-01-01–2026-08-20.
+- No validation retuning, additional multiples, new entry/ranking/sizing
+  parameter, or inconvenient-fold removal is permitted.
+- All historical results retain current-constituent survivorship bias and daily
+  OHLC path ambiguity. Sprint 12 may validly select the existing strategy exit.
+
+### Sprint 12 protective-stop development selection
+
+Phase 0 reproduced both COST_LOW development controls:
+
+- EMA HYBRID 2% + RS20 + equal-slot: 80.15% return, 26.43% max drawdown,
+  0.87 Sharpe.
+- Micho BOTH + RS20 + ATR-volatility-normalized: 48.43% return, 15.74% max
+  drawdown, 0.77 Sharpe.
+
+The predeclared highest-development-Calmar rule selected and froze:
+
+- EMA: `atr-stop-3-0` (Calmar 0.755 versus 0.723 control).
+- Micho: `atr-stop-1-5` (Calmar 0.920 versus 0.791 control).
+
+These protective multipliers may not change after later trailing, profit, or
+validation results. The final optional overlay remains to be selected from the
+already-declared Phase 2/3 candidates before validation.
+
+Phase 2/3 then froze the final development configurations before validation:
+
+- EMA: keep `atr-stop-3-0` with no additional overlay. ATR trailing 2x/3x and
+  partial +2R/full +3R all had lower development Calmar; both fixed-profit
+  candidates also failed the 80% positive-CAGR-retention gate.
+- Micho: keep `atr-stop-1-5` with no additional overlay. Both trailing exits
+  severely truncated returns; both fixed-profit candidates failed the 80%
+  positive-CAGR-retention gate.
+
+Therefore the selected protective configuration and selected final
+configuration are identical for each strategy. These exact choices are encoded
+in `FROZEN_EXIT_SELECTIONS`; validation/fold runner stages reject any other
+candidate. No validation result was opened before this freeze.
+
+Validation control figures differ materially from Sprint 10B because stored
+recent candle data was revised after that Sprint, not because the inactive
+control overlay changed execution. Evidence recorded before fold analysis:
+
+- current and Sprint 10B selection audits first diverge on execution day
+  2025-07-23 (signal day 2025-07-22), matching the later UI 400-day sync
+  boundary;
+- 702,853 candle rows for 503 companies were upserted on 2026-08-21, covering
+  2019-07-17 through 2026-08-20;
+- Sprint 11D records the configured sync source/feed as Alpaca IEX and records
+  that individual candle rows lack feed provenance;
+- development controls ending 2024-12-31 still reproduced their prior values.
+
+Sprint 12 therefore uses the current stored candles consistently for both
+control and frozen candidates. The completion report must disclose the data
+revision, mixed/provenance limitation, and non-comparability of current
+validation headlines with the older Sprint 10B artifact values.
 
 Daily-candle research decisions use completed U.S. market sessions only. The
 backend's `CompletedDailySessionPolicy` uses `America/New_York` and a
