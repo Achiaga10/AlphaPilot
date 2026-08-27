@@ -2,21 +2,22 @@
 
 ## Current Phase
 
-Sprint 13 — Research Data Versioning, Provenance & Reproducibility
+Sprint 14 — Strategy-Specific Configuration Profiles
 COMPLETE LOCALLY / awaiting user review and Git publishing
 
 Current development branch:
-feature/research-data-versioning
+feature/strategy-profiles
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
 Sprints 7 through 10B are complete, reviewed, and merged. Sprint 11, including
 11B/11C/11D and completed-session hardening, is complete, reviewed, and merged.
 Sprint 12 completed its frozen protocol, was reviewed, and is merged. Sprint 13
-is complete locally: immutable market-data versions, explicit ingestion
-provenance, exact universe/candle snapshots, deterministic hashes, and
-snapshot-bound research replay are implemented without changing strategy or
-normal UI behavior. Sprint 14 is not started.
+is complete, reviewed, and merged: immutable market-data versions, explicit
+ingestion provenance, exact universe/candle snapshots, deterministic hashes,
+and snapshot-bound research replay are implemented without changing strategy or
+normal UI behavior. Sprint 14 is complete locally with backend-owned versioned
+strategy profiles. Sprint 15 is not started.
 
 ## Project Goal
 
@@ -133,9 +134,12 @@ Profit Management
 COMPLETE / merged
 
 Sprint 13 — Research Data Versioning, Provenance & Reproducibility
-IN PROGRESS
+COMPLETE / merged
 
-Sprint 14
+Sprint 14 — Strategy-Specific Configuration Profiles
+COMPLETE LOCALLY
+
+Sprint 15
 NOT STARTED
 
 ## Sprint 7 Portfolio Infrastructure

@@ -5,6 +5,7 @@ import {
   getHealth,
   getLatestStoredPrice,
   getRiskConfig,
+  getStrategyProfiles,
   previewManualSell,
 } from '../api/portfolio'
 import {
@@ -40,6 +41,14 @@ export function useRiskConfigQuery() {
   return useQuery({
     queryKey: ['portfolio-risk-config'],
     queryFn: ({ signal }) => getRiskConfig(signal),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useStrategyProfilesQuery() {
+  return useQuery({
+    queryKey: ['strategy-profiles'],
+    queryFn: ({ signal }) => getStrategyProfiles(signal),
     staleTime: 5 * 60_000,
   })
 }

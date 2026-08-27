@@ -35,17 +35,18 @@ test('portfolio form reports validation errors without calling the API', async (
   expect(screen.getByRole('alert')).toHaveTextContent('Cash must be zero or greater.')
 })
 
-test('strategy and sizing choices preserve frozen research configuration', async () => {
+test('strategy choice displays its backend-owned frozen profile', async () => {
   const user = userEvent.setup()
   await renderReadyPortfolio()
   await user.selectOptions(screen.getByLabelText(/^Strategy/), 'micho-150')
-  await user.selectOptions(screen.getByLabelText('Sizing policy'), 'atr-volatility-normalized')
   expect(screen.getByText('Entry mode · BOTH')).toBeInTheDocument()
   expect(screen.getByText('Promising research baseline')).toBeInTheDocument()
+  expect(screen.getByText(/ATR volatility normalized .* Close below SMA150/)).toBeInTheDocument()
+  expect(screen.queryByLabelText('Sizing policy')).not.toBeInTheDocument()
   expect(screen.queryByRole('slider')).not.toBeInTheDocument()
 })
 
-test('strategy, ranking, sizing, date, and scope help is accessible and economically accurate', async () => {
+test('strategy, ranking, backend profile, date, and scope help is accessible', async () => {
   const user = userEvent.setup()
   await renderReadyPortfolio()
   await user.hover(screen.getByRole('button', { name: 'About strategy choices' }))
@@ -54,8 +55,8 @@ test('strategy, ranking, sizing, date, and scope help is accessible and economic
   await user.hover(screen.getByRole('button', { name: 'About selection policy' }))
   expect(screen.getByRole('tooltip')).toHaveTextContent('economically meaningless deterministic control')
   await user.unhover(screen.getByRole('button', { name: 'About selection policy' }))
-  await user.hover(screen.getByRole('button', { name: 'About sizing policy' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('none is production-ready')
+  await user.hover(screen.getByRole('button', { name: 'About backend strategy profile' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('resolved by the versioned backend profile')
   for (const name of ['About requested analysis date', 'About optional ticker scope']) {
     const trigger = screen.getByRole('button', { name })
     await user.hover(trigger)

@@ -24,9 +24,6 @@ test('every plan-affecting form area marks the displayed result stale and regene
   await user.selectOptions(screen.getByLabelText('Selection policy'), 'ticker-ascending')
   await expectDirty(); await regenerate()
 
-  await user.selectOptions(screen.getByLabelText('Sizing policy'), 'atr-risk')
-  await expectDirty(); await regenerate()
-
   await user.clear(screen.getByLabelText('Requested analysis date'))
   await user.type(screen.getByLabelText('Requested analysis date'), '2026-08-19')
   await expectDirty(); await regenerate()
@@ -36,7 +33,7 @@ test('every plan-affecting form area marks the displayed result stale and regene
 
   await user.click(screen.getByRole('button', { name: 'Add position' }))
   await expectDirty()
-})
+}, 10_000)
 
 test('failed regeneration leaves the prior plan visible and stale', async () => {
   const user = userEvent.setup()

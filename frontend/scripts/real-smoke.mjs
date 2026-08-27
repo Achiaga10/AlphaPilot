@@ -44,6 +44,8 @@ function buy(ticker, price, shares, order, dependencies) {
 }
 
 function controlledPlan(request) {
+  const profile = strategyProfiles.find((item) => item.strategy === request.strategy)
+  assert(profile, `Missing controlled profile for ${request.strategy}`)
   const decisions = [
     buy('NVDA', 100, 10, 1, []),
     buy('AMD', 50, 20, 2, ['1:BUY:NVDA']),
@@ -57,8 +59,8 @@ function controlledPlan(request) {
       modeled_risk_complete: true,
     },
     config: request.risk_config, strategy: request.strategy, selection_policy: request.selection_policy,
-    sizing_policy: request.sizing_policy, requested_as_of_date: request.as_of_date,
-    analysis_as_of_date: '2026-08-25', decisions,
+    sizing_policy: profile.sizing_policy, strategy_profile: profile, requested_as_of_date: request.as_of_date,
+    analysis_as_of_date: '2026-08-25', evaluation_target_ticker: null, decisions,
     candidate_statuses: decisions.map((decision, index) => ({
       ticker: decision.ticker, status: 'READY', data_as_of_date: '2026-08-25', signal: 'BUY',
       reason: 'EMA20_PULLBACK_RECLAIM', company_name: decision.ticker, sector: decision.sector,
@@ -74,19 +76,45 @@ function controlledPlan(request) {
   }
 }
 
+const strategyProfiles = [
+  {
+    profile_id: 'ema20-pullback-v1', version: 1, strategy: 'ema20-pullback', display_name: 'EMA20 Pullback',
+    classification: 'PROMISING_RESEARCH_BASELINE', entry_description: 'Existing EMA20 Pullback reclaim entry',
+    recommended_selection_policy: 'relative-strength-20', allowed_selection_policies: ['relative-strength-20', 'ticker-ascending'],
+    sizing_policy: 'equal-slot', strategy_exit_description: 'HYBRID exit with frozen 2% threshold',
+    ema_exit_mode: 'hybrid', hybrid_trend_threshold_pct: '2', micho_entry_mode: null,
+    protective_stop_default: 'NONE', profit_management_default: 'NONE', research_only_stop_candidate: 'Static 3 × ATR14',
+  },
+  {
+    profile_id: 'micho-150-v1', version: 1, strategy: 'micho-150', display_name: 'Micho 150',
+    classification: 'PROMISING_RESEARCH_BASELINE', entry_description: 'Micho V1 BOTH entry mode',
+    recommended_selection_policy: 'relative-strength-20', allowed_selection_policies: ['relative-strength-20', 'ticker-ascending'],
+    sizing_policy: 'atr-volatility-normalized', strategy_exit_description: 'Close below SMA150',
+    ema_exit_mode: null, hybrid_trend_threshold_pct: null, micho_entry_mode: 'both',
+    protective_stop_default: 'NONE', profit_management_default: 'NONE', research_only_stop_candidate: 'Static 1.5 × ATR14',
+  },
+]
+
 async function fulfillJson(route, body) {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
 
 async function installControlledPortfolio(page) {
+  await page.route('**/api/v1/portfolio/strategy-profiles', (route) => fulfillJson(route, strategyProfiles))
   await page.route('**/api/v1/portfolio/state-summary', async (route) => {
     await fulfillJson(route, summary(route.request().postDataJSON()))
   })
   await page.route('**/api/v1/portfolio/plan', async (route) => {
-    await fulfillJson(route, controlledPlan(route.request().postDataJSON()))
+    const request = route.request().postDataJSON()
+    assert(!('sizing_policy' in request), 'Browser supplied authoritative sizing')
+    assert(!('exit_mode' in request), 'Browser supplied authoritative EMA exit mode')
+    assert(!('micho_entry_mode' in request), 'Browser supplied authoritative Micho entry mode')
+    await fulfillJson(route, controlledPlan(request))
   })
   await page.route('**/api/v1/portfolio/apply-action', async (route) => {
     const body = route.request().postDataJSON()
+    assert(body.strategy_profile_id === 'ema20-pullback-v1', 'Action omitted or changed profile identity')
+    assert(body.strategy_profile_version === 1, 'Action omitted or changed profile version')
     const decision = body.decision
     const portfolio = structuredClone(body.portfolio)
     const missing = decision.depends_on_action_ids.some((id) => !body.applied_action_ids.includes(id))
@@ -133,13 +161,26 @@ await mkdir(dirname(screenshotPath), { recursive: true })
 const browser = await chromium.launch({ executablePath: edgePath, headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-  await page.addInitScript(() => window.localStorage.clear())
+  await page.addInitScript(() => {
+    window.localStorage.setItem('alphapilot.plan-draft.v1', JSON.stringify({
+      cash: '31000', positions: [], strategy: 'micho-150', selectionPolicy: 'ticker-ascending',
+      sizingPolicy: 'atr-risk', asOfDate: '2026-08-25', tickerScope: '',
+    }))
+  })
   await installControlledPortfolio(page)
   const networkUrls = []
   page.on('request', (request) => networkUrls.push(request.url()))
   page.on('dialog', (dialog) => dialog.accept())
   await page.goto(`${frontendUrl}/portfolio`, { waitUntil: 'networkidle' })
   await page.getByText('Backend connected').waitFor()
+  assert(await page.getByLabel('Cash (USD)').inputValue() === '31000', 'Legacy cash did not survive')
+  assert(await page.getByLabel('Strategy', { exact: true }).inputValue() === 'micho-150', 'Legacy strategy did not survive')
+  assert(await page.getByLabel('Selection policy', { exact: true }).inputValue() === 'ticker-ascending', 'Legacy selection did not survive')
+  assert((await page.getByLabel('Sizing policy').count()) === 0, 'Obsolete sizing selector remains')
+  await page.getByRole('button', { name: 'Generate Portfolio Plan' }).click()
+  await page.getByText('micho-150-v1 v1').waitFor()
+  await page.getByLabel('Strategy', { exact: true }).selectOption('ema20-pullback')
+  await page.getByLabel('Selection policy', { exact: true }).selectOption('relative-strength-20')
 
   const logoFacts = await page.getByRole('img', { name: 'AlphaPilot' }).evaluate((image) => ({
     naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight,
@@ -157,10 +198,12 @@ try {
   await held.getByLabel('Reference price').fill('150')
   await page.getByRole('button', { name: 'Generate Portfolio Plan' }).click()
   await page.getByRole('heading', { name: 'Analysis data ready' }).waitFor()
+  await page.getByText('ema20-pullback-v1 v1').waitFor()
 
   const cashSequence = []
   for (const expectedCash of ['29000', '28000', '27000']) {
-    await page.getByRole('button', { name: 'Add to Portfolio' }).click()
+    await page.getByRole('button', { name: 'Review Add' }).first().click()
+    await page.getByRole('button', { name: 'Add to Research Portfolio' }).click()
     await page.getByText(/was added to the research portfolio/).waitFor()
     cashSequence.push(await page.getByLabel('Cash (USD)').inputValue())
     assert(cashSequence.at(-1) === expectedCash, `Unexpected cash after ordered action: ${cashSequence.at(-1)}`)

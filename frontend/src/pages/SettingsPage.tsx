@@ -1,15 +1,16 @@
 import { ErrorState, LoadingState } from '../components/AsyncState'
 import { RiskSummary } from '../features/portfolio/RiskSummary'
 import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
-import { POLICY_CLASSIFICATIONS } from '../features/portfolio/policyClassifications'
-import { useRiskConfigQuery } from '../hooks/usePortfolioApi'
+import { useRiskConfigQuery, useStrategyProfilesQuery } from '../hooks/usePortfolioApi'
 import { classificationLabel, sizingLabel, strategyLabel } from '../utils/format'
 import { InfoTooltip } from '../components/InfoTooltip'
 import { HELP_TEXT } from '../features/portfolio/helpText'
 
 export function SettingsPage() {
   const query = useRiskConfigQuery()
+  const profiles = useStrategyProfilesQuery()
   const { draft } = usePortfolioWorkspace()
+  const selectedProfile = profiles.data?.find((profile) => profile.strategy === draft.strategy)
   return (
     <div className="page">
       <header className="page-header">
@@ -21,7 +22,9 @@ export function SettingsPage() {
       </header>
       {query.isPending ? <LoadingState label="Loading backend defaults" /> : null}
       {query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : null}
-      {query.data ? <RiskSummary config={query.data} sizingPolicy={draft.sizingPolicy} /> : null}
+      {profiles.isPending ? <LoadingState label="Loading backend strategy profiles" /> : null}
+      {profiles.isError ? <ErrorState error={profiles.error} onRetry={() => void profiles.refetch()} /> : null}
+      {query.data && selectedProfile ? <RiskSummary config={query.data} sizingPolicy={selectedProfile.sizing_policy} /> : null}
 
       <section className="panel" aria-labelledby="classification-title">
         <div className="section-heading">
@@ -32,24 +35,24 @@ export function SettingsPage() {
           <span className="muted">None are production-ready</span>
         </div>
         <div className="classification-grid">
-          {(Object.keys(POLICY_CLASSIFICATIONS) as Array<keyof typeof POLICY_CLASSIFICATIONS>).map((strategy) => (
-            <article key={strategy}>
-              <h3>{strategyLabel(strategy)}</h3>
+          {profiles.data?.map((profile) => (
+            <article key={profile.profile_id}>
+              <h3>{strategyLabel(profile.strategy)}</h3>
               <ul>
-                {(Object.entries(POLICY_CLASSIFICATIONS[strategy])).map(([policy, classification]) => (
-                  <li key={policy}>
-                    <span>{sizingLabel(policy)}</span><strong>{classificationLabel(classification)}</strong>
-                  </li>
-                ))}
+                <li><span>Profile</span><strong>{profile.profile_id} v{profile.version}</strong></li>
+                <li><span>Sizing</span><strong>{sizingLabel(profile.sizing_policy)}</strong></li>
+                <li><span>Classification</span><strong>{classificationLabel(profile.classification)}</strong></li>
+                <li><span>Strategy exit</span><strong>{profile.strategy_exit_description}</strong></li>
+                <li><span>Default stop / profit</span><strong>{profile.protective_stop_default} / {profile.profit_management_default}</strong></li>
               </ul>
+              <p className="muted">Research-only stop candidate: {profile.research_only_stop_candidate}</p>
             </article>
           ))}
         </div>
       </section>
       <section className="panel prose-panel">
         <h2>Frozen strategy configuration</h2>
-        <p><strong>EMA20 Pullback:</strong> HYBRID exit with the frozen 2% threshold.</p>
-        <p><strong>Micho 150:</strong> V1 with BOTH entry mode.</p>
+        <p>These facts are loaded from the backend profile registry. The browser does not resolve sizing, entry mode, or strategy exits.</p>
         <p>RS20 remains AlphaPilot Research Ranking Baseline V1. This UI does not expose research parameter tuning.</p>
       </section>
     </div>

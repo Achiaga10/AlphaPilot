@@ -39,6 +39,21 @@ async def test_risk_config_defaults(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_strategy_profiles_are_backend_owned(client: AsyncClient) -> None:
+    response = await client.get("/api/v1/portfolio/strategy-profiles")
+    assert response.status_code == 200
+    profiles = response.json()
+    assert [item["profile_id"] for item in profiles] == [
+        "ema20-pullback-v1",
+        "micho-150-v1",
+    ]
+    assert profiles[0]["sizing_policy"] == "equal-slot"
+    assert profiles[0]["hybrid_trend_threshold_pct"] == "2"
+    assert profiles[1]["sizing_policy"] == "atr-volatility-normalized"
+    assert profiles[1]["micho_entry_mode"] == "both"
+
+
+@pytest.mark.asyncio
 async def test_decision_api_returns_ui_ready_reason_codes(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/portfolio/decisions",
@@ -160,7 +175,9 @@ async def test_high_level_plan_api_requires_no_enriched_candidate_facts(
     class FakeOrchestrator:
         async def build_plan(self, **kwargs: object) -> PortfolioOrchestrationResult:
             assert "state" in kwargs
-            assert "sizing_policy" in kwargs
+            assert kwargs["sizing_policy"] == "equal-slot"
+            assert kwargs["exit_mode"] == "hybrid"
+            assert kwargs["hybrid_trend_threshold_pct"] == Decimal("2")
             return PortfolioOrchestrationResult(
                 plan=PortfolioDecisionPlan(
                     equity=Decimal("100000"),
@@ -212,7 +229,6 @@ async def test_high_level_plan_api_requires_no_enriched_candidate_facts(
                 "portfolio": {"cash": "100000", "positions": []},
                 "as_of_date": "2026-08-20",
                 "tickers": ["AAA"],
-                "sizing_policy": "atr-volatility-normalized",
             },
         )
     finally:
@@ -220,7 +236,8 @@ async def test_high_level_plan_api_requires_no_enriched_candidate_facts(
     assert response.status_code == 200
     body = response.json()
     assert body["analysis_as_of_date"] == "2026-08-20"
-    assert body["sizing_policy"] == "atr-volatility-normalized"
+    assert body["sizing_policy"] == "equal-slot"
+    assert body["strategy_profile"]["profile_id"] == "ema20-pullback-v1"
     assert body["candidate_statuses"][0]["status"] == "NO_ACTION"
     assert body["candidate_statuses"][0]["company_id"] is not None
     assert body["evaluation_target_ticker"] == "AAA"
@@ -228,6 +245,18 @@ async def test_high_level_plan_api_requires_no_enriched_candidate_facts(
     assert body["portfolio"]["cash_pct"] == "100"
     assert body["portfolio"]["modeled_risk_complete"] is True
     assert body["portfolio"]["positions"] == []
+
+    rejected_override = await client.post(
+        "/api/v1/portfolio/plan",
+        json={
+            "strategy": "micho-150",
+            "selection_policy": "relative-strength-20",
+            "sizing_policy": "equal-slot",
+            "portfolio": {"cash": "100000", "positions": []},
+        },
+    )
+    assert rejected_override.status_code == 422
+    assert rejected_override.json()["detail"][0]["type"] == "extra_forbidden"
 
 
 @pytest.mark.asyncio
@@ -271,6 +300,8 @@ async def test_state_summary_and_same_plan_apply_action_are_backend_owned(
             "decision": decision,
             "applied_action_ids": [],
             "requested_shares": 50,
+            "strategy_profile_id": "ema20-pullback-v1",
+            "strategy_profile_version": 1,
             "sizing_policy": "equal-slot",
         },
     )
@@ -281,6 +312,20 @@ async def test_state_summary_and_same_plan_apply_action_are_backend_owned(
     assert preview.json()["requested_allocation_dollars"] == "5000"
     assert preview.json()["cash_after"] == "95000"
     assert preview.json()["modeled_position_risk_dollars"] is None
+    mismatched_profile = await client.post(
+        "/api/v1/portfolio/preview-action",
+        json={
+            "plan_id": "plan-test",
+            "portfolio": {"cash": "100000", "positions": []},
+            "decision": decision,
+            "applied_action_ids": [],
+            "strategy_profile_id": "micho-150-v1",
+            "strategy_profile_version": 1,
+            "sizing_policy": "equal-slot",
+        },
+    )
+    assert mismatched_profile.status_code == 422
+    assert "authoritative strategy profile" in mismatched_profile.json()["detail"]
     applied = await client.post(
         "/api/v1/portfolio/apply-action",
         json={
@@ -288,6 +333,9 @@ async def test_state_summary_and_same_plan_apply_action_are_backend_owned(
             "portfolio": {"cash": "100000", "positions": []},
             "decision": decision,
             "applied_action_ids": [],
+            "strategy_profile_id": "ema20-pullback-v1",
+            "strategy_profile_version": 1,
+            "sizing_policy": "equal-slot",
         },
     )
     assert applied.status_code == 200

@@ -11,6 +11,7 @@ import type {
   PortfolioPlan,
   PortfolioPlanRequest,
   PortfolioRiskConfig,
+  StrategyProfile,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -31,8 +32,8 @@ function isHealth(value: unknown): value is HealthResponse {
 }
 
 function isPortfolioPlan(value: unknown): value is PortfolioPlan {
+  if (!isObject(value) || !isStrategyProfile(value.strategy_profile)) return false
   return (
-    isObject(value) &&
     isObject(value.portfolio) &&
     Array.isArray(value.decisions) &&
     Array.isArray(value.candidate_statuses) &&
@@ -40,9 +41,42 @@ function isPortfolioPlan(value: unknown): value is PortfolioPlan {
     isObject(value.readiness) &&
     typeof value.plan_id === 'string' &&
     typeof value.requested_as_of_date === 'string' &&
-    typeof value.analysis_as_of_date === 'string'
+    typeof value.analysis_as_of_date === 'string' &&
+    value.strategy === value.strategy_profile.strategy &&
+    value.sizing_policy === value.strategy_profile.sizing_policy &&
+    selectionPolicies.has(String(value.selection_policy))
   )
 }
+
+const strategyNames = new Set(['ema20-pullback', 'micho-150'])
+const selectionPolicies = new Set(['relative-strength-20', 'ticker-ascending'])
+const sizingPolicies = new Set(['equal-slot', 'atr-risk', 'atr-volatility-normalized'])
+
+function isStrategyProfile(value: unknown): value is StrategyProfile {
+  return (
+    isObject(value) &&
+    typeof value.profile_id === 'string' &&
+    typeof value.version === 'number' &&
+    strategyNames.has(String(value.strategy)) &&
+    typeof value.display_name === 'string' &&
+    (value.classification === 'PROMISING_RESEARCH_BASELINE' || value.classification === 'RESEARCH_ONLY') &&
+    typeof value.entry_description === 'string' &&
+    selectionPolicies.has(String(value.recommended_selection_policy)) &&
+    Array.isArray(value.allowed_selection_policies) &&
+    value.allowed_selection_policies.every((item) => selectionPolicies.has(String(item))) &&
+    sizingPolicies.has(String(value.sizing_policy)) &&
+    typeof value.strategy_exit_description === 'string' &&
+    (value.ema_exit_mode === 'hybrid' || value.ema_exit_mode === null) &&
+    (typeof value.hybrid_trend_threshold_pct === 'string' || value.hybrid_trend_threshold_pct === null) &&
+    (value.micho_entry_mode === 'both' || value.micho_entry_mode === null) &&
+    value.protective_stop_default === 'NONE' &&
+    value.profit_management_default === 'NONE' &&
+    typeof value.research_only_stop_candidate === 'string'
+  )
+}
+
+const isStrategyProfiles = (value: unknown): value is StrategyProfile[] =>
+  Array.isArray(value) && value.length > 0 && value.every(isStrategyProfile)
 
 const isDraftSummary = (value: unknown): value is PortfolioDraftSummary =>
   isObject(value) && typeof value.equity === 'string' && Array.isArray(value.positions)
@@ -62,6 +96,10 @@ export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
 
 export function getRiskConfig(signal?: AbortSignal): Promise<PortfolioRiskConfig> {
   return requestJson('/api/v1/portfolio/risk-config', { signal }, isRiskConfig)
+}
+
+export function getStrategyProfiles(signal?: AbortSignal): Promise<StrategyProfile[]> {
+  return requestJson('/api/v1/portfolio/strategy-profiles', { signal }, isStrategyProfiles)
 }
 
 export function createPortfolioPlan(

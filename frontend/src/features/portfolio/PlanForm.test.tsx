@@ -4,7 +4,7 @@ import { buildPlanRequest, validateDraft } from './PlanForm'
 import { riskConfigFixture } from '../../test/fixtures'
 
 describe('portfolio plan request', () => {
-  test('serializes only high-level portfolio and frozen strategy facts', () => {
+  test('serializes only high-level inputs without client-owned profile facts', () => {
     const request = buildPlanRequest(
       {
         ...defaultDraft,
@@ -15,9 +15,10 @@ describe('portfolio plan request', () => {
     )
     expect(request.tickers).toEqual(['NVDA', 'AAPL'])
     expect(request.portfolio.positions[0]?.ticker).toBe('MSFT')
-    expect(request.exit_mode).toBe('hybrid')
-    expect(request.hybrid_trend_threshold_pct).toBe('2')
-    expect(request.micho_entry_mode).toBe('both')
+    expect(request).not.toHaveProperty('exit_mode')
+    expect(request).not.toHaveProperty('hybrid_trend_threshold_pct')
+    expect(request).not.toHaveProperty('micho_entry_mode')
+    expect(request).not.toHaveProperty('sizing_policy')
     expect(JSON.stringify(request)).not.toMatch(/ranking_score|"atr"|stop_distance|strategy_signal/)
   })
 

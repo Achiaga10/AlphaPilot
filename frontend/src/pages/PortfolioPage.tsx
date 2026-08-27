@@ -6,7 +6,7 @@ import { PositionsTable } from '../features/portfolio/PositionsTable'
 import { RiskSummary } from '../features/portfolio/RiskSummary'
 import { StalePlanWarning } from '../features/portfolio/StalePlanWarning'
 import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
-import { useAdminCapabilityQuery, useAdminTickerSyncMutation, useDeactivateCustomTickerMutation, usePortfolioPlanMutation, useRiskConfigQuery } from '../hooks/usePortfolioApi'
+import { useAdminCapabilityQuery, useAdminTickerSyncMutation, useDeactivateCustomTickerMutation, usePortfolioPlanMutation, useRiskConfigQuery, useStrategyProfilesQuery } from '../hooks/usePortfolioApi'
 import type { PortfolioPlanRequest } from '../types/portfolio'
 import { formatDate } from '../utils/format'
 import { PlanReadinessBanner } from '../features/portfolio/PlanReadinessBanner'
@@ -14,6 +14,7 @@ import { PlanReadinessBanner } from '../features/portfolio/PlanReadinessBanner'
 export function PortfolioPage() {
   const { draft, setDraft, plan, setPlanResult, previewDecision, applyDecision, appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions, isPlanDirty } = usePortfolioWorkspace()
   const riskConfig = useRiskConfigQuery()
+  const profiles = useStrategyProfilesQuery()
   const mutation = usePortfolioPlanMutation()
   const admin = useAdminCapabilityQuery()
   const syncTicker = useAdminTickerSyncMutation()
@@ -36,10 +37,13 @@ export function PortfolioPage() {
 
       {riskConfig.isPending ? <LoadingState label="Loading research configuration" /> : null}
       {riskConfig.isError ? <ErrorState error={riskConfig.error} onRetry={() => void riskConfig.refetch()} /> : null}
-      {riskConfig.data ? (
+      {profiles.isPending ? <LoadingState label="Loading strategy profiles" /> : null}
+      {profiles.isError ? <ErrorState error={profiles.error} onRetry={() => void profiles.refetch()} /> : null}
+      {riskConfig.data && profiles.data?.find((profile) => profile.strategy === draft.strategy) ? (
         <PlanForm
           draft={draft}
           riskConfig={riskConfig.data}
+          strategyProfile={profiles.data.find((profile) => profile.strategy === draft.strategy)!}
           isSubmitting={mutation.isPending}
           onChange={setDraft}
           onSubmit={submit}
@@ -59,6 +63,7 @@ export function PortfolioPage() {
               <h2 id="plan-result-title">Portfolio plan generated</h2>
             </div>
             <dl>
+              <div><dt>Strategy profile</dt><dd>{plan.strategy_profile.profile_id} v{plan.strategy_profile.version}</dd></div>
               <div><dt>Requested analysis date</dt><dd>{formatDate(plan.requested_as_of_date)}</dd></div>
               <div><dt>Completed analysis session</dt><dd>{formatDate(plan.analysis_as_of_date)}</dd></div>
             </dl>

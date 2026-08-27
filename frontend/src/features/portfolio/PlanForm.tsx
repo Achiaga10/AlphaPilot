@@ -6,12 +6,11 @@ import type {
   PortfolioPositionInput,
   PortfolioRiskConfig,
   SelectionPolicy,
-  SizingPolicy,
+  StrategyProfile,
   StrategyName,
 } from '../../types/portfolio'
-import { POLICY_CLASSIFICATIONS } from './policyClassifications'
 import { HELP_TEXT } from './helpText'
-import { classificationLabel } from '../../utils/format'
+import { classificationLabel, sizingLabel } from '../../utils/format'
 
 export interface PlanFormErrors {
   cash?: string
@@ -61,11 +60,7 @@ export function buildPlanRequest(
   )]
   return {
     strategy: draft.strategy,
-    exit_mode: 'hybrid',
-    hybrid_trend_threshold_pct: '2',
-    micho_entry_mode: 'both',
     selection_policy: draft.selectionPolicy,
-    sizing_policy: draft.sizingPolicy,
     as_of_date: draft.asOfDate,
     tickers: tickers.length > 0 ? tickers : null,
     portfolio: {
@@ -86,12 +81,13 @@ export function buildPlanRequest(
 interface PlanFormProps {
   draft: PlanDraft
   riskConfig: PortfolioRiskConfig
+  strategyProfile: StrategyProfile
   isSubmitting: boolean
   onChange: (draft: PlanDraft) => void
   onSubmit: (request: PortfolioPlanRequest) => void
 }
 
-export function PlanForm({ draft, riskConfig, isSubmitting, onChange, onSubmit }: PlanFormProps) {
+export function PlanForm({ draft, riskConfig, strategyProfile, isSubmitting, onChange, onSubmit }: PlanFormProps) {
   const [errors, setErrors] = useState<PlanFormErrors>({})
 
   function patch<K extends keyof PlanDraft>(field: K, value: PlanDraft[K]) {
@@ -115,8 +111,6 @@ export function PlanForm({ draft, riskConfig, isSubmitting, onChange, onSubmit }
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length === 0) onSubmit(buildPlanRequest(draft, riskConfig))
   }
-
-  const classification = POLICY_CLASSIFICATIONS[draft.strategy][draft.sizingPolicy]
 
   return (
     <form className="plan-form" onSubmit={submit} noValidate>
@@ -218,7 +212,7 @@ export function PlanForm({ draft, riskConfig, isSubmitting, onChange, onSubmit }
             <p className="eyebrow">Frozen research choices</p>
             <h2 id="plan-config-title">Plan configuration</h2>
           </div>
-          <span className="classification">{classificationLabel(classification)}</span>
+          <span className="classification">{classificationLabel(strategyProfile.classification)}</span>
         </div>
         <div className="form-grid form-grid--three">
           <label>
@@ -244,19 +238,13 @@ export function PlanForm({ draft, riskConfig, isSubmitting, onChange, onSubmit }
               <option value="ticker-ascending">Ticker ascending control</option>
             </select>
           </label>
-          <label>
-            <span className="label-with-help">Sizing policy <InfoTooltip label="About sizing policy">{HELP_TEXT.sizing}</InfoTooltip></span>
-            <select
-              aria-label="Sizing policy"
-              value={draft.sizingPolicy}
-              onChange={(event) => patch('sizingPolicy', event.target.value as SizingPolicy)}
-            >
-              <option value="equal-slot">Equal slot</option>
-              <option value="atr-risk">ATR risk</option>
-              <option value="atr-volatility-normalized">ATR volatility normalized</option>
-            </select>
-          </label>
+          <div className="profile-fact" aria-label="Backend strategy profile">
+            <span className="label-with-help">Backend profile <InfoTooltip label="About backend strategy profile">Sizing and strategy exits are resolved by the versioned backend profile.</InfoTooltip></span>
+            <strong>{strategyProfile.display_name} v{strategyProfile.version}</strong>
+            <small>{sizingLabel(strategyProfile.sizing_policy)} · {strategyProfile.strategy_exit_description}</small>
+          </div>
         </div>
+        <p className="inline-note">Default stop: {strategyProfile.protective_stop_default}. Profit management: {strategyProfile.profit_management_default}. Research-only stop candidate: {strategyProfile.research_only_stop_candidate}.</p>
         <label className="full-width-field">
           <span className="label-with-help">Optional ticker scope <InfoTooltip label="About optional ticker scope">{HELP_TEXT.tickerScope}</InfoTooltip></span>
           <input

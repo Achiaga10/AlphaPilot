@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.portfolio.actions import (
@@ -22,6 +22,10 @@ from alphapilot.portfolio.sizing import (
 from alphapilot.strategy.exit_mode import TrendExitMode
 from alphapilot.strategy.micho_entry_mode import MichoEntryMode
 from alphapilot.strategy.name import StrategyName
+from alphapilot.strategy.profile import (
+    ResearchClassification,
+    TradeManagementDefault,
+)
 from alphapilot.strategy.signal import Signal
 
 
@@ -34,6 +38,26 @@ class PortfolioRiskConfigSchema(BaseModel):
     minimum_cash_reserve_pct: Decimal = Field(default=Decimal("10"), ge=0, lt=100)
     max_sector_weight_pct: Decimal = Field(default=Decimal("30"), gt=0)
     max_positions: int = Field(default=10, gt=0)
+
+
+class StrategyProfileSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    profile_id: str
+    version: int
+    strategy: StrategyName
+    display_name: str
+    classification: ResearchClassification
+    entry_description: str
+    recommended_selection_policy: SelectionPolicyName
+    allowed_selection_policies: list[SelectionPolicyName]
+    sizing_policy: SizingPolicyName
+    strategy_exit_description: str
+    ema_exit_mode: TrendExitMode | None
+    hybrid_trend_threshold_pct: Decimal | None
+    micho_entry_mode: MichoEntryMode | None
+    protective_stop_default: TradeManagementDefault
+    profit_management_default: TradeManagementDefault
+    research_only_stop_candidate: str
 
 
 class PortfolioPositionSchema(BaseModel):
@@ -166,29 +190,13 @@ class PortfolioDecisionPlanSchema(BaseModel):
 
 
 class PortfolioPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     strategy: StrategyName
-    exit_mode: TrendExitMode = TrendExitMode.HYBRID
-    hybrid_trend_threshold_pct: Decimal = Decimal("2")
-    micho_entry_mode: MichoEntryMode = MichoEntryMode.BOTH
     selection_policy: SelectionPolicyName = SelectionPolicyName.RELATIVE_STRENGTH_20
-    sizing_policy: SizingPolicyName = SizingPolicyName.ATR_VOLATILITY_NORMALIZED
     as_of_date: date = Field(default_factory=date.today)
     tickers: list[str] | None = None
     portfolio: CurrentPortfolioSchema
     risk_config: PortfolioRiskConfigSchema = PortfolioRiskConfigSchema()
-
-    @model_validator(mode="after")
-    def enforce_frozen_strategy_parameters(self) -> "PortfolioPlanRequest":
-        if self.strategy == StrategyName.EMA20_PULLBACK and (
-            self.exit_mode != TrendExitMode.HYBRID
-            or self.hybrid_trend_threshold_pct != Decimal("2")
-        ):
-            raise ValueError("Sprint 10B EMA plans require HYBRID with threshold 2%")
-        if self.strategy == StrategyName.MICHO_150 and (
-            self.micho_entry_mode != MichoEntryMode.BOTH
-        ):
-            raise ValueError("Sprint 10B Micho plans require BOTH entry mode")
-        return self
 
 
 class CandidateOrchestrationStatusSchema(BaseModel):
@@ -227,6 +235,7 @@ class PortfolioPlanReadinessSchema(BaseModel):
 
 class PortfolioPlanSchema(PortfolioDecisionPlanSchema):
     plan_id: str
+    strategy_profile: StrategyProfileSchema
     requested_as_of_date: date
     analysis_as_of_date: date
     candidate_statuses: list[CandidateOrchestrationStatusSchema]
@@ -240,6 +249,8 @@ class PortfolioPlanActionRequest(BaseModel):
     decision: PortfolioDecisionSchema
     applied_action_ids: list[str] = []
     requested_shares: int | None = Field(default=None, gt=0)
+    strategy_profile_id: str = Field(min_length=1)
+    strategy_profile_version: int = Field(gt=0)
     sizing_policy: SizingPolicyName = SizingPolicyName.ATR_RISK
     risk_config: PortfolioRiskConfigSchema = PortfolioRiskConfigSchema()
 

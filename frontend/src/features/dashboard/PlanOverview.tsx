@@ -25,6 +25,7 @@ export function PlanOverview({ plan, isDirty = false, hasAppliedActions = false,
       {!isDirty && hasAppliedActions ? <p className="inline-note inline-note--warning" role="status">Portfolio updated — holdings and allocation are current; analysis metrics reflect the previous plan snapshot.</p> : null}
       <div className="analysis-strip">
         <div><span>Strategy</span><strong>{strategyLabel(plan.strategy)}</strong></div>
+        <div><span>Profile</span><strong>{plan.strategy_profile.profile_id} v{plan.strategy_profile.version}</strong></div>
         <div><span>Selection</span><strong>{selectionLabel(plan.selection_policy)}</strong></div>
         <div><span>Sizing</span><strong>{sizingLabel(plan.sizing_policy)}</strong></div>
         <div><span>Requested</span><strong>{formatDate(plan.requested_as_of_date)}</strong></div>
