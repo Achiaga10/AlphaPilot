@@ -18,6 +18,7 @@ from alphapilot.repositories.daily_candle import (
 from alphapilot.repositories.index_constituent import (
     IndexConstituentRepository,
 )
+from alphapilot.repositories.market_data_ingestion import MarketDataIngestionBatchRepository
 from alphapilot.services.alpaca_bulk_market_sync import (
     AlpacaBulkMarketSyncService,
 )
@@ -30,6 +31,7 @@ from alphapilot.services.daily_candle import (
 from alphapilot.services.market_batch_sync import (
     MarketBatchSyncResult,
 )
+from alphapilot.services.market_data_ingestion import MarketDataIngestionBatchService
 from alphapilot.services.universe_market_sync_runner import (
     UniverseMarketSyncRunner,
 )
@@ -87,6 +89,9 @@ async def run_sync(
             universe_repository=universe_repository,
             company_service=company_service,
             candle_service=candle_service,
+            ingestion_batch_service=MarketDataIngestionBatchService(
+                MarketDataIngestionBatchRepository(session)
+            ),
         )
 
         runner = UniverseMarketSyncRunner(

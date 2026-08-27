@@ -2,8 +2,20 @@
 
 from .company import Company
 from .daily_candle import DailyCandle
+from .daily_candle_version import DailyCandleVersion
+from .market_data_ingestion import MarketDataIngestionBatch
+from .research_dataset import (
+    ResearchDatasetCandleMember,
+    ResearchDatasetSnapshot,
+    ResearchDatasetUniverseMember,
+)
 
 __all__ = [
     "Company",
     "DailyCandle",
+    "DailyCandleVersion",
+    "MarketDataIngestionBatch",
+    "ResearchDatasetCandleMember",
+    "ResearchDatasetSnapshot",
+    "ResearchDatasetUniverseMember",
 ]

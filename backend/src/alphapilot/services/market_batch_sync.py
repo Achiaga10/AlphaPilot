@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
+from uuid import UUID
 
 import httpx
 
@@ -38,6 +39,7 @@ class MarketTickerSyncResult:
     synced: bool
     skipped: bool
     failure: MarketBatchSyncFailure | None
+    ingestion_batch_id: UUID | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -48,6 +50,7 @@ class MarketBatchSyncResult:
     skipped: int
     failures: tuple[MarketBatchSyncFailure, ...]
     next_offset: int | None
+    ingestion_batch_id: UUID | None = None
 
 
 class MarketBatchSyncService:

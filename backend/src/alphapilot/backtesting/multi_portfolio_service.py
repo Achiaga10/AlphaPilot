@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Protocol
 
 from alphapilot.backtesting.benchmark import BuyAndHoldSimulator
 from alphapilot.backtesting.candidate_selection import (
@@ -29,13 +30,22 @@ from alphapilot.backtesting.portfolio_metrics import (
     PortfolioPerformanceMetricsCalculator,
 )
 from alphapilot.backtesting.ranking_features import RelativeStrength20Calculator
+from alphapilot.backtesting.research_data_source import (
+    ResearchDataRunMetadata,
+    ResearchMarketDataSource,
+)
 from alphapilot.backtesting.service import CandleHistoryService, CompanyLookupService
 from alphapilot.backtesting.trade_management import TradeManagementExitReason
 from alphapilot.database.models.daily_candle import DailyCandle
+from alphapilot.database.models.index_constituent import IndexConstituent
 from alphapilot.portfolio.risk import AverageTrueRangeCalculator
-from alphapilot.repositories.index_constituent import IndexConstituentRepository
+from alphapilot.services.research_dataset import capture_git_revision
 from alphapilot.strategy.base import TradingStrategy
 from alphapilot.strategy.signal import Signal
+
+
+class ActiveUniverseRepository(Protocol):
+    async def list_active(self, index_symbol: str) -> list[IndexConstituent]: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -49,6 +59,7 @@ class MultiPortfolioRunResult:
     selection_policy_name: str
     attribution: AttributionSummary
     exit_recovery_diagnostics: tuple[ExitRecoveryDiagnostic, ...] = ()
+    research_data: ResearchDataRunMetadata | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -78,6 +89,7 @@ class PreparedMultiPortfolioData:
     atr_values: dict[tuple[str, date], Decimal | None]
     successful_tickers: tuple[str, ...]
     failed_tickers: tuple[tuple[str, str], ...]
+    research_data: ResearchDataRunMetadata | None = None
 
 
 class MultiPortfolioBacktestService:
@@ -89,11 +101,12 @@ class MultiPortfolioBacktestService:
         self,
         company_service: CompanyLookupService,
         candle_service: CandleHistoryService,
-        universe_repository: IndexConstituentRepository,
+        universe_repository: ActiveUniverseRepository,
         strategy: TradingStrategy,
         *,
         stock_warmup_days: int,
         selection_policy: CandidateSelectionPolicy | None = None,
+        research_data_source: ResearchMarketDataSource | None = None,
     ) -> None:
         if stock_warmup_days <= 0:
             raise ValueError("stock_warmup_days must be greater than zero")
@@ -106,6 +119,7 @@ class MultiPortfolioBacktestService:
         self.selection_policy = (
             selection_policy if selection_policy is not None else TickerAscendingSelectionPolicy()
         )
+        self.research_data_source = research_data_source
 
     async def run(
         self,
@@ -122,6 +136,24 @@ class MultiPortfolioBacktestService:
 
         if start > end:
             raise ValueError("start must be before or equal to end")
+
+        run_git = capture_git_revision()
+        manifest = (
+            await self.research_data_source.manifest()
+            if self.research_data_source is not None
+            else None
+        )
+        research_data = ResearchDataRunMetadata(
+            data_mode="FROZEN_SNAPSHOT" if manifest else "OPERATIONAL_CURRENT",
+            dataset_snapshot_id=manifest.snapshot_id if manifest else None,
+            dataset_sha256=manifest.dataset_sha256 if manifest else None,
+            universe_sha256=manifest.universe_sha256 if manifest else None,
+            provenance_status=manifest.provenance_status if manifest else "UNVERSIONED_CURRENT",
+            snapshot_git_revision=manifest.git_revision if manifest else None,
+            snapshot_git_dirty=manifest.git_dirty if manifest else None,
+            run_git_revision=run_git.head,
+            run_git_dirty=run_git.dirty,
+        )
 
         benchmark_company = await self.company_service.get_company(self.MARKET_BENCHMARK_TICKER)
 
@@ -210,6 +242,7 @@ class MultiPortfolioBacktestService:
             atr_values=atr_values,
             successful_tickers=tuple(successful),
             failed_tickers=tuple(failed),
+            research_data=research_data,
         )
 
     def run_prepared(
@@ -264,6 +297,7 @@ class MultiPortfolioBacktestService:
                 portfolio,
                 prepared,
             ),
+            research_data=prepared.research_data,
         )
 
     @staticmethod

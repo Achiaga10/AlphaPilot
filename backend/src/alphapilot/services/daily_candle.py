@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from alphapilot.database.models.daily_candle import DailyCandle
+from alphapilot.market.provenance import CandleUpsertResult, CandleVersionProvenance
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.services.company import CompanyService
 
@@ -36,7 +37,11 @@ class DailyCandleService:
             volume=volume,
         )
 
-        return await self.repository.create(candle)
+        await self.repository.upsert_many([candle])
+        created = await self.repository.get_for_day(company_id, trading_day)
+        if created is None:
+            raise RuntimeError("Completed daily candle was not persisted")
+        return created
 
     async def get_history(
         self,
@@ -53,8 +58,10 @@ class DailyCandleService:
     async def upsert_many(
         self,
         candles: list[DailyCandle],
-    ) -> None:
-        await self.repository.upsert_many(candles)
+        *,
+        provenance: CandleVersionProvenance | None = None,
+    ) -> CandleUpsertResult:
+        return await self.repository.upsert_many(candles, provenance=provenance)
 
 
 class LatestStoredPriceService:

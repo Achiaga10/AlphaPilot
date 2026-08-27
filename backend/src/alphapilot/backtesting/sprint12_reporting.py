@@ -51,6 +51,15 @@ class Sprint12ReportMetadata:
     completed_session_semantics: str
     execution_semantics: str
     final_position_handling: str
+    data_mode: str
+    dataset_snapshot_id: str | None
+    dataset_sha256: str | None
+    universe_sha256: str | None
+    provenance_status: str
+    snapshot_git_revision: str | None
+    snapshot_git_dirty: bool | None
+    run_git_revision: str | None
+    run_git_dirty: bool | None
 
 
 def build_metadata(
@@ -67,6 +76,7 @@ def build_metadata(
 ) -> Sprint12ReportMetadata:
     curve = result.portfolio.equity_curve
     management = exit_configuration.trade_management
+    research_data = result.research_data
     return Sprint12ReportMetadata(
         strategy=strategy.value,
         entry_configuration=entry_configuration,
@@ -88,7 +98,11 @@ def build_metadata(
         actual_end=curve[-1].trading_day if curve else None,
         research_stage=stage.value,
         fold_label=fold_label,
-        universe="current active S&P 500 constituents (^GSPC)",
+        universe=(
+            "frozen snapshot universe"
+            if research_data and research_data.data_mode == "FROZEN_SNAPSHOT"
+            else "current active S&P 500 constituents (^GSPC)"
+        ),
         initial_capital=config.initial_capital,
         max_positions=config.max_positions,
         survivorship_warning=SURVIVORSHIP_WARNING,
@@ -102,6 +116,21 @@ def build_metadata(
             "5 bps sell slippage then applies"
         ),
         final_position_handling="mark to final close; do not force-liquidate",
+        data_mode=(research_data.data_mode if research_data else "OPERATIONAL_CURRENT"),
+        dataset_snapshot_id=(
+            str(research_data.dataset_snapshot_id)
+            if research_data and research_data.dataset_snapshot_id
+            else None
+        ),
+        dataset_sha256=research_data.dataset_sha256 if research_data else None,
+        universe_sha256=research_data.universe_sha256 if research_data else None,
+        provenance_status=(
+            research_data.provenance_status if research_data else "UNVERSIONED_CURRENT"
+        ),
+        snapshot_git_revision=(research_data.snapshot_git_revision if research_data else None),
+        snapshot_git_dirty=(research_data.snapshot_git_dirty if research_data else None),
+        run_git_revision=research_data.run_git_revision if research_data else None,
+        run_git_dirty=research_data.run_git_dirty if research_data else None,
     )
 
 

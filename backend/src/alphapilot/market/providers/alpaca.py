@@ -25,6 +25,9 @@ class AlpacaProvider(MarketProvider):
     """Market data provider backed by Alpaca Market Data API."""
 
     BASE_URL = "https://data.alpaca.markets"
+    provider_name = "alpaca"
+    timeframe = "1Day"
+    adjustment = "split"
 
     def __init__(self, feed: AlpacaDataFeed | str | None = None) -> None:
         try:

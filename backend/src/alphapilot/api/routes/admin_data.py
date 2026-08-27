@@ -16,6 +16,7 @@ from alphapilot.market.providers.wikipedia import WikipediaIndexConstituentsProv
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
+from alphapilot.repositories.market_data_ingestion import MarketDataIngestionBatchRepository
 from alphapilot.repositories.research_data import ResearchDataRepository
 from alphapilot.schemas.admin_data import (
     AdminCustomTickerListItemSchema,
@@ -45,6 +46,7 @@ from alphapilot.services.alpaca_bulk_market_sync import AlpacaBulkMarketSyncServ
 from alphapilot.services.company import CompanyService
 from alphapilot.services.custom_ticker import CustomTickerService
 from alphapilot.services.daily_candle import DailyCandleService
+from alphapilot.services.market_data_ingestion import MarketDataIngestionBatchService
 
 router = APIRouter(prefix="/admin/data", tags=["research-admin"])
 admin_sync_job_manager = AdminSyncJobManager()
@@ -74,6 +76,9 @@ def _services(
         universe_repository=universe_repository,
         company_service=company_service,
         candle_service=DailyCandleService(DailyCandleRepository(session)),
+        ingestion_batch_service=MarketDataIngestionBatchService(
+            MarketDataIngestionBatchRepository(session)
+        ),
     )
     return company_service, universe_repository, research_repository, batch_service
 

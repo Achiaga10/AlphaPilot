@@ -8,6 +8,7 @@ import sys
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 from alphapilot.backtesting.candidate_selection import (
     SelectionPolicyName,
@@ -16,6 +17,7 @@ from alphapilot.backtesting.candidate_selection import (
 from alphapilot.backtesting.cost_scenarios import CostScenarioName, get_cost_scenario
 from alphapilot.backtesting.multi_portfolio_models import MultiPortfolioConfig
 from alphapilot.backtesting.multi_portfolio_service import MultiPortfolioBacktestService
+from alphapilot.backtesting.research_data_source import FrozenDatasetMarketDataSource
 from alphapilot.backtesting.sprint12_diagnostics import (
     calculate_universe_exit_comparisons,
     write_universe_exit_comparisons,
@@ -36,6 +38,7 @@ from alphapilot.portfolio.sizing import SizingPolicyName
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
+from alphapilot.repositories.research_dataset import ResearchDatasetRepository
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
 from alphapilot.strategy.exit_mode import TrendExitMode
@@ -55,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--stage",
         choices=[item.value for item in Sprint12ResearchStage],
         required=True,
+    )
+    parser.add_argument(
+        "--dataset-snapshot",
+        type=UUID,
+        default=None,
+        help="Use an immutable research dataset snapshot instead of operational candles.",
     )
     parser.add_argument("--fold-label", default="full-period")
     parser.add_argument(
@@ -128,13 +137,30 @@ async def run(args: argparse.Namespace) -> None:
     db_generator = get_db()
     session = await anext(db_generator)
     try:
+        data_source = (
+            FrozenDatasetMarketDataSource(ResearchDatasetRepository(session), args.dataset_snapshot)
+            if args.dataset_snapshot is not None
+            else None
+        )
+        company_service = (
+            data_source if data_source is not None else CompanyService(CompanyRepository(session))
+        )
+        candle_service = (
+            data_source
+            if data_source is not None
+            else DailyCandleService(DailyCandleRepository(session))
+        )
+        universe_repository = (
+            data_source if data_source is not None else IndexConstituentRepository(session)
+        )
         service = MultiPortfolioBacktestService(
-            company_service=CompanyService(CompanyRepository(session)),
-            candle_service=DailyCandleService(DailyCandleRepository(session)),
-            universe_repository=IndexConstituentRepository(session),
+            company_service=company_service,
+            candle_service=candle_service,
+            universe_repository=universe_repository,
             strategy=strategy,
             stock_warmup_days=get_strategy_stock_warmup_days(strategy_name),
             selection_policy=create_selection_policy(SelectionPolicyName.RELATIVE_STRENGTH_20),
+            research_data_source=data_source,
         )
         prepared = await service.prepare(start=args.start, end=args.end)
         matrix_configs = tuple(
