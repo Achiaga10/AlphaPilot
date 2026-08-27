@@ -24,13 +24,13 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 14 — Strategy-Specific Configuration Profiles
+Sprint 15 — Strategy Lab Foundation
 (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
-Sprint 13 are complete, reviewed, and merged. Sprint 14 is complete locally
-on `feature/strategy-profiles`. Do not add or tune strategies. Do not begin
-Sprint 15 before user review and Git publishing.
+Sprint 13 and Sprint 14 are complete, reviewed, and merged. Sprint 15 is
+complete locally on `feature/strategy-lab`. Do not add or tune strategies. Do
+not begin Sprint 16 before user review and Git publishing.
 
 ## Development Environment
 
@@ -250,14 +250,14 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 14 Task
+## Sprint 15 Task
 
-Build immutable backend-owned, versioned strategy profiles for the normal
-Portfolio Plan workflow. Preserve the explicit lower-level research APIs,
-strategy rules, Scanner defaults, Sprint 13 data semantics, and global portfolio
-risk configuration.
+Build a reusable Strategy Lab protocol around frozen Sprint 13 datasets,
+predeclared parameters, enforced development/freeze/validation/fold stages,
+deterministic experiment identity, structured evidence, and human-reviewed
+profile candidates. Do not implement or tune a new strategy.
 
 ## End-of-Task Rule
 
-After creating `docs/SPRINT14_COMPLETION_REPORT.md`, stop. The user will review
-the evidence before Git publishing or Sprint 15.
+After creating `docs/SPRINT15_COMPLETION_REPORT.md`, stop. The user will review
+the evidence before Git publishing or Sprint 16.
