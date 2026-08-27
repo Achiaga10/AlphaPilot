@@ -10,7 +10,12 @@ from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.database.models.index_constituent import (
     IndexConstituent,
 )
+from alphapilot.database.models.market_data_ingestion import (
+    IngestionBatchStatus,
+    MarketDataIngestionBatch,
+)
 from alphapilot.market.dto.candle import MarketCandle
+from alphapilot.market.provenance import CandleUpsertResult, CandleVersionProvenance
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.services.alpaca_bulk_market_sync import (
     AlpacaBulkMarketSyncService,
@@ -130,12 +135,76 @@ class FakeCompanyService:
 class FakeCandleService:
     def __init__(self) -> None:
         self.upsert_calls: list[list[DailyCandle]] = []
+        self.provenance_calls: list[CandleVersionProvenance] = []
 
     async def upsert_many(
         self,
         candles: list[DailyCandle],
-    ) -> None:
+        *,
+        provenance: CandleVersionProvenance | None = None,
+    ) -> CandleUpsertResult:
         self.upsert_calls.append(candles)
+        assert provenance is not None
+        self.provenance_calls.append(provenance)
+        return CandleUpsertResult(len(candles), len(candles), len(candles), 0)
+
+
+class FailingCandleService(FakeCandleService):
+    async def upsert_many(
+        self,
+        candles: list[DailyCandle],
+        *,
+        provenance: CandleVersionProvenance | None = None,
+    ) -> CandleUpsertResult:
+        del candles, provenance
+        raise RuntimeError("controlled candle write failure")
+
+
+class FakeIngestionBatchService:
+    def __init__(self) -> None:
+        self.batches: list[MarketDataIngestionBatch] = []
+
+    async def start(self, **kwargs: object) -> MarketDataIngestionBatch:
+        batch = MarketDataIngestionBatch(
+            id=uuid4(),
+            provider=str(kwargs["provider"]),
+            feed=str(kwargs["feed"]),
+            timeframe=str(kwargs["timeframe"]),
+            adjustment=str(kwargs["adjustment"]),
+            requested_start=kwargs["requested_start"],
+            requested_end=kwargs["requested_end"],
+            benchmark_ticker=kwargs.get("benchmark_ticker"),
+            request_metadata=kwargs.get("request_metadata", {}),
+            symbols_requested=int(kwargs["symbols_requested"]),
+            symbols_succeeded=0,
+            symbols_failed=0,
+            status=IngestionBatchStatus.RUNNING.value,
+            created_at=datetime.now(UTC),
+        )
+        self.batches.append(batch)
+        return batch
+
+    async def complete(
+        self, batch: MarketDataIngestionBatch, *, succeeded: int, failed: int
+    ) -> MarketDataIngestionBatch:
+        batch.status = IngestionBatchStatus.COMPLETED.value
+        batch.symbols_succeeded = succeeded
+        batch.symbols_failed = failed
+        return batch
+
+    async def fail(
+        self, batch: MarketDataIngestionBatch, *, succeeded: int = 0, failed: int
+    ) -> MarketDataIngestionBatch:
+        batch.status = IngestionBatchStatus.FAILED.value
+        batch.symbols_succeeded = succeeded
+        batch.symbols_failed = failed
+        return batch
+
+    async def fail_after_error(
+        self, batch_id: object, *, succeeded: int = 0, failed: int
+    ) -> MarketDataIngestionBatch:
+        batch = next(item for item in self.batches if item.id == batch_id)
+        return await self.fail(batch, succeeded=succeeded, failed=failed)
 
 
 def create_company(
@@ -217,6 +286,7 @@ async def test_sync_batch_uses_single_bulk_request() -> None:
             )
         ),
         candle_service=candle_service,
+        ingestion_batch_service=FakeIngestionBatchService(),
     )
 
     result = await service.sync_batch(
@@ -298,6 +368,7 @@ async def test_sync_ticker_supports_spy() -> None:
         universe_repository=(FakeUniverseRepository([])),
         company_service=(FakeCompanyService([spy])),
         candle_service=candle_service,
+        ingestion_batch_service=FakeIngestionBatchService(),
     )
 
     result = await service.sync_ticker(
@@ -323,6 +394,9 @@ async def test_sync_ticker_supports_spy() -> None:
     assert candles[0].company_id == spy.id
 
     assert candles[0].close == Decimal("650")
+    assert candle_service.provenance_calls[0].provider == "alpaca"
+    assert candle_service.provenance_calls[0].feed == "unknown"
+    assert candle_service.provenance_calls[0].ingestion_batch_id == result.ingestion_batch_id
 
 
 @pytest.mark.asyncio
@@ -352,6 +426,7 @@ async def test_sync_batch_records_provider_failure() -> None:
             )
         ),
         candle_service=candle_service,
+        ingestion_batch_service=FakeIngestionBatchService(),
     )
 
     result = await service.sync_batch(
@@ -410,6 +485,7 @@ async def test_sync_batch_respects_offset_and_limit() -> None:
         ),
         company_service=(FakeCompanyService(companies)),
         candle_service=(FakeCandleService()),
+        ingestion_batch_service=FakeIngestionBatchService(),
     )
 
     result = await service.sync_batch(
@@ -448,6 +524,7 @@ async def test_bulk_sync_excludes_provider_current_session_partial_bar() -> None
         universe_repository=FakeUniverseRepository([]),
         company_service=FakeCompanyService([spy]),
         candle_service=candles,
+        ingestion_batch_service=FakeIngestionBatchService(),
         session_policy=policy,
     )
 
@@ -456,3 +533,20 @@ async def test_bulk_sync_excludes_provider_current_session_partial_bar() -> None
     assert result.synced is True
     assert len(candles.upsert_calls) == 1
     assert [item.trading_day for item in candles.upsert_calls[0]] == [date(2026, 8, 25)]
+
+
+@pytest.mark.asyncio
+async def test_candle_write_failure_marks_ingestion_batch_failed() -> None:
+    service_batches = FakeIngestionBatchService()
+    service = AlpacaBulkMarketSyncService(
+        provider=FakeBulkProvider({"AAPL": [create_market_candle(date(2026, 8, 18), "200")]}),
+        universe_repository=FakeUniverseRepository([]),
+        company_service=FakeCompanyService([create_company("AAPL")]),
+        candle_service=FailingCandleService(),
+        ingestion_batch_service=service_batches,
+    )
+
+    with pytest.raises(RuntimeError, match="controlled candle write failure"):
+        await service.sync_ticker("AAPL", date(2026, 8, 18), date(2026, 8, 18))
+
+    assert service_batches.batches[0].status == IngestionBatchStatus.FAILED.value

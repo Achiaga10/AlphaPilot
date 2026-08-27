@@ -13,8 +13,10 @@ from alphapilot.market.providers.base import MarketProvider
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
+from alphapilot.repositories.market_data_ingestion import MarketDataIngestionBatchRepository
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
+from alphapilot.services.market_data_ingestion import MarketDataIngestionBatchService
 from alphapilot.services.market_sync import MarketSyncService
 
 
@@ -83,6 +85,9 @@ async def test_market_sync_inserts_candles(
         provider=FakeMarketProvider(),
         company_service=company_service,
         candle_service=candle_service,
+        ingestion_batch_service=MarketDataIngestionBatchService(
+            MarketDataIngestionBatchRepository(db_session)
+        ),
     )
 
     synced = await service.sync_company(
@@ -151,6 +156,9 @@ async def test_market_sync_does_not_insert_current_open_session_bar(
         provider=CurrentDayProvider(),
         company_service=CompanyService(CompanyRepository(db_session)),
         candle_service=DailyCandleService(repository),
+        ingestion_batch_service=MarketDataIngestionBatchService(
+            MarketDataIngestionBatchRepository(db_session)
+        ),
         session_policy=policy,
     )
 

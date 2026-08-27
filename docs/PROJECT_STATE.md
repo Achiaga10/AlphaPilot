@@ -2,19 +2,21 @@
 
 ## Current Phase
 
-Sprint 12 — Deep Strategy Research: Protective Stops, Exit Optimization &
-Profit Management (COMPLETE LOCALLY)
+Sprint 13 — Research Data Versioning, Provenance & Reproducibility
+COMPLETE LOCALLY / awaiting user review and Git publishing
 
 Current development branch:
-feature/strategy-exit-research
+feature/research-data-versioning
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
 Sprints 7 through 10B are complete, reviewed, and merged. Sprint 11, including
 11B/11C/11D and completed-session hardening, is complete, reviewed, and merged.
-Sprint 12 completed the frozen research protocol in `docs/SPRINT12_PLAN.md`.
-The evidence is recorded in `docs/SPRINT12_COMPLETION_REPORT.md`; production
-strategy and UI behavior remain unchanged.
+Sprint 12 completed its frozen protocol, was reviewed, and is merged. Sprint 13
+is complete locally: immutable market-data versions, explicit ingestion
+provenance, exact universe/candle snapshots, deterministic hashes, and
+snapshot-bound research replay are implemented without changing strategy or
+normal UI behavior. Sprint 14 is not started.
 
 ## Project Goal
 
@@ -128,9 +130,12 @@ an explicit second evaluation.
 
 Sprint 12 — Deep Strategy Research: Protective Stops, Exit Optimization &
 Profit Management
-COMPLETE LOCALLY
+COMPLETE / merged
 
-Sprint 13
+Sprint 13 — Research Data Versioning, Provenance & Reproducibility
+IN PROGRESS
+
+Sprint 14
 NOT STARTED
 
 ## Sprint 7 Portfolio Infrastructure

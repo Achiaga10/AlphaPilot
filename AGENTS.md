@@ -24,14 +24,14 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 12 — Deep Strategy Research: Protective Stops, Exit Optimization &
-Profit Management (COMPLETE LOCALLY)
+Sprint 13 — Research Data Versioning, Provenance & Reproducibility
+(COMPLETE LOCALLY)
 
-Sprint 11 and all 11B/11C/11D hardening are complete, reviewed, and merged.
-Sprint 12 completed the frozen backend/backtesting research protocol in
-`docs/SPRINT12_PLAN.md`; its evidence and conclusions are in
-`docs/SPRINT12_COMPLETION_REPORT.md`. Strategy entries, UI configuration, RS20,
-and sizing baselines remain unchanged. Do not begin Sprint 13.
+Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 is
+complete, reviewed, and merged. Sprint 13 is complete locally on
+`feature/research-data-versioning`; its implementation and evidence are recorded
+in `docs/SPRINT13_COMPLETION_REPORT.md`. Do not add or tune strategies. Do not
+begin Sprint 14 before user review and Git publishing.
 
 ## Development Environment
 
@@ -251,15 +251,15 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 12 Task
+## Completed Sprint 13 Task
 
-Implement replaceable backtest trade-management overlays for the exact declared
-ATR protective, ATR trailing, and R-profit candidates. Preserve original
-strategy exits, completed sessions, T+1 strategy execution, ranking, sizing,
-costs, accounting, and survivorship disclosure. Freeze development selections
-before validation. Do not wire experimental exits into strategy classes or UI.
+Sprint 13 separated mutable operational `DailyCandle` state from immutable,
+provenance-aware research versions and frozen datasets while preserving
+completed-session filtering, operational UI/Scanner behavior, strategy rules,
+and survivorship disclosure. Legacy rows remain explicitly unknown rather than
+being assigned fabricated provenance.
 
 ## End-of-Task Rule
 
-After creating `docs/SPRINT12_COMPLETION_REPORT.md`, stop. The user will review
-the evidence before Git publishing or Sprint 13.
+After creating `docs/SPRINT13_COMPLETION_REPORT.md`, stop. The user will review
+the evidence before Git publishing or Sprint 14.

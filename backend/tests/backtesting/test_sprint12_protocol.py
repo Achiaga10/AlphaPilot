@@ -166,6 +166,8 @@ def test_report_metadata_records_exact_exit_and_research_configuration() -> None
     assert metadata.trailing_atr_multiple == Decimal("3")
     assert metadata.atr_period == 14
     assert metadata.cost_scenario == "cost-low"
+    assert metadata.data_mode == "OPERATIONAL_CURRENT"
+    assert metadata.dataset_snapshot_id is None
     assert "SURVIVORSHIP BIAS" in metadata.survivorship_warning
     assert metadata.completed_session_semantics.startswith("historical completed")
 

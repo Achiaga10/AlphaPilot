@@ -17,9 +17,33 @@ Sprint 10 — Portfolio Risk, Position Sizing & Decision API — is complete and
 Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete and merged.
 
 Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete and merged.
-Sprint 12 is complete locally on `feature/strategy-exit-research`. Its frozen
-experiment selected research-only protective-stop candidates; existing strategy
-exits remain the defaults. Sprint 13 is not started.
+Sprint 12 is complete, reviewed, and merged; its research-only stop candidates
+do not replace existing strategy exits. Sprint 13 is complete locally on
+`feature/research-data-versioning` and awaits user review/publishing. Sprint 14
+is not started.
+
+## 0.12 Sprint 13 Frozen Data-Reproducibility Protocol
+
+- `DailyCandle` remains mutable operational latest state; frozen research reads
+  explicit immutable `DailyCandleVersion` mappings and never operational rows.
+- Every material completed-session OHLCV change creates one append-only version;
+  exact duplicates do not. Decimal values are never compared through float.
+- Provider sync requests create explicit sanitized ingestion batches with
+  provider/feed, range, lifecycle, and counts. Secrets are never persisted.
+- Snapshots freeze exact universe/benchmark members and exact candle version IDs.
+  Finalized snapshots and their mappings cannot be mutated through normal APIs.
+- Dataset hashing is canonical UTF-8, ticker/day sorted, Decimal-string based,
+  and SHA-256. Universe hashing uses sorted uppercase tickers.
+- Existing rows receive set-based `LEGACY_UNKNOWN` versions. They become value-
+  reproducible at installation but their lost pre-Sprint13 revisions and source
+  provenance cannot be reconstructed or relabeled Alpaca/IEX.
+- Current-universe snapshots retain survivorship bias and must be described as
+  frozen current-universe snapshots, never historical point-in-time membership.
+- Research output records operational versus frozen data mode, snapshot/hash,
+  provenance status, Git HEAD, and dirty state. New research should prefer a
+  frozen snapshot.
+- Sprint 13 changes no strategy, RS20, sizing, trade-management, cost, or T+1
+  execution rule. Sprint 14 configuration profiles are recommendation-only.
 
 ## 0.11 Sprint 12 Frozen Research Protocol
 

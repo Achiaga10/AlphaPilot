@@ -9,8 +9,10 @@ from alphapilot.database.session import get_db
 from alphapilot.market.providers.base import MarketProvider
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
+from alphapilot.repositories.market_data_ingestion import MarketDataIngestionBatchRepository
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
+from alphapilot.services.market_data_ingestion import MarketDataIngestionBatchService
 from alphapilot.services.market_sync import MarketSyncService
 
 router = APIRouter(
@@ -36,6 +38,9 @@ def get_market_sync_service(
         provider=provider,
         company_service=company_service,
         candle_service=candle_service,
+        ingestion_batch_service=MarketDataIngestionBatchService(
+            MarketDataIngestionBatchRepository(session)
+        ),
     )
 
 

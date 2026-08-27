@@ -9,7 +9,14 @@ from alphapilot.core.config import settings
 from alphapilot.database.base import Base
 
 # Import all models here so Alembic can discover them
-from alphapilot.database.models import company, daily_candle, index_constituent  # noqa: F401
+from alphapilot.database.models import (  # noqa: F401
+    company,
+    daily_candle,
+    daily_candle_version,
+    index_constituent,
+    market_data_ingestion,
+    research_dataset,
+)
 
 config = context.config
 

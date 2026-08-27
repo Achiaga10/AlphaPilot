@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -9,7 +9,9 @@ import httpx
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.database.models.index_constituent import IndexConstituent
+from alphapilot.database.models.market_data_ingestion import CandleProvenanceStatus
 from alphapilot.market.dto.candle import MarketCandle
+from alphapilot.market.provenance import CandleUpsertResult, CandleVersionProvenance
 from alphapilot.market.providers.errors import MarketDataProviderError
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.services.market_batch_sync import (
@@ -17,6 +19,7 @@ from alphapilot.services.market_batch_sync import (
     MarketBatchSyncResult,
     MarketTickerSyncResult,
 )
+from alphapilot.services.market_data_ingestion import MarketDataIngestionBatchService
 
 
 class BulkHistoricalMarketProvider(Protocol):
@@ -54,7 +57,9 @@ class CandleUpsertService(Protocol):
     async def upsert_many(
         self,
         candles: list[DailyCandle],
-    ) -> None:
+        *,
+        provenance: CandleVersionProvenance | None = None,
+    ) -> CandleUpsertResult:
         """Upsert daily candles."""
 
 
@@ -67,12 +72,14 @@ class AlpacaBulkMarketSyncService:
         universe_repository: UniverseRepository,
         company_service: CompanyLookupService,
         candle_service: CandleUpsertService,
+        ingestion_batch_service: MarketDataIngestionBatchService,
         session_policy: CompletedDailySessionPolicy | None = None,
     ) -> None:
         self.provider = provider
         self.universe_repository = universe_repository
         self.company_service = company_service
         self.candle_service = candle_service
+        self.ingestion_batch_service = ingestion_batch_service
         self.session_policy = session_policy or CompletedDailySessionPolicy()
 
     async def sync_ticker(
@@ -95,6 +102,7 @@ class AlpacaBulkMarketSyncService:
             synced=result.synced == 1,
             skipped=result.skipped == 1,
             failure=failure,
+            ingestion_batch_id=result.ingestion_batch_id,
         )
 
     async def sync_tickers(
@@ -112,9 +120,23 @@ class AlpacaBulkMarketSyncService:
         skipped = len(normalized) - len(available)
         if not available:
             return MarketBatchSyncResult(len(normalized), len(normalized), 0, skipped, (), None)
+        provider_name = "alpaca"
+        feed = self._provider_feed()
+        ingestion_batch = await self.ingestion_batch_service.start(
+            provider=provider_name,
+            feed=feed,
+            timeframe="1Day",
+            adjustment="split",
+            requested_start=start,
+            requested_end=end,
+            symbols_requested=len(available),
+            benchmark_ticker=("SPY" if "SPY" in available else None),
+            request_metadata={"sort": "asc"},
+        )
         try:
             market_data = await self.provider.get_history_many(available, start, end)
         except MarketDataProviderError as exc:
+            await self.ingestion_batch_service.fail(ingestion_batch, failed=len(available))
             failure = exc.failure
             return MarketBatchSyncResult(
                 len(normalized),
@@ -132,8 +154,10 @@ class AlpacaBulkMarketSyncService:
                     for ticker in available
                 ),
                 None,
+                ingestion_batch.id,
             )
         except httpx.HTTPError:
+            await self.ingestion_batch_service.fail(ingestion_batch, failed=len(available))
             return MarketBatchSyncResult(
                 len(normalized),
                 len(normalized),
@@ -148,25 +172,52 @@ class AlpacaBulkMarketSyncService:
                     for ticker in available
                 ),
                 None,
+                ingestion_batch.id,
             )
-        candles_to_upsert: list[DailyCandle] = []
-        synced = 0
-        for ticker in available:
-            candles = [
-                candle
-                for candle in market_data.get(ticker, [])
-                if self.session_policy.is_complete(candle.date)
-            ]
-            if not candles:
-                skipped += 1
-                continue
-            candles_to_upsert.extend(
-                self._build_daily_candles(companies_by_ticker[ticker].id, candles)
+        try:
+            candles_to_upsert: list[DailyCandle] = []
+            synced = 0
+            for ticker in available:
+                candles = [
+                    candle
+                    for candle in market_data.get(ticker, [])
+                    if self.session_policy.is_complete(candle.date)
+                ]
+                if not candles:
+                    skipped += 1
+                    continue
+                candles_to_upsert.extend(
+                    self._build_daily_candles(companies_by_ticker[ticker].id, candles)
+                )
+                synced += 1
+            if candles_to_upsert:
+                await self.candle_service.upsert_many(
+                    candles_to_upsert,
+                    provenance=CandleVersionProvenance(
+                        provider=provider_name,
+                        feed=feed,
+                        ingestion_batch_id=ingestion_batch.id,
+                        observed_at=datetime.now(UTC),
+                        status=CandleProvenanceStatus.COMPLETE,
+                    ),
+                )
+            await self.ingestion_batch_service.complete(ingestion_batch, succeeded=synced, failed=0)
+        except Exception:
+            await self.ingestion_batch_service.fail_after_error(
+                ingestion_batch.id,
+                succeeded=synced,
+                failed=len(available) - synced,
             )
-            synced += 1
-        if candles_to_upsert:
-            await self.candle_service.upsert_many(candles_to_upsert)
-        return MarketBatchSyncResult(len(normalized), len(normalized), synced, skipped, (), None)
+            raise
+        return MarketBatchSyncResult(
+            len(normalized),
+            len(normalized),
+            synced,
+            skipped,
+            (),
+            None,
+            ingestion_batch.id,
+        )
 
     async def sync_batch(
         self,
@@ -214,6 +265,7 @@ class AlpacaBulkMarketSyncService:
             synced=explicit.synced,
             skipped=explicit.skipped,
             failures=list(explicit.failures),
+            ingestion_batch_id=explicit.ingestion_batch_id,
         )
 
     @staticmethod
@@ -243,6 +295,7 @@ class AlpacaBulkMarketSyncService:
         synced: int,
         skipped: int,
         failures: list[MarketBatchSyncFailure],
+        ingestion_batch_id: UUID | None,
     ) -> MarketBatchSyncResult:
         processed_until = offset + batch_size
 
@@ -255,7 +308,13 @@ class AlpacaBulkMarketSyncService:
             skipped=skipped,
             failures=tuple(failures),
             next_offset=next_offset,
+            ingestion_batch_id=ingestion_batch_id,
         )
+
+    def _provider_feed(self) -> str:
+        feed = getattr(self.provider, "feed", None)
+        value = getattr(feed, "value", feed)
+        return str(value).strip().lower() if value else "unknown"
 
     @staticmethod
     def _validate_date_range(

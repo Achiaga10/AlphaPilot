@@ -51,13 +51,27 @@ TestSessionLocal = async_sessionmaker(
 @pytest_asyncio.fixture(autouse=True)
 async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
-        await session.execute(text("TRUNCATE TABLE index_constituents, companies CASCADE"))
+        await session.execute(
+            text(
+                "TRUNCATE TABLE research_dataset_candle_members, "
+                "research_dataset_universe_members, research_dataset_snapshots, "
+                "daily_candle_versions, market_data_ingestion_batches, "
+                "index_constituents, companies CASCADE"
+            )
+        )
         await session.commit()
 
     yield
 
     async with TestSessionLocal() as session:
-        await session.execute(text("TRUNCATE TABLE index_constituents, companies CASCADE"))
+        await session.execute(
+            text(
+                "TRUNCATE TABLE research_dataset_candle_members, "
+                "research_dataset_universe_members, research_dataset_snapshots, "
+                "daily_candle_versions, market_data_ingestion_batches, "
+                "index_constituents, companies CASCADE"
+            )
+        )
         await session.commit()
 
 
