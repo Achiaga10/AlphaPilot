@@ -14,6 +14,8 @@ from alphapilot.database.models.research_portfolio import (
     ResearchPosition,
     ResearchPositionProvenance,
     ResearchPositionStatus,
+    ResearchReconciliationEvent,
+    ResearchReconciliationEventType,
     ResearchTradeEvent,
     ResearchTradeEventType,
 )
@@ -418,6 +420,158 @@ class ResearchPortfolioService:
 
     async def events(self, portfolio_id: UUID) -> list[ResearchTradeEvent]:
         return await self.portfolios.list_events(portfolio_id)
+
+    async def reconciliation_events(self, portfolio_id: UUID) -> list[ResearchReconciliationEvent]:
+        return await self.portfolios.list_reconciliation_events(portfolio_id)
+
+    async def adjust_cash(
+        self,
+        *,
+        portfolio_id: UUID,
+        expected_revision: int,
+        delta: Decimal,
+        reason: str,
+    ) -> ResearchPortfolio:
+        if delta == 0:
+            raise ValueError("Cash adjustment must not be zero")
+        portfolio = await self._locked(portfolio_id, expected_revision)
+        new_cash = Decimal(portfolio.cash_balance) + delta
+        if new_cash < 0:
+            raise ValueError("Cash withdrawal would make cash negative")
+        portfolio.cash_balance = new_cash
+        portfolio.revision += 1
+        self.portfolios.add(
+            ResearchReconciliationEvent(
+                portfolio_id=portfolio.id,
+                position_id=None,
+                event_type=(
+                    ResearchReconciliationEventType.CASH_DEPOSIT.value
+                    if delta > 0
+                    else ResearchReconciliationEventType.CASH_WITHDRAWAL.value
+                ),
+                portfolio_revision=portfolio.revision,
+                cash_delta=delta,
+                before_facts={"cash": str(new_cash - delta)},
+                after_facts={"cash": str(new_cash)},
+                reason=reason,
+            )
+        )
+        await self.session.commit()
+        return portfolio
+
+    async def import_external_position(
+        self,
+        *,
+        portfolio_id: UUID,
+        expected_revision: int,
+        ticker: str,
+        quantity: int,
+        average_cost: Decimal,
+        entry_trading_day: date | None,
+        reason: str,
+    ) -> ResearchPortfolio:
+        if quantity <= 0 or average_cost <= 0:
+            raise ValueError("External position requires positive whole shares and cost")
+        portfolio = await self._locked(portfolio_id, expected_revision)
+        company = await self.companies.get_by_ticker(ticker.strip().upper())
+        if company is None:
+            raise ValueError("Company not found")
+        if await self.portfolios.get_open_position(portfolio.id, company.id):
+            raise ValueError("Position already held")
+        basis = Decimal(quantity) * average_cost
+        position = ResearchPosition(
+            portfolio_id=portfolio.id,
+            company_id=company.id,
+            ticker_at_entry=company.ticker,
+            status=ResearchPositionStatus.OPEN.value,
+            quantity=quantity,
+            average_entry_cost=average_cost,
+            cost_basis=basis,
+            entry_trading_day=entry_trading_day,
+            entry_price=average_cost,
+            strategy=None,
+            strategy_profile_id=None,
+            strategy_profile_version=None,
+            strategy_profile_snapshot=None,
+            selection_policy=None,
+            entry_decision=None,
+            entry_reason=None,
+            provenance_status=ResearchPositionProvenance.MANUAL_EXTERNAL.value,
+            modeled_risk_dollars=Decimal("0"),
+        )
+        self.portfolios.add(position)
+        await self.portfolios.flush()
+        portfolio.revision += 1
+        self.portfolios.add(
+            ResearchReconciliationEvent(
+                portfolio_id=portfolio.id,
+                position_id=position.id,
+                event_type=ResearchReconciliationEventType.EXTERNAL_POSITION_IMPORT.value,
+                portfolio_revision=portfolio.revision,
+                cash_delta=None,
+                before_facts=None,
+                after_facts={
+                    "ticker": company.ticker,
+                    "quantity": quantity,
+                    "average_cost": str(average_cost),
+                    "cost_basis": str(basis),
+                    "entry_trading_day": str(entry_trading_day) if entry_trading_day else None,
+                },
+                reason=reason,
+            )
+        )
+        await self.session.commit()
+        return portfolio
+
+    async def reconcile_position(
+        self,
+        *,
+        portfolio_id: UUID,
+        position_id: UUID,
+        expected_revision: int,
+        quantity: int,
+        average_cost: Decimal,
+        entry_trading_day: date | None,
+        reason: str,
+    ) -> ResearchPortfolio:
+        if quantity <= 0 or average_cost <= 0:
+            raise ValueError("Reconciliation requires positive whole shares and cost")
+        portfolio = await self._locked(portfolio_id, expected_revision)
+        position = await self.portfolios.get_position(portfolio.id, position_id)
+        if position is None or position.status != ResearchPositionStatus.OPEN.value:
+            raise ValueError("Open position not found")
+        before = {
+            "quantity": position.quantity,
+            "average_cost": str(position.average_entry_cost),
+            "cost_basis": str(position.cost_basis),
+            "entry_trading_day": str(position.entry_trading_day)
+            if position.entry_trading_day
+            else None,
+        }
+        position.quantity = quantity
+        position.average_entry_cost = average_cost
+        position.cost_basis = Decimal(quantity) * average_cost
+        position.entry_trading_day = entry_trading_day
+        portfolio.revision += 1
+        self.portfolios.add(
+            ResearchReconciliationEvent(
+                portfolio_id=portfolio.id,
+                position_id=position.id,
+                event_type=ResearchReconciliationEventType.POSITION_RECONCILIATION.value,
+                portfolio_revision=portfolio.revision,
+                cash_delta=None,
+                before_facts=before,
+                after_facts={
+                    "quantity": quantity,
+                    "average_cost": str(average_cost),
+                    "cost_basis": str(position.cost_basis),
+                    "entry_trading_day": str(entry_trading_day) if entry_trading_day else None,
+                },
+                reason=reason,
+            )
+        )
+        await self.session.commit()
+        return portfolio
 
     async def _locked(self, portfolio_id: UUID, revision: int) -> ResearchPortfolio:
         portfolio = await self.portfolios.get(portfolio_id, for_update=True)

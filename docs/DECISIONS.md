@@ -1,5 +1,24 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 17 Frozen Decisions
+
+- Monitoring uses only stored Strategy Profile provenance and completed daily
+  candles. Evaluation failure is UNAVAILABLE, never HOLD.
+- EMA reuses frozen HYBRID 2%; Micho reuses close-below-SMA150. ATTENTION adds
+  structural context but is not a new strategy signal or threshold.
+- ATTENTION is non-sticky. A genuine SELL remains latched until full exit.
+- No protective stop, trailing stop, or profit target becomes active; Sprint 12
+  results remain research-only.
+- Cash deltas, external imports, and position corrections are audited,
+  revision-checked transactions that invalidate older plans.
+- Daily automation is disabled by default, schedules 16:30 America/New_York when
+  enabled, reuses existing sync services, and never trades.
+- No-new-SPY-session is a safe no-op; failed/partial sync cannot fabricate fresh
+  monitoring.
+- Sprint 17 completed locally without changing any strategy/profile rule. The
+  scheduler remains disabled by default; enabling it is an explicit deployment
+  configuration decision.
+
 This file records decisions that must not be silently changed.
 
 ## 0. Current Phase

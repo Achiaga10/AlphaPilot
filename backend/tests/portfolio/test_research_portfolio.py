@@ -10,6 +10,7 @@ from alphapilot.database.models.research_portfolio import (
     ResearchPosition,
     ResearchPositionProvenance,
     ResearchPositionStatus,
+    ResearchReconciliationEvent,
     ResearchTradeEvent,
     ResearchTradeEventType,
 )
@@ -272,3 +273,76 @@ async def test_failed_and_stale_mutations_create_no_event(db_session) -> None:
         )
     await db_session.rollback()
     assert len(await service.events(portfolio_id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_mutations_are_audited_revisioned_and_do_not_change_realized_pnl(
+    db_session,
+) -> None:
+    await _company(db_session)
+    service = ResearchPortfolioService(db_session)
+    portfolio = await service.initialize(starting_cash=Decimal("10000"))
+    await service.adjust_cash(
+        portfolio_id=portfolio.id,
+        expected_revision=0,
+        delta=Decimal("2000"),
+        reason="research funding",
+    )
+    await service.import_external_position(
+        portfolio_id=portfolio.id,
+        expected_revision=1,
+        ticker="AAA",
+        quantity=10,
+        average_cost=Decimal("100"),
+        entry_trading_day=date(2025, 1, 2),
+        reason="broker reconciliation",
+    )
+    position = (await service.portfolios.list_open_positions(portfolio.id))[0]
+    assert position.provenance_status == ResearchPositionProvenance.MANUAL_EXTERNAL
+    assert position.strategy_profile_id is None
+    await service.reconcile_position(
+        portfolio_id=portfolio.id,
+        position_id=position.id,
+        expected_revision=2,
+        quantity=12,
+        average_cost=Decimal("102.40"),
+        entry_trading_day=date(2025, 1, 2),
+        reason="correct broker statement",
+    )
+    current = await service.current()
+    assert current is not None
+    assert current.cash_balance == Decimal("12000")
+    assert current.realized_pnl == Decimal("0")
+    assert current.revision == 3
+    position = (await service.portfolios.list_open_positions(portfolio.id))[0]
+    assert position.quantity == 12
+    assert position.average_entry_cost == Decimal("102.40")
+    assert position.cost_basis == Decimal("1228.80")
+    audit = (await db_session.execute(select(ResearchReconciliationEvent))).scalars().all()
+    assert [item.event_type for item in audit] == [
+        "CASH_DEPOSIT",
+        "EXTERNAL_POSITION_IMPORT",
+        "POSITION_RECONCILIATION",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cash_withdrawal_rejects_stale_revision_and_negative_cash(db_session) -> None:
+    service = ResearchPortfolioService(db_session)
+    portfolio = await service.initialize(starting_cash=Decimal("100"))
+    portfolio_id = portfolio.id
+    with pytest.raises(ValueError, match="negative"):
+        await service.adjust_cash(
+            portfolio_id=portfolio_id,
+            expected_revision=0,
+            delta=Decimal("-101"),
+            reason="invalid",
+        )
+    await db_session.rollback()
+    with pytest.raises(StalePortfolioRevisionError):
+        await service.adjust_cash(
+            portfolio_id=portfolio_id,
+            expected_revision=1,
+            delta=Decimal("1"),
+            reason="stale",
+        )

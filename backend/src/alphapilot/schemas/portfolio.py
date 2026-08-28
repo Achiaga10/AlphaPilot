@@ -401,3 +401,57 @@ class ResearchTradeEventSchema(BaseModel):
     strategy_profile_id: str | None
     strategy_profile_version: int | None
     provenance_status: str
+
+
+class ResearchReconciliationEventSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    position_id: UUID | None
+    event_type: str
+    portfolio_revision: int
+    cash_delta: Decimal | None
+    before_facts: dict[str, object] | None
+    after_facts: dict[str, object] | None
+    reason: str
+
+
+class PositionMonitoringSchema(BaseModel):
+    position_id: UUID
+    ticker: str
+    strategy_profile_id: str | None
+    strategy_profile_version: int | None
+    readiness: str
+    status: str | None
+    reason: str
+    completed_trading_day: date | None
+    latest_close: Decimal | None
+    indicator_facts: dict[str, str | bool | None]
+    exit_triggered: bool
+    exit_triggered_on: date | None
+    exit_trigger_reason: str | None
+    protective_stop_policy: str
+    trailing_stop_policy: str
+    profit_target_policy: str
+
+
+class CashAdjustmentRequestSchema(BaseModel):
+    expected_revision: int = Field(ge=0)
+    delta: Decimal
+    reason: str = Field(min_length=1, max_length=200)
+
+
+class ExternalPositionRequestSchema(BaseModel):
+    expected_revision: int = Field(ge=0)
+    ticker: str = Field(min_length=1, max_length=10)
+    quantity: int = Field(gt=0)
+    average_cost: Decimal = Field(gt=0)
+    entry_trading_day: date | None = None
+    reason: str = Field(min_length=1, max_length=200)
+
+
+class PositionReconciliationRequestSchema(BaseModel):
+    expected_revision: int = Field(ge=0)
+    quantity: int = Field(gt=0)
+    average_cost: Decimal = Field(gt=0)
+    entry_trading_day: date | None = None
+    reason: str = Field(min_length=1, max_length=200)

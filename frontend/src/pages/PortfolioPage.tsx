@@ -10,6 +10,7 @@ import { useAdminCapabilityQuery, useAdminTickerSyncMutation, useDeactivateCusto
 import type { PortfolioPlanRequest } from '../types/portfolio'
 import { formatDate } from '../utils/format'
 import { PlanReadinessBanner } from '../features/portfolio/PlanReadinessBanner'
+import { ResearchPortfolioPanel } from '../features/portfolio/ResearchPortfolioPanel'
 
 export function PortfolioPage() {
   const { draft, setDraft, portfolio, portfolioPending, portfolioError, refreshPortfolio, plan, setPlanResult, previewDecision, applyDecision, appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions, isPlanDirty } = usePortfolioWorkspace()
@@ -34,6 +35,8 @@ export function PortfolioPage() {
           <p>Ask the backend to evaluate stored market data against the persistent research portfolio.</p>
         </div>
       </header>
+
+      <ResearchPortfolioPanel />
 
       {riskConfig.isPending ? <LoadingState label="Loading research configuration" /> : null}
       {riskConfig.isError ? <ErrorState error={riskConfig.error} onRetry={() => void riskConfig.refetch()} /> : null}

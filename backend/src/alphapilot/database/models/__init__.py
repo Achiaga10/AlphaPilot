@@ -10,10 +10,13 @@ from .research_dataset import (
     ResearchDatasetUniverseMember,
 )
 from .research_portfolio import (
+    PositionMonitoringSnapshot,
     ResearchPortfolio,
     ResearchPosition,
     ResearchPositionProvenance,
     ResearchPositionStatus,
+    ResearchReconciliationEvent,
+    ResearchReconciliationEventType,
     ResearchTradeEvent,
     ResearchTradeEventType,
 )
@@ -30,6 +33,9 @@ __all__ = [
     "ResearchPosition",
     "ResearchPositionProvenance",
     "ResearchPositionStatus",
+    "PositionMonitoringSnapshot",
+    "ResearchReconciliationEvent",
+    "ResearchReconciliationEventType",
     "ResearchTradeEvent",
     "ResearchTradeEventType",
 ]

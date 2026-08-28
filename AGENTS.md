@@ -24,13 +24,13 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 16 — Persistent Research Portfolio, Trade Lifecycle & Mark-to-Market Valuation
-(COMPLETE LOCALLY)
+Sprint 17 — Position Monitoring, Exit Guidance, Portfolio Reconciliation &
+Daily Completed-Session Sync Automation (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
-complete locally on `feature/persistent-research-portfolio`. Do not add or tune
-strategies. Do not begin Sprint 17.
+complete, reviewed, and merged. Sprint 17 is complete locally on
+`feature/position-monitoring`. Do not add or tune strategies. Do not begin Sprint 18.
 
 ## Development Environment
 
@@ -250,14 +250,13 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 16 Task
+## Sprint 17 Task
 
-Move the normal research portfolio from browser-owned draft state into a
-transactional backend-owned aggregate with an auditable trade lifecycle,
-revision-based stale protection, Strategy Profile entry provenance, and
-mark-to-market valuation from stored completed daily candles.
+Add backend-owned completed-session position monitoring from stored Strategy
+Profiles, sticky exit triggers, audited portfolio reconciliation, and safe daily
+market-data automation. Do not auto-trade or activate research-only stops.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT16_COMPLETION_REPORT.md`, stop. Do not begin
-Sprint 17.
+After creating `docs/sprints/SPRINT17_COMPLETION_REPORT.md`, stop. Do not begin
+Sprint 18.

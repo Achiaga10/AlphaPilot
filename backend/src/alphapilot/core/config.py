@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     ADMIN_TOOLS_ENABLED: bool = False
 
+    DAILY_MARKET_SYNC_ENABLED: bool = False
+
     DATABASE_URL: str = "postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot"
     TEST_DATABASE_URL: str | None = None
 

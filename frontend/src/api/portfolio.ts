@@ -13,6 +13,10 @@ import type {
   PortfolioRiskConfig,
   ResearchPortfolio,
   ResearchPortfolioInitialize,
+  PositionMonitoring,
+  CashAdjustmentRequest,
+  ExternalPositionRequest,
+  PositionReconciliationRequest,
   StrategyProfile,
 } from '../types/portfolio'
 
@@ -119,6 +123,13 @@ const isResearchPortfolio = (value: unknown): value is ResearchPortfolio =>
 const isNullableResearchPortfolio = (value: unknown): value is ResearchPortfolio | null =>
   value === null || isResearchPortfolio(value)
 
+const isMonitoring = (value: unknown): value is PositionMonitoring[] =>
+  Array.isArray(value) && value.every((item) => isObject(item) &&
+    typeof item.position_id === 'string' && typeof item.ticker === 'string' &&
+    (item.readiness === 'READY' || item.readiness === 'UNAVAILABLE') &&
+    (item.status === 'HOLD' || item.status === 'ATTENTION' || item.status === 'SELL' || item.status === null) &&
+    typeof item.reason === 'string' && isObject(item.indicator_facts))
+
 export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return requestJson('/api/v1/health/', { signal }, isHealth)
 }
@@ -143,6 +154,22 @@ export function initializeResearchPortfolio(
     { method: 'POST', body: JSON.stringify(request) },
     isResearchPortfolio,
   )
+}
+
+export function getPositionMonitoring(portfolioId: string, signal?: AbortSignal): Promise<PositionMonitoring[]> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/monitoring`, { signal }, isMonitoring)
+}
+
+export function adjustResearchCash(portfolioId: string, request: CashAdjustmentRequest): Promise<ResearchPortfolio> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/cash-adjustments`, { method: 'POST', body: JSON.stringify(request) }, isResearchPortfolio)
+}
+
+export function addExternalPosition(portfolioId: string, request: ExternalPositionRequest): Promise<ResearchPortfolio> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/external-positions`, { method: 'POST', body: JSON.stringify(request) }, isResearchPortfolio)
+}
+
+export function reconcileResearchPosition(portfolioId: string, positionId: string, request: PositionReconciliationRequest): Promise<ResearchPortfolio> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/positions/${positionId}/reconcile`, { method: 'POST', body: JSON.stringify(request) }, isResearchPortfolio)
 }
 
 export function createPortfolioPlan(

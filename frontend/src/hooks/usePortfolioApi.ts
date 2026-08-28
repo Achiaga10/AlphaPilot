@@ -6,6 +6,10 @@ import {
   getLatestStoredPrice,
   getRiskConfig,
   getStrategyProfiles,
+  getPositionMonitoring,
+  adjustResearchCash,
+  addExternalPosition,
+  reconcileResearchPosition,
   previewManualSell,
 } from '../api/portfolio'
 import {
@@ -14,6 +18,7 @@ import {
   getCustomTickers,
   getAdminCapability,
   getAdminDataSummary,
+  getDailySchedulerStatus,
   getAdminSyncJob,
   startAdminFullSync,
   startAdminCandleSync,
@@ -25,6 +30,9 @@ import type {
   AdminTickerSyncRequest,
   ManualSellRequest,
   PortfolioPlanRequest,
+  CashAdjustmentRequest,
+  ExternalPositionRequest,
+  PositionReconciliationRequest,
 } from '../types/portfolio'
 
 export function useHealthQuery() {
@@ -59,6 +67,26 @@ export function usePortfolioPlanMutation() {
   })
 }
 
+export function usePositionMonitoringQuery(portfolioId: string | null) {
+  return useQuery({
+    queryKey: ['position-monitoring', portfolioId],
+    queryFn: ({ signal }) => getPositionMonitoring(portfolioId ?? '', signal),
+    enabled: Boolean(portfolioId),
+  })
+}
+
+export function useCashAdjustmentMutation(portfolioId: string) {
+  return useMutation({ mutationFn: (request: CashAdjustmentRequest) => adjustResearchCash(portfolioId, request) })
+}
+
+export function useExternalPositionMutation(portfolioId: string) {
+  return useMutation({ mutationFn: (request: ExternalPositionRequest) => addExternalPosition(portfolioId, request) })
+}
+
+export function usePositionReconciliationMutation(portfolioId: string, positionId: string) {
+  return useMutation({ mutationFn: (request: PositionReconciliationRequest) => reconcileResearchPosition(portfolioId, positionId, request) })
+}
+
 export function useLatestStoredPriceQuery(ticker: string | null) {
   return useQuery({
     queryKey: ['latest-stored-price', ticker],
@@ -90,6 +118,10 @@ export function useAdminDataSummaryQuery(enabled: boolean) {
     queryFn: ({ signal }) => getAdminDataSummary(signal),
     enabled,
   })
+}
+
+export function useDailySchedulerStatusQuery() {
+  return useQuery({ queryKey: ['daily-market-scheduler'], queryFn: ({ signal }) => getDailySchedulerStatus(signal) })
 }
 
 export function useCustomTickersQuery(enabled: boolean) {

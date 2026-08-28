@@ -2,11 +2,12 @@
 
 ## Current Phase
 
-Sprint 16 — Persistent Research Portfolio, Trade Lifecycle & Mark-to-Market Valuation
+Sprint 17 — Position Monitoring, Exit Guidance, Portfolio Reconciliation &
+Daily Completed-Session Sync Automation
 COMPLETE LOCALLY
 
 Current development branch:
-feature/persistent-research-portfolio
+feature/position-monitoring
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -18,8 +19,8 @@ ingestion provenance, exact universe/candle snapshots, deterministic hashes,
 and snapshot-bound research replay are implemented without changing strategy or
 normal UI behavior. Sprint 14 is complete, reviewed, and merged with
 backend-owned versioned strategy profiles. Sprint 15 is complete, reviewed, and
-merged with a frozen-snapshot, stage-governed Strategy Lab. Sprint 16 is complete
-locally. Sprint 17 is not started.
+merged with a frozen-snapshot, stage-governed Strategy Lab. Sprint 16 is complete,
+reviewed, and merged. Sprint 17 is complete locally. Sprint 18 is not started.
 
 ## Project Goal
 

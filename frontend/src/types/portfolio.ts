@@ -341,7 +341,7 @@ export interface ResearchPositionValuation {
   strategy_profile_id: string | null
   strategy_profile_version: number | null
   selection_policy: string | null
-  provenance_status: 'PLAN_PROFILE' | 'LEGACY_IMPORTED'
+  provenance_status: 'PLAN_PROFILE' | 'LEGACY_IMPORTED' | 'MANUAL_EXTERNAL'
   modeled_risk_dollars: string
   latest_completed_trading_day: string | null
   latest_completed_close: string | null
@@ -379,6 +379,70 @@ export interface ResearchPortfolioInitialize {
     average_cost: string
     cost_basis?: string | null
   }>
+}
+
+export interface PositionMonitoring {
+  position_id: string
+  ticker: string
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  readiness: 'READY' | 'UNAVAILABLE'
+  status: 'HOLD' | 'ATTENTION' | 'SELL' | null
+  reason: string
+  completed_trading_day: string | null
+  latest_close: string | null
+  indicator_facts: Record<string, string | boolean | null>
+  exit_triggered: boolean
+  exit_triggered_on: string | null
+  exit_trigger_reason: string | null
+  protective_stop_policy: 'NONE'
+  trailing_stop_policy: 'NONE'
+  profit_target_policy: 'NONE'
+}
+
+export interface CashAdjustmentRequest {
+  expected_revision: number
+  delta: string
+  reason: string
+}
+
+export interface ExternalPositionRequest {
+  expected_revision: number
+  ticker: string
+  quantity: number
+  average_cost: string
+  entry_trading_day: string | null
+  reason: string
+}
+
+export interface PositionReconciliationRequest {
+  expected_revision: number
+  quantity: number
+  average_cost: string
+  entry_trading_day: string | null
+  reason: string
+}
+
+export interface DailySchedulerStatus {
+  enabled: boolean
+  timezone: 'America/New_York'
+  scheduled_local_time: '16:30'
+  last_run_started: string | null
+  last_run_completed: string | null
+  last_status: 'NEVER_RUN' | 'RUNNING' | 'SUCCEEDED' | 'NO_NEW_SESSION' | 'FAILED'
+  last_successful_completed_market_session: string | null
+  last_error_summary: string | null
+}
+
+export interface DailySchedulerStatus {
+  enabled: boolean
+  timezone: 'America/New_York'
+  scheduled_local_time: '16:30'
+  last_run_started: string | null
+  last_run_completed: string | null
+  last_status: 'NEVER_RUN' | 'RUNNING' | 'SUCCEEDED' | 'NO_NEW_SESSION' | 'FAILED'
+  last_successful_completed_market_session: string | null
+  last_error_summary: string | null
 }
 
 export interface HealthResponse {

@@ -9,6 +9,7 @@ import type {
   AdminTickerSyncRequest,
   AdminTickerSyncResponse,
   AdminToolsCapability,
+  DailySchedulerStatus,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -36,12 +37,21 @@ const isCustomTicker = (value: unknown): value is AdminCustomTicker =>
 const isCustomTickerList = (value: unknown): value is AdminCustomTickerListItem[] =>
   Array.isArray(value) && value.every((item) => isObject(item) && typeof item.ticker === 'string')
 
+const isScheduler = (value: unknown): value is DailySchedulerStatus =>
+  isObject(value) && typeof value.enabled === 'boolean' &&
+  value.timezone === 'America/New_York' && value.scheduled_local_time === '16:30' &&
+  typeof value.last_status === 'string'
+
 export function getAdminCapability(signal?: AbortSignal): Promise<AdminToolsCapability> {
   return requestJson('/api/v1/admin/data/capability', { signal }, isCapability)
 }
 
 export function getAdminDataSummary(signal?: AbortSignal): Promise<AdminDataSummary> {
   return requestJson('/api/v1/admin/data/summary', { signal }, isSummary)
+}
+
+export function getDailySchedulerStatus(signal?: AbortSignal): Promise<DailySchedulerStatus> {
+  return requestJson('/api/v1/admin/data/scheduler', { signal }, isScheduler)
 }
 
 export function syncAdminTicker(request: AdminTickerSyncRequest): Promise<AdminTickerSyncResponse> {
