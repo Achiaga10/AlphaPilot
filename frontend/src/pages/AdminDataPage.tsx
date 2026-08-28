@@ -18,6 +18,7 @@ import {
 } from '../hooks/usePortfolioApi'
 import type { AdminDataSummary, AdminFullSyncRequest, AdminSyncJob } from '../types/portfolio'
 import { formatDate } from '../utils/format'
+import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
 
 function dateOffset(days: number): string {
   const value = new Date()
@@ -26,6 +27,7 @@ function dateOffset(days: number): string {
 }
 
 export function AdminDataPage() {
+  const { refreshPortfolio } = usePortfolioWorkspace()
   const capability = useAdminCapabilityQuery()
   const enabled = capability.data?.enabled === true
   const summary = useAdminDataSummaryQuery(true)
@@ -49,7 +51,7 @@ export function AdminDataPage() {
   const request: AdminFullSyncRequest = { start_date: startDate, end_date: endDate, batch_size: 100 }
 
   function observe(result: { job: AdminSyncJob }) { setJobId(result.job.job_id) }
-  function refreshCustom() { void customTickers.refetch(); void summary.refetch() }
+  function refreshCustom() { void customTickers.refetch(); void summary.refetch(); void refreshPortfolio() }
   function submitTicker(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     tickerSync.mutate({ ticker: ticker.trim().toUpperCase(), start_date: startDate, end_date: endDate }, { onSuccess: refreshCustom })
@@ -63,8 +65,9 @@ export function AdminDataPage() {
     if (job?.state === 'SUCCEEDED' || job?.state === 'FAILED') {
       void summary.refetch()
       void customTickers.refetch()
+      if (job.state === 'SUCCEEDED' && (job.operation === 'MARKET_CANDLES_SYNC' || job.operation === 'FULL_SYNC')) void refreshPortfolio()
     }
-  }, [customTickers, job?.state, summary])
+  }, [customTickers, job?.operation, job?.state, refreshPortfolio, summary])
 
   return (
     <div className="page">

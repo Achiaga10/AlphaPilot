@@ -14,10 +14,6 @@ test('every plan-affecting form area marks the displayed result stale and regene
     await waitFor(() => expect(screen.queryByText('Displayed plan is stale')).not.toBeInTheDocument())
   }
 
-  await user.clear(screen.getByLabelText('Cash (USD)'))
-  await user.type(screen.getByLabelText('Cash (USD)'), '90000')
-  await expectDirty(); await regenerate()
-
   await user.selectOptions(screen.getByLabelText('Strategy'), 'micho-150')
   await expectDirty(); await regenerate()
 
@@ -31,8 +27,6 @@ test('every plan-affecting form area marks the displayed result stale and regene
   await user.type(screen.getByLabelText('Optional ticker scope'), 'AAPL')
   await expectDirty(); await regenerate()
 
-  await user.click(screen.getByRole('button', { name: 'Add position' }))
-  await expectDirty()
 }, 10_000)
 
 test('failed regeneration leaves the prior plan visible and stale', async () => {

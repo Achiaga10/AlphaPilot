@@ -16,6 +16,7 @@ from alphapilot.database.models import (  # noqa: F401
     index_constituent,
     market_data_ingestion,
     research_dataset,
+    research_portfolio,
 )
 
 config = context.config

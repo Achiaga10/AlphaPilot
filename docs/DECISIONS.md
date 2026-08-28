@@ -19,9 +19,28 @@ Sprint 10B — Risk Model Hardening & Decision Orchestration — is complete and
 Sprint 11, Sprint 11B, Sprint 11C, and Sprint 11D are complete and merged.
 Sprint 12 is complete, reviewed, and merged; its research-only stop candidates
 do not replace existing strategy exits. Sprint 13 is complete, reviewed, and
-merged. Sprint 14 is complete, reviewed, and merged. Sprint 15 Strategy Lab is
-complete locally on `feature/strategy-lab` and awaits user review/publishing.
-Sprint 16 is not started.
+merged. Sprint 14 and Sprint 15 are complete, reviewed, and merged. Sprint 16
+is in progress on `feature/persistent-research-portfolio`. Sprint 17 is not
+started.
+
+## 0.15 Sprint 16 Persistent Research Portfolio Protocol
+
+- The normal product portfolio is a backend-persistent research aggregate, not
+  a brokerage account. Lower-level explicit research interfaces remain.
+- Persistent entry/trade facts are separate from valuation. Market value and
+  unrealized P&L derive from the latest stored completed daily candle and are
+  never written back during market sync.
+- Every successful mutation atomically changes cash/position, appends a trade
+  event, and increments the portfolio revision. Stale revisions are rejected.
+- Normal plans and actions bind portfolio ID/revision plus Strategy Profile
+  ID/version. Browser cash and positions are not authoritative.
+- New plan-created positions preserve immutable Strategy Profile provenance.
+  Imported legacy positions use explicit legacy/unknown provenance; facts are
+  never fabricated.
+- Missing completed prices yield explicit partial/unavailable valuation rather
+  than zero. Incomplete current-session candles remain excluded.
+- Sprint 16 adds no broker execution, scheduler, exit monitoring, strategy,
+  stop change, research tuning, or Sprint 17 functionality.
 
 ## 0.14 Sprint 15 Frozen Strategy-Lab Protocol
 

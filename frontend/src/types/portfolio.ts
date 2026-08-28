@@ -80,7 +80,7 @@ export interface PortfolioPlanRequest {
   selection_policy: SelectionPolicy
   as_of_date: string
   tickers: string[] | null
-  portfolio: CurrentPortfolioInput
+  portfolio_id: string
   risk_config: PortfolioRiskConfig
 }
 
@@ -195,6 +195,8 @@ export interface CandidateStatus {
 
 export interface PortfolioPlan {
   plan_id: string
+  portfolio_id: string
+  portfolio_revision: number
   portfolio: PortfolioSummary
   config: PortfolioRiskConfig
   strategy: StrategyName
@@ -248,7 +250,10 @@ export type PlanActionApplyReason =
 
 export interface PortfolioPlanActionRequest {
   plan_id: string
-  portfolio: CurrentPortfolioInput
+  portfolio_id: string
+  portfolio_revision: number
+  analysis_as_of_date: string
+  selection_policy: SelectionPolicy
   decision: PortfolioDecision
   applied_action_ids: string[]
   requested_shares: number | null
@@ -283,6 +288,8 @@ export interface PortfolioPlanActionResult {
   modeled_position_risk_dollars: string | null
   portfolio_risk_after_dollars: string | null
   cash_reserve_requirement: string | null
+  portfolio_id: string
+  portfolio_revision: number
 }
 
 export interface LatestStoredPrice {
@@ -293,7 +300,8 @@ export interface LatestStoredPrice {
 }
 
 export interface ManualSellRequest {
-  portfolio: CurrentPortfolioInput
+  portfolio_id: string
+  portfolio_revision: number
   ticker: string
   shares_to_sell: number
   execution_price: string | null
@@ -314,6 +322,63 @@ export interface ManualSellResult {
   position_removed: boolean
   portfolio: CurrentPortfolioInput
   summary: PortfolioDraftSummary
+  portfolio_id: string
+  portfolio_revision: number
+}
+
+export interface ResearchPositionValuation {
+  position_id: string
+  company_id: string
+  ticker: string
+  sector: string | null
+  status: 'OPEN'
+  quantity: number
+  average_cost: string
+  cost_basis: string
+  entry_trading_day: string | null
+  entry_price: string | null
+  strategy: string | null
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  selection_policy: string | null
+  provenance_status: 'PLAN_PROFILE' | 'LEGACY_IMPORTED'
+  modeled_risk_dollars: string
+  latest_completed_trading_day: string | null
+  latest_completed_close: string | null
+  market_value: string | null
+  portfolio_weight_pct: string | null
+  unrealized_pnl: string | null
+  unrealized_pnl_pct: string | null
+  valuation_status: 'VALUED' | 'PRICE_UNAVAILABLE'
+}
+
+export interface ResearchPortfolio {
+  portfolio_id: string
+  stable_key: string
+  name: string
+  revision: number
+  cash: string
+  realized_pnl: string
+  total_cost_basis: string
+  positions_market_value: string | null
+  total_equity: string | null
+  cash_pct: string | null
+  invested_pct: string | null
+  total_unrealized_pnl: string | null
+  latest_completed_trading_day: string | null
+  valuation_status: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE'
+  positions: ResearchPositionValuation[]
+}
+
+export interface ResearchPortfolioInitialize {
+  starting_cash: string
+  name?: string
+  imported_positions: Array<{
+    ticker: string
+    quantity: number
+    average_cost: string
+    cost_basis?: string | null
+  }>
 }
 
 export interface HealthResponse {

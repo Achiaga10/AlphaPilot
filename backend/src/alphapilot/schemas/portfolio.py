@@ -195,7 +195,8 @@ class PortfolioPlanRequest(BaseModel):
     selection_policy: SelectionPolicyName = SelectionPolicyName.RELATIVE_STRENGTH_20
     as_of_date: date = Field(default_factory=date.today)
     tickers: list[str] | None = None
-    portfolio: CurrentPortfolioSchema
+    portfolio_id: UUID | None = None
+    portfolio: CurrentPortfolioSchema | None = None
     risk_config: PortfolioRiskConfigSchema = PortfolioRiskConfigSchema()
 
 
@@ -241,11 +242,17 @@ class PortfolioPlanSchema(PortfolioDecisionPlanSchema):
     candidate_statuses: list[CandidateOrchestrationStatusSchema]
     readiness: PortfolioPlanReadinessSchema
     evaluation_target_ticker: str | None = None
+    portfolio_id: UUID | None = None
+    portfolio_revision: int | None = None
 
 
 class PortfolioPlanActionRequest(BaseModel):
     plan_id: str = Field(min_length=1)
-    portfolio: CurrentPortfolioSchema
+    portfolio_id: UUID | None = None
+    portfolio_revision: int | None = Field(default=None, ge=0)
+    analysis_as_of_date: date | None = None
+    selection_policy: SelectionPolicyName = SelectionPolicyName.RELATIVE_STRENGTH_20
+    portfolio: CurrentPortfolioSchema | None = None
     decision: PortfolioDecisionSchema
     applied_action_ids: list[str] = []
     requested_shares: int | None = Field(default=None, gt=0)
@@ -280,6 +287,8 @@ class PortfolioPlanActionResultSchema(BaseModel):
     modeled_position_risk_dollars: Decimal | None
     portfolio_risk_after_dollars: Decimal | None
     cash_reserve_requirement: Decimal | None
+    portfolio_id: UUID | None = None
+    portfolio_revision: int | None = None
 
 
 class LatestStoredPriceSchema(BaseModel):
@@ -290,7 +299,9 @@ class LatestStoredPriceSchema(BaseModel):
 
 
 class ManualSellRequestSchema(BaseModel):
-    portfolio: CurrentPortfolioSchema
+    portfolio_id: UUID | None = None
+    portfolio_revision: int | None = Field(default=None, ge=0)
+    portfolio: CurrentPortfolioSchema | None = None
     ticker: str = Field(min_length=1, max_length=10)
     shares_to_sell: int = Field(gt=0)
     execution_price: Decimal | None = Field(default=None, gt=0)
@@ -311,3 +322,82 @@ class ManualSellResultSchema(BaseModel):
     position_removed: bool
     portfolio: CurrentPortfolioSchema
     summary: PortfolioDraftSummarySchema
+    portfolio_id: UUID | None = None
+    portfolio_revision: int | None = None
+
+
+class ImportedResearchPositionSchema(BaseModel):
+    ticker: str = Field(min_length=1, max_length=10)
+    quantity: int = Field(gt=0)
+    average_cost: Decimal = Field(gt=0)
+    cost_basis: Decimal | None = Field(default=None, ge=0)
+
+
+class ResearchPortfolioInitializeSchema(BaseModel):
+    starting_cash: Decimal = Field(ge=0)
+    name: str = Field(default="AlphaPilot Research Portfolio", min_length=1, max_length=150)
+    imported_positions: list[ImportedResearchPositionSchema] = []
+
+
+class ResearchPositionValuationSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    position_id: UUID
+    company_id: UUID
+    ticker: str
+    sector: str | None
+    status: str
+    quantity: int
+    average_cost: Decimal
+    cost_basis: Decimal
+    entry_trading_day: date | None
+    entry_price: Decimal | None
+    strategy: str | None
+    strategy_profile_id: str | None
+    strategy_profile_version: int | None
+    selection_policy: str | None
+    provenance_status: str
+    modeled_risk_dollars: Decimal
+    latest_completed_trading_day: date | None
+    latest_completed_close: Decimal | None
+    market_value: Decimal | None
+    portfolio_weight_pct: Decimal | None
+    unrealized_pnl: Decimal | None
+    unrealized_pnl_pct: Decimal | None
+    valuation_status: str
+
+
+class ResearchPortfolioSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    portfolio_id: UUID
+    stable_key: str
+    name: str
+    revision: int
+    cash: Decimal
+    realized_pnl: Decimal
+    total_cost_basis: Decimal
+    positions_market_value: Decimal | None
+    total_equity: Decimal | None
+    cash_pct: Decimal | None
+    invested_pct: Decimal | None
+    total_unrealized_pnl: Decimal | None
+    latest_completed_trading_day: date | None
+    valuation_status: str
+    positions: list[ResearchPositionValuationSchema]
+
+
+class ResearchTradeEventSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    event_type: str
+    quantity: int
+    execution_price: Decimal
+    trading_day: date | None
+    cash_effect: Decimal
+    realized_pnl: Decimal
+    source: str
+    reason: str | None
+    action_id: str | None
+    strategy: str | None
+    strategy_profile_id: str | None
+    strategy_profile_version: int | None
+    provenance_status: str

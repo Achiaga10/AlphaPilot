@@ -12,9 +12,11 @@ describe('portfolio plan request', () => {
         positions: [{ ticker: 'msft', shares: 2, reference_price: '400', cost_basis: '350' }],
       },
       riskConfigFixture,
+      '11111111-1111-4111-8111-111111111111',
     )
     expect(request.tickers).toEqual(['NVDA', 'AAPL'])
-    expect(request.portfolio.positions[0]?.ticker).toBe('MSFT')
+    expect(request.portfolio_id).toBe('11111111-1111-4111-8111-111111111111')
+    expect(request).not.toHaveProperty('portfolio')
     expect(request).not.toHaveProperty('exit_mode')
     expect(request).not.toHaveProperty('hybrid_trend_threshold_pct')
     expect(request).not.toHaveProperty('micho_entry_mode')
@@ -22,18 +24,8 @@ describe('portfolio plan request', () => {
     expect(JSON.stringify(request)).not.toMatch(/ranking_score|"atr"|stop_distance|strategy_signal/)
   })
 
-  test('validates cash, whole shares, reference prices, tickers, and duplicates', () => {
-    expect(validateDraft({ ...defaultDraft, cash: '-1' }).cash).toBeDefined()
-    expect(validateDraft({
-      ...defaultDraft,
-      positions: [{ ticker: 'AAPL', shares: 0, reference_price: '100' }],
-    }).positions).toMatch(/whole numbers/i)
-    expect(validateDraft({
-      ...defaultDraft,
-      positions: [
-        { ticker: 'AAPL', shares: 1, reference_price: '100' },
-        { ticker: 'aapl', shares: 1, reference_price: '100' },
-      ],
-    }).positions).toMatch(/only once/i)
+  test('validates only locally editable plan preferences', () => {
+    expect(validateDraft({ ...defaultDraft, asOfDate: '' }).asOfDate).toBeDefined()
+    expect(validateDraft({ ...defaultDraft, cash: '-1' })).toEqual({})
   })
 })

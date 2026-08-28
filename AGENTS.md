@@ -24,13 +24,13 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 15 — Strategy Lab Foundation
+Sprint 16 — Persistent Research Portfolio, Trade Lifecycle & Mark-to-Market Valuation
 (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
-Sprint 13 and Sprint 14 are complete, reviewed, and merged. Sprint 15 is
-complete locally on `feature/strategy-lab`. Do not add or tune strategies. Do
-not begin Sprint 16 before user review and Git publishing.
+Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
+complete locally on `feature/persistent-research-portfolio`. Do not add or tune
+strategies. Do not begin Sprint 17.
 
 ## Development Environment
 
@@ -250,14 +250,14 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 15 Task
+## Sprint 16 Task
 
-Build a reusable Strategy Lab protocol around frozen Sprint 13 datasets,
-predeclared parameters, enforced development/freeze/validation/fold stages,
-deterministic experiment identity, structured evidence, and human-reviewed
-profile candidates. Do not implement or tune a new strategy.
+Move the normal research portfolio from browser-owned draft state into a
+transactional backend-owned aggregate with an auditable trade lifecycle,
+revision-based stale protection, Strategy Profile entry provenance, and
+mark-to-market valuation from stored completed daily candles.
 
 ## End-of-Task Rule
 
-After creating `docs/SPRINT15_COMPLETION_REPORT.md`, stop. The user will review
-the evidence before Git publishing or Sprint 16.
+After creating `docs/sprints/SPRINT16_COMPLETION_REPORT.md`, stop. Do not begin
+Sprint 17.

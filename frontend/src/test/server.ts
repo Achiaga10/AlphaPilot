@@ -12,6 +12,13 @@ interface TestPosition {
   modeled_risk_dollars?: string
 }
 
+const researchPortfolioFixture = {
+  portfolio_id: planFixture.portfolio_id, stable_key: 'default', name: 'AlphaPilot Research Portfolio', revision: 0,
+  cash: '30000', realized_pnl: '0', total_cost_basis: '65000', positions_market_value: '70000', total_equity: '100000',
+  cash_pct: '30', invested_pct: '70', total_unrealized_pnl: '5000', latest_completed_trading_day: '2026-08-20', valuation_status: 'COMPLETE',
+  positions: planFixture.portfolio.positions.map((position, index) => ({ position_id: `21111111-1111-4111-8111-11111111111${index}`, company_id: `31111111-1111-4111-8111-11111111111${index}`, ticker: position.ticker, sector: position.sector, status: 'OPEN', quantity: position.shares, average_cost: position.cost_basis ?? position.reference_price, cost_basis: String(Number(position.cost_basis ?? position.reference_price) * position.shares), entry_trading_day: '2026-01-02', entry_price: position.cost_basis, strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, selection_policy: 'relative-strength-20', provenance_status: 'PLAN_PROFILE', modeled_risk_dollars: position.modeled_risk_dollars, latest_completed_trading_day: '2026-08-20', latest_completed_close: position.reference_price, market_value: position.market_value, portfolio_weight_pct: position.portfolio_weight_pct, unrealized_pnl: '0', unrealized_pnl_pct: '0', valuation_status: 'VALUED' })),
+}
+
 function summarize(portfolio: { cash: string; positions: TestPosition[] }) {
   const cash = Number(portfolio.cash) || 0
   const values = portfolio.positions.map((position) => Number(position.reference_price) * position.shares)
@@ -34,6 +41,8 @@ export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/health/`, () => HttpResponse.json({ status: 'ok', application: 'AlphaPilot' })),
   http.get(`${API_BASE_URL}/api/v1/portfolio/risk-config`, () => HttpResponse.json(riskConfigFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/strategy-profiles`, () => HttpResponse.json(strategyProfilesFixture)),
+  http.get(`${API_BASE_URL}/api/v1/portfolio/current`, () => HttpResponse.json(researchPortfolioFixture)),
+  http.post(`${API_BASE_URL}/api/v1/portfolio/initialize`, () => HttpResponse.json(researchPortfolioFixture)),
   http.get(`${API_BASE_URL}/api/v1/admin/data/capability`, () => HttpResponse.json({ enabled: false, warning: 'Research admin tools are disabled by configuration.', market_data_provider: 'Alpaca', market_data_feed: 'iex' })),
   http.get(`${API_BASE_URL}/api/v1/admin/data/summary`, () => HttpResponse.json({ active_company_count: 503, active_sp500_count: 502, active_custom_tracked_count: 0, latest_spy_date: '2026-08-20', earliest_active_stock_latest_date: '2026-08-19', latest_active_stock_latest_date: '2026-08-20', fresh_tracked_ticker_count: 501, stale_tracked_ticker_count: 1, no_data_tracked_ticker_count: 0, latest_sync_job: null, last_universe_sync_at: null, last_candle_sync_at: null, market_data_provider: 'Alpaca', market_data_feed: 'iex' })),
   http.get(`${API_BASE_URL}/api/v1/admin/data/custom-tickers`, () => HttpResponse.json([])),
@@ -50,12 +59,13 @@ export const handlers = [
 ]
 
 async function actionResponse(request: Request, apply: boolean) {
-    const body = await request.json() as { portfolio: { cash: string; positions: TestPosition[] }; decision: typeof planFixture.decisions[number]; applied_action_ids: string[]; requested_shares: number | null }
+    const body = await request.json() as { decision: typeof planFixture.decisions[number]; applied_action_ids: string[]; requested_shares: number | null }
     const { decision } = body
+    const originalPortfolio: { cash: string; positions: TestPosition[] } = { cash: planFixture.portfolio.cash, positions: planFixture.portfolio.positions }
     if (decision.action_id === null || body.applied_action_ids.includes(decision.action_id)) {
-      return HttpResponse.json({ applied: false, reason: 'ALREADY_APPLIED', action_id: decision.action_id, portfolio: body.portfolio, summary: summarize(body.portfolio) })
+      return HttpResponse.json({ applied: false, reason: 'ALREADY_APPLIED', action_id: decision.action_id, portfolio: originalPortfolio, summary: summarize(originalPortfolio), portfolio_id: planFixture.portfolio_id, portfolio_revision: 0 })
     }
-    const portfolio = structuredClone(body.portfolio)
+    const portfolio = structuredClone(originalPortfolio)
     const requestedShares = body.requested_shares ?? decision.proposed_shares
     const requestedAllocation = requestedShares * Number(decision.reference_price)
     const cashBefore = Number(portfolio.cash)
@@ -66,14 +76,14 @@ async function actionResponse(request: Request, apply: boolean) {
       portfolio.cash = String(Number(portfolio.cash) + Number(decision.estimated_proceeds))
       portfolio.positions = portfolio.positions.filter((position) => position.ticker !== decision.ticker)
     }
-    const equity = cashBefore + body.portfolio.positions.reduce((total, item) => total + item.shares * Number(item.reference_price), 0)
+    const equity = cashBefore + originalPortfolio.positions.reduce((total, item) => total + item.shares * Number(item.reference_price), 0)
     const semantics = requestedShares === decision.proposed_shares ? 'SAME_PLAN_ACTION' : 'USER_QUANTITY_OVERRIDE'
     return HttpResponse.json({
       plan_id: 'test-plan', applied: apply, reason: apply ? 'APPLIED' : 'READY', validation_status: 'VALID',
       quantity_semantics: semantics, action_id: decision.action_id, action_type: decision.decision,
       cash_before: String(cashBefore), cash_impact: String(-requestedAllocation), cash_after: portfolio.cash,
       position_before: null, position_after: decision.decision === 'BUY' ? portfolio.positions.at(-1) : null,
-      portfolio: apply ? portfolio : body.portfolio, summary: summarize(apply ? portfolio : body.portfolio),
+      portfolio: apply ? portfolio : originalPortfolio, summary: summarize(apply ? portfolio : originalPortfolio), portfolio_id: planFixture.portfolio_id, portfolio_revision: apply ? 1 : 0,
       recommended_shares: decision.proposed_shares, requested_shares: requestedShares,
       recommended_allocation_dollars: decision.target_allocation_dollars,
       requested_allocation_dollars: String(requestedAllocation), resulting_position_weight_pct: String(requestedAllocation / equity * 100),
@@ -83,18 +93,19 @@ async function actionResponse(request: Request, apply: boolean) {
 }
 
 async function manualSellResponse(request: Request, apply: boolean) {
-  const body = await request.json() as { portfolio: { cash: string; positions: TestPosition[] }; ticker: string; shares_to_sell: number; execution_price: string | null }
-  const position = body.portfolio.positions.find((item) => item.ticker === body.ticker)
+  const body = await request.json() as { ticker: string; shares_to_sell: number; execution_price: string | null }
+  const originalPortfolio: { cash: string; positions: TestPosition[] } = { cash: planFixture.portfolio.cash, positions: planFixture.portfolio.positions }
+  const position = originalPortfolio.positions.find((item) => item.ticker === body.ticker)
   const price = body.execution_price ?? '150'
   const remaining = (position?.shares ?? 0) - body.shares_to_sell
-  const portfolio = structuredClone(body.portfolio)
+  const portfolio = structuredClone(originalPortfolio)
   if (apply && position) {
     portfolio.cash = String(Number(portfolio.cash) + body.shares_to_sell * Number(price))
     portfolio.positions = remaining === 0
       ? portfolio.positions.filter((item) => item.ticker !== body.ticker)
       : portfolio.positions.map((item) => item.ticker === body.ticker ? { ...item, shares: remaining } : item)
   }
-  return HttpResponse.json({ applied: apply && Boolean(position), reason: position ? 'READY' : 'POSITION_NOT_HELD', ticker: body.ticker, shares_sold: body.shares_to_sell, shares_remaining: remaining, execution_price: price, price_source: body.execution_price ? 'USER_PROVIDED' : 'LATEST_STORED_CANDLE', price_date: body.execution_price ? null : '2026-08-20', gross_proceeds: String(body.shares_to_sell * Number(price)), portfolio, summary: summarize(portfolio) })
+  return HttpResponse.json({ applied: apply && Boolean(position), reason: position ? 'READY' : 'POSITION_NOT_HELD', ticker: body.ticker, shares_sold: body.shares_to_sell, shares_remaining: remaining, execution_price: price, price_source: body.execution_price ? 'USER_PROVIDED' : 'LATEST_STORED_CANDLE', price_date: body.execution_price ? null : '2026-08-20', gross_proceeds: String(body.shares_to_sell * Number(price)), cash_before: originalPortfolio.cash, cash_after: portfolio.cash, position_removed: remaining === 0, portfolio, summary: summarize(portfolio), portfolio_id: planFixture.portfolio_id, portfolio_revision: apply ? 1 : 0 })
 }
 
 export const server = setupServer(...handlers)

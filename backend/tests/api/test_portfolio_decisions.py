@@ -54,6 +54,31 @@ async def test_strategy_profiles_are_backend_owned(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_research_portfolio_initializes_once_and_is_backend_valued(
+    client: AsyncClient,
+) -> None:
+    assert (await client.get("/api/v1/portfolio/current")).json() is None
+    created = await client.post(
+        "/api/v1/portfolio/initialize",
+        json={"starting_cash": "100000", "imported_positions": []},
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert Decimal(body["cash"]) == Decimal("100000")
+    assert Decimal(body["total_equity"]) == Decimal("100000")
+    assert Decimal(body["cash_pct"]) == Decimal("100")
+    assert body["revision"] == 0
+
+    repeated = await client.post(
+        "/api/v1/portfolio/initialize",
+        json={"starting_cash": "1", "imported_positions": []},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["portfolio_id"] == body["portfolio_id"]
+    assert Decimal(repeated.json()["cash"]) == Decimal("100000")
+
+
+@pytest.mark.asyncio
 async def test_decision_api_returns_ui_ready_reason_codes(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/portfolio/decisions",
@@ -342,6 +367,72 @@ async def test_state_summary_and_same_plan_apply_action_are_backend_owned(
     assert applied.json()["applied"] is True
     assert applied.json()["cash_after"] == "90000"
     assert applied.json()["portfolio"]["positions"][0]["shares"] == 100
+
+
+@pytest.mark.asyncio
+async def test_persistent_action_uses_id_revision_and_makes_old_revision_stale(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    company = Company(ticker="BUY", name="Buy Corp", exchange="NYSE", sector="Technology")
+    db_session.add(company)
+    await db_session.flush()
+    db_session.add(
+        DailyCandle(
+            company_id=company.id,
+            trading_day=date(2025, 1, 2),
+            open=Decimal("100"),
+            high=Decimal("100"),
+            low=Decimal("100"),
+            close=Decimal("100"),
+            volume=100,
+        )
+    )
+    await db_session.commit()
+    portfolio = (
+        await client.post(
+            "/api/v1/portfolio/initialize",
+            json={"starting_cash": "100000", "imported_positions": []},
+        )
+    ).json()
+    decision = (
+        await client.post(
+            "/api/v1/portfolio/decisions",
+            json={
+                "strategy": "ema20-pullback",
+                "sizing_policy": "equal-slot",
+                "portfolio": {"cash": "100000", "positions": []},
+                "candidates": [
+                    {
+                        "ticker": "BUY",
+                        "signal": "BUY",
+                        "reference_price": "100",
+                        "atr": "5",
+                        "ranking_score": "1",
+                    }
+                ],
+            },
+        )
+    ).json()["decisions"][0]
+    request = {
+        "plan_id": "persistent-plan",
+        "portfolio_id": portfolio["portfolio_id"],
+        "portfolio_revision": 0,
+        "analysis_as_of_date": "2025-01-02",
+        "selection_policy": "relative-strength-20",
+        "decision": decision,
+        "applied_action_ids": [],
+        "strategy_profile_id": "ema20-pullback-v1",
+        "strategy_profile_version": 1,
+        "sizing_policy": "equal-slot",
+    }
+    applied = await client.post("/api/v1/portfolio/apply-action", json=request)
+    assert applied.status_code == 200
+    assert applied.json()["portfolio_revision"] == 1
+    assert applied.json()["portfolio_id"] == portfolio["portfolio_id"]
+    assert "portfolio" not in request
+    stale = await client.post("/api/v1/portfolio/preview-action", json=request)
+    assert stale.status_code == 409
 
 
 @pytest.mark.asyncio
