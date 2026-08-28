@@ -64,7 +64,8 @@ test('held LDOS cannot replace explicitly requested custom ticker SBET', async (
   expect(screen.queryByText('Leidos Holdings, Inc.')).not.toBeInTheDocument()
   expect(screen.queryByText(/already held/i)).not.toBeInTheDocument()
   expect(requestBody?.tickers).toEqual(['SBET'])
-  expect(requestBody?.portfolio.positions[0]?.ticker).toBe('LDOS')
+  expect(requestBody?.portfolio_id).toBe(planFixture.portfolio_id)
+  expect(requestBody).not.toHaveProperty('portfolio')
   expect(JSON.stringify(requestBody)).not.toMatch(/ranking_score|"atr"|stop_distance/)
 })
 

@@ -2,7 +2,7 @@ import { type FormEvent, useState } from 'react'
 import type { ManualSellRequest, ManualSellResult, PortfolioPositionSummary } from '../../types/portfolio'
 import { formatDate, formatMoney } from '../../utils/format'
 import { useLatestStoredPriceQuery, useManualSellMutation, useManualSellPreviewMutation } from '../../hooks/usePortfolioApi'
-import { portfolioInputFromDraft, usePortfolioWorkspace } from './PortfolioWorkspace'
+import { usePortfolioWorkspace } from './PortfolioWorkspace'
 import { ErrorState, LoadingState } from '../../components/AsyncState'
 
 export function ManualSellDialog({
@@ -12,7 +12,7 @@ export function ManualSellDialog({
   position: PortfolioPositionSummary
   onClose: () => void
 }) {
-  const { draft, applyManualSellResult } = usePortfolioWorkspace()
+  const { portfolio, applyManualSellResult } = usePortfolioWorkspace()
   const latest = useLatestStoredPriceQuery(position.ticker)
   const preview = useManualSellPreviewMutation()
   const apply = useManualSellMutation()
@@ -23,7 +23,8 @@ export function ManualSellDialog({
 
   function request(): ManualSellRequest {
     return {
-      portfolio: portfolioInputFromDraft(draft),
+      portfolio_id: portfolio?.portfolio_id ?? '',
+      portfolio_revision: portfolio?.revision ?? -1,
       ticker: position.ticker,
       shares_to_sell: Number(shares),
       execution_price: priceChanged || latest.data?.price === null ? priceOverride || null : null,

@@ -2,6 +2,7 @@ import hashlib
 import json
 from decimal import Decimal
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,10 +43,18 @@ from alphapilot.schemas.portfolio import (
     PortfolioPositionSummarySchema,
     PortfolioRiskConfigSchema,
     PortfolioSummarySchema,
+    ResearchPortfolioInitializeSchema,
+    ResearchPortfolioSchema,
+    ResearchTradeEventSchema,
     StrategyProfileSchema,
 )
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
+from alphapilot.services.research_portfolio import (
+    ImportedPosition,
+    ResearchPortfolioService,
+    StalePortfolioRevisionError,
+)
 from alphapilot.strategy.exit_mode import TrendExitMode
 from alphapilot.strategy.micho_entry_mode import MichoEntryMode
 from alphapilot.strategy.profile import (
@@ -61,12 +70,14 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 def strategy_profile_plan_id(
     request: PortfolioPlanRequest,
     profile: StrategyProfile,
+    portfolio_revision: int | None = None,
 ) -> str:
     payload = {
         "request": request.model_dump(mode="json"),
         "strategy_profile": StrategyProfileSchema.model_validate(
             profile, from_attributes=True
         ).model_dump(mode="json"),
+        "portfolio_revision": portfolio_revision,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -177,6 +188,88 @@ def get_manual_sell_service(
     return ManualPortfolioSellService(prices)
 
 
+def get_research_portfolio_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> ResearchPortfolioService:
+    return ResearchPortfolioService(session)
+
+
+async def _persistent_state(
+    service: ResearchPortfolioService, portfolio_id: UUID
+) -> tuple[CurrentPortfolioState, ResearchPortfolioSchema]:
+    valuation = await service.value(portfolio_id)
+    if any(item.latest_completed_close is None for item in valuation.positions):
+        raise HTTPException(
+            status_code=422,
+            detail="Persistent portfolio contains a position without a completed valuation price",
+        )
+    state = CurrentPortfolioState(
+        cash=valuation.cash,
+        positions=tuple(
+            PortfolioStatePosition(
+                ticker=item.ticker,
+                shares=item.quantity,
+                reference_price=item.latest_completed_close,
+                cost_basis=item.cost_basis,
+                sector=item.sector,
+                modeled_risk_dollars=item.modeled_risk_dollars,
+            )
+            for item in valuation.positions
+            if item.latest_completed_close is not None
+        ),
+    )
+    return state, ResearchPortfolioSchema.model_validate(valuation, from_attributes=True)
+
+
+@router.get("/current", response_model=ResearchPortfolioSchema | None)
+async def get_current_research_portfolio(
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> ResearchPortfolioSchema | None:
+    portfolio = await service.current()
+    if portfolio is None:
+        return None
+    return ResearchPortfolioSchema.model_validate(
+        await service.value(portfolio.id), from_attributes=True
+    )
+
+
+@router.post("/initialize", response_model=ResearchPortfolioSchema)
+async def initialize_research_portfolio(
+    request: ResearchPortfolioInitializeSchema,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> ResearchPortfolioSchema:
+    try:
+        portfolio = await service.initialize(
+            starting_cash=request.starting_cash,
+            name=request.name,
+            imported_positions=tuple(
+                ImportedPosition(
+                    ticker=item.ticker,
+                    quantity=item.quantity,
+                    average_cost=item.average_cost,
+                    cost_basis=item.cost_basis,
+                )
+                for item in request.imported_positions
+            ),
+        )
+        return ResearchPortfolioSchema.model_validate(
+            await service.value(portfolio.id), from_attributes=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{portfolio_id}/events", response_model=list[ResearchTradeEventSchema])
+async def get_research_portfolio_events(
+    portfolio_id: UUID,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> list[ResearchTradeEventSchema]:
+    return [
+        ResearchTradeEventSchema.model_validate(item, from_attributes=True)
+        for item in await service.events(portfolio_id)
+    ]
+
+
 @router.get("/risk-config", response_model=PortfolioRiskConfigSchema)
 async def get_risk_config() -> PortfolioRiskConfigSchema:
     return PortfolioRiskConfigSchema()
@@ -235,12 +328,24 @@ async def build_portfolio_plan(
         PortfolioDecisionOrchestrator,
         Depends(get_portfolio_decision_orchestrator),
     ],
+    persistent: Annotated[
+        ResearchPortfolioService,
+        Depends(get_research_portfolio_service),
+    ],
 ) -> PortfolioPlanSchema:
     profile = resolve_strategy_profile(request.strategy)
     if request.selection_policy not in profile.allowed_selection_policies:
         raise HTTPException(status_code=422, detail="Selection policy is not allowed")
     config = PortfolioRiskConfig(**request.risk_config.model_dump())
-    state = _state(request.portfolio)
+    portfolio_revision: int | None = None
+    persistent_schema: ResearchPortfolioSchema | None = None
+    if request.portfolio_id is not None:
+        state, persistent_schema = await _persistent_state(persistent, request.portfolio_id)
+        portfolio_revision = persistent_schema.revision
+    elif request.portfolio is not None:
+        state = _state(request.portfolio)
+    else:
+        raise HTTPException(status_code=422, detail="portfolio_id is required for normal plans")
     try:
         result = await orchestrator.build_plan(
             state=state,
@@ -258,7 +363,7 @@ async def build_portfolio_plan(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     plan = result.plan
     return PortfolioPlanSchema(
-        plan_id=strategy_profile_plan_id(request, profile),
+        plan_id=strategy_profile_plan_id(request, profile, portfolio_revision),
         strategy_profile=StrategyProfileSchema.model_validate(profile, from_attributes=True),
         portfolio=build_portfolio_summary(
             state,
@@ -282,11 +387,14 @@ async def build_portfolio_plan(
             result.readiness, from_attributes=True
         ),
         evaluation_target_ticker=result.evaluation_target_ticker,
+        portfolio_id=request.portfolio_id,
+        portfolio_revision=portfolio_revision,
     )
 
 
-def _plan_action_result(
+async def _plan_action_result(
     request: PortfolioPlanActionRequest,
+    persistent: ResearchPortfolioService,
     *,
     apply: bool,
 ) -> PortfolioPlanActionResultSchema:
@@ -315,15 +423,79 @@ def _plan_action_result(
         from alphapilot.portfolio.exit_guidance import StrategyExitContext
 
         decision_data["exit_context"] = StrategyExitContext(**exit_context)
+    persistent_mode = request.portfolio_id is not None
+    if persistent_mode:
+        if request.portfolio_revision is None:
+            raise HTTPException(status_code=422, detail="portfolio_revision is required")
+        assert request.portfolio_id is not None
+        state, current_portfolio = await _persistent_state(persistent, request.portfolio_id)
+        if current_portfolio.revision != request.portfolio_revision:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Stale portfolio revision {request.portfolio_revision}; "
+                    f"current revision is {current_portfolio.revision}"
+                ),
+            )
+    elif request.portfolio is not None:
+        state = _state(request.portfolio)
+    else:
+        raise HTTPException(status_code=422, detail="portfolio_id is required")
+    decision = PortfolioDecision(**decision_data)
     result = PortfolioPlanActionService().apply(
-        state=_state(request.portfolio),
-        decision=PortfolioDecision(**decision_data),
+        state=state,
+        decision=decision,
         applied_action_ids=frozenset(request.applied_action_ids),
         requested_shares=request.requested_shares,
         config=PortfolioRiskConfig(**request.risk_config.model_dump()),
         sizing_policy=request.sizing_policy,
         apply=apply,
     )
+    resulting_portfolio_id = request.portfolio_id
+    resulting_revision = request.portfolio_revision
+    result_state = result.portfolio
+    if apply and result.applied and persistent_mode:
+        assert request.portfolio_id is not None
+        assert request.portfolio_revision is not None
+        try:
+            if decision.decision.value == "BUY":
+                await persistent.buy(
+                    portfolio_id=request.portfolio_id,
+                    expected_revision=request.portfolio_revision,
+                    ticker=decision.ticker,
+                    quantity=result.requested_shares,
+                    execution_price=decision.reference_price,
+                    trading_day=request.analysis_as_of_date,
+                    strategy=profile.strategy.value,
+                    profile_id=profile.profile_id,
+                    profile_version=profile.version,
+                    profile_snapshot=StrategyProfileSchema.model_validate(
+                        profile, from_attributes=True
+                    ).model_dump(mode="json"),
+                    selection_policy=request.selection_policy.value,
+                    decision=decision.decision.value,
+                    reason=decision.reason.value,
+                    modeled_risk_dollars=result.modeled_position_risk_dollars or Decimal("0"),
+                    action_id=result.action_id or request.plan_id,
+                )
+            else:
+                await persistent.sell(
+                    portfolio_id=request.portfolio_id,
+                    expected_revision=request.portfolio_revision,
+                    ticker=decision.ticker,
+                    quantity=result.requested_shares,
+                    execution_price=decision.reference_price,
+                    trading_day=request.analysis_as_of_date,
+                    source="PORTFOLIO_PLAN",
+                    reason=decision.reason.value,
+                    action_id=result.action_id,
+                )
+        except StalePortfolioRevisionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        result_state, persisted = await _persistent_state(persistent, request.portfolio_id)
+        resulting_revision = persisted.revision
     return PortfolioPlanActionResultSchema(
         plan_id=request.plan_id,
         applied=result.applied,
@@ -343,8 +515,8 @@ def _plan_action_result(
             if result.position_after
             else None
         ),
-        portfolio=_state_schema(result.portfolio),
-        summary=build_draft_summary(result.portfolio),
+        portfolio=_state_schema(result_state),
+        summary=build_draft_summary(result_state),
         validation_status=result.validation_status,
         quantity_semantics=result.quantity_semantics,
         recommended_shares=result.recommended_shares,
@@ -357,21 +529,25 @@ def _plan_action_result(
         modeled_position_risk_dollars=result.modeled_position_risk_dollars,
         portfolio_risk_after_dollars=result.portfolio_risk_after_dollars,
         cash_reserve_requirement=result.cash_reserve_requirement,
+        portfolio_id=resulting_portfolio_id,
+        portfolio_revision=resulting_revision,
     )
 
 
 @router.post("/preview-action", response_model=PortfolioPlanActionResultSchema)
 async def preview_portfolio_plan_action(
     request: PortfolioPlanActionRequest,
+    persistent: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
 ) -> PortfolioPlanActionResultSchema:
-    return _plan_action_result(request, apply=False)
+    return await _plan_action_result(request, persistent, apply=False)
 
 
 @router.post("/apply-action", response_model=PortfolioPlanActionResultSchema)
 async def apply_portfolio_plan_action(
     request: PortfolioPlanActionRequest,
+    persistent: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
 ) -> PortfolioPlanActionResultSchema:
-    return _plan_action_result(request, apply=True)
+    return await _plan_action_result(request, persistent, apply=True)
 
 
 @router.get("/latest-price/{ticker}", response_model=LatestStoredPriceSchema)
@@ -391,16 +567,57 @@ async def get_latest_stored_price(
 async def _manual_sell(
     request: ManualSellRequestSchema,
     service: ManualPortfolioSellService,
+    persistent: ResearchPortfolioService,
     *,
     apply: bool,
 ) -> ManualSellResultSchema:
+    persistent_mode = request.portfolio_id is not None
+    if persistent_mode:
+        if request.portfolio_revision is None:
+            raise HTTPException(status_code=422, detail="portfolio_revision is required")
+        assert request.portfolio_id is not None
+        state, current_portfolio = await _persistent_state(persistent, request.portfolio_id)
+        if current_portfolio.revision != request.portfolio_revision:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Stale portfolio revision {request.portfolio_revision}; "
+                    f"current revision is {current_portfolio.revision}"
+                ),
+            )
+    elif request.portfolio is not None:
+        state = _state(request.portfolio)
+    else:
+        raise HTTPException(status_code=422, detail="portfolio_id is required")
     result = await service.sell(
-        state=_state(request.portfolio),
+        state=state,
         ticker=request.ticker,
         shares_to_sell=request.shares_to_sell,
         execution_price=request.execution_price,
         apply=apply,
     )
+    result_state = result.portfolio
+    resulting_revision = request.portfolio_revision
+    if apply and result.applied and persistent_mode:
+        assert request.portfolio_id is not None
+        assert request.portfolio_revision is not None
+        assert result.execution_price is not None
+        try:
+            await persistent.sell(
+                portfolio_id=request.portfolio_id,
+                expected_revision=request.portfolio_revision,
+                ticker=result.ticker,
+                quantity=result.shares_sold,
+                execution_price=result.execution_price,
+                trading_day=result.price_date,
+                source=result.price_source.value if result.price_source else "MANUAL_RESEARCH",
+                reason="MANUAL_RESEARCH_SELL",
+                action_id=None,
+            )
+        except StalePortfolioRevisionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        result_state, persisted = await _persistent_state(persistent, request.portfolio_id)
+        resulting_revision = persisted.revision
     return ManualSellResultSchema(
         applied=result.applied,
         reason=result.reason,
@@ -414,8 +631,10 @@ async def _manual_sell(
         cash_before=result.cash_before,
         cash_after=result.cash_after,
         position_removed=result.position_removed,
-        portfolio=_state_schema(result.portfolio),
-        summary=build_draft_summary(result.portfolio),
+        portfolio=_state_schema(result_state),
+        summary=build_draft_summary(result_state),
+        portfolio_id=request.portfolio_id,
+        portfolio_revision=resulting_revision,
     )
 
 
@@ -423,13 +642,15 @@ async def _manual_sell(
 async def preview_manual_sell(
     request: ManualSellRequestSchema,
     service: Annotated[ManualPortfolioSellService, Depends(get_manual_sell_service)],
+    persistent: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
 ) -> ManualSellResultSchema:
-    return await _manual_sell(request, service, apply=False)
+    return await _manual_sell(request, service, persistent, apply=False)
 
 
 @router.post("/manual-sell", response_model=ManualSellResultSchema)
 async def apply_manual_sell(
     request: ManualSellRequestSchema,
     service: Annotated[ManualPortfolioSellService, Depends(get_manual_sell_service)],
+    persistent: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
 ) -> ManualSellResultSchema:
-    return await _manual_sell(request, service, apply=True)
+    return await _manual_sell(request, service, persistent, apply=True)

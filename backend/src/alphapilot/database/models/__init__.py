@@ -9,6 +9,14 @@ from .research_dataset import (
     ResearchDatasetSnapshot,
     ResearchDatasetUniverseMember,
 )
+from .research_portfolio import (
+    ResearchPortfolio,
+    ResearchPosition,
+    ResearchPositionProvenance,
+    ResearchPositionStatus,
+    ResearchTradeEvent,
+    ResearchTradeEventType,
+)
 
 __all__ = [
     "Company",
@@ -18,4 +26,10 @@ __all__ = [
     "ResearchDatasetCandleMember",
     "ResearchDatasetSnapshot",
     "ResearchDatasetUniverseMember",
+    "ResearchPortfolio",
+    "ResearchPosition",
+    "ResearchPositionProvenance",
+    "ResearchPositionStatus",
+    "ResearchTradeEvent",
+    "ResearchTradeEventType",
 ]

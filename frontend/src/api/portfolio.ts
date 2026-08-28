@@ -11,6 +11,8 @@ import type {
   PortfolioPlan,
   PortfolioPlanRequest,
   PortfolioRiskConfig,
+  ResearchPortfolio,
+  ResearchPortfolioInitialize,
   StrategyProfile,
 } from '../types/portfolio'
 
@@ -40,6 +42,8 @@ function isPortfolioPlan(value: unknown): value is PortfolioPlan {
     (typeof value.evaluation_target_ticker === 'string' || value.evaluation_target_ticker === null) &&
     isObject(value.readiness) &&
     typeof value.plan_id === 'string' &&
+    typeof value.portfolio_id === 'string' &&
+    typeof value.portfolio_revision === 'number' &&
     typeof value.requested_as_of_date === 'string' &&
     typeof value.analysis_as_of_date === 'string' &&
     value.strategy === value.strategy_profile.strategy &&
@@ -82,13 +86,38 @@ const isDraftSummary = (value: unknown): value is PortfolioDraftSummary =>
   isObject(value) && typeof value.equity === 'string' && Array.isArray(value.positions)
 
 const isActionResult = (value: unknown): value is PortfolioPlanActionResult =>
-  isObject(value) && typeof value.applied === 'boolean' && isObject(value.portfolio) && isDraftSummary(value.summary)
+  isObject(value) && typeof value.applied === 'boolean' && isObject(value.portfolio) &&
+  typeof value.portfolio_id === 'string' && typeof value.portfolio_revision === 'number' &&
+  isDraftSummary(value.summary)
 
 const isLatestPrice = (value: unknown): value is LatestStoredPrice =>
   isObject(value) && typeof value.ticker === 'string' && ('price' in value)
 
 const isManualSell = (value: unknown): value is ManualSellResult =>
-  isObject(value) && typeof value.applied === 'boolean' && typeof value.reason === 'string' && isObject(value.portfolio)
+  isObject(value) && typeof value.applied === 'boolean' && typeof value.reason === 'string' &&
+  typeof value.portfolio_id === 'string' && typeof value.portfolio_revision === 'number' && isObject(value.portfolio)
+
+const isResearchPortfolio = (value: unknown): value is ResearchPortfolio =>
+  isObject(value) && typeof value.portfolio_id === 'string' && typeof value.revision === 'number' &&
+  typeof value.cash === 'string' && typeof value.realized_pnl === 'string' &&
+  typeof value.total_cost_basis === 'string' &&
+  (typeof value.positions_market_value === 'string' || value.positions_market_value === null) &&
+  (typeof value.total_equity === 'string' || value.total_equity === null) &&
+  (typeof value.cash_pct === 'string' || value.cash_pct === null) &&
+  (typeof value.invested_pct === 'string' || value.invested_pct === null) &&
+  (typeof value.total_unrealized_pnl === 'string' || value.total_unrealized_pnl === null) &&
+  Array.isArray(value.positions) && value.positions.every((position) =>
+    isObject(position) && typeof position.position_id === 'string' &&
+    typeof position.ticker === 'string' && typeof position.quantity === 'number' &&
+    typeof position.average_cost === 'string' && typeof position.cost_basis === 'string' &&
+    (typeof position.latest_completed_close === 'string' || position.latest_completed_close === null) &&
+    (typeof position.market_value === 'string' || position.market_value === null) &&
+    (typeof position.unrealized_pnl === 'string' || position.unrealized_pnl === null) &&
+    (typeof position.unrealized_pnl_pct === 'string' || position.unrealized_pnl_pct === null),
+  )
+
+const isNullableResearchPortfolio = (value: unknown): value is ResearchPortfolio | null =>
+  value === null || isResearchPortfolio(value)
 
 export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return requestJson('/api/v1/health/', { signal }, isHealth)
@@ -100,6 +129,20 @@ export function getRiskConfig(signal?: AbortSignal): Promise<PortfolioRiskConfig
 
 export function getStrategyProfiles(signal?: AbortSignal): Promise<StrategyProfile[]> {
   return requestJson('/api/v1/portfolio/strategy-profiles', { signal }, isStrategyProfiles)
+}
+
+export function getCurrentResearchPortfolio(signal?: AbortSignal): Promise<ResearchPortfolio | null> {
+  return requestJson('/api/v1/portfolio/current', { signal }, isNullableResearchPortfolio)
+}
+
+export function initializeResearchPortfolio(
+  request: ResearchPortfolioInitialize,
+): Promise<ResearchPortfolio> {
+  return requestJson(
+    '/api/v1/portfolio/initialize',
+    { method: 'POST', body: JSON.stringify(request) },
+    isResearchPortfolio,
+  )
 }
 
 export function createPortfolioPlan(

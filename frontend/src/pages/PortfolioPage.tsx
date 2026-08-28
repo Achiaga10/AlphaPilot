@@ -12,7 +12,7 @@ import { formatDate } from '../utils/format'
 import { PlanReadinessBanner } from '../features/portfolio/PlanReadinessBanner'
 
 export function PortfolioPage() {
-  const { draft, setDraft, plan, setPlanResult, previewDecision, applyDecision, appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions, isPlanDirty } = usePortfolioWorkspace()
+  const { draft, setDraft, portfolio, portfolioPending, portfolioError, refreshPortfolio, plan, setPlanResult, previewDecision, applyDecision, appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions, isPlanDirty } = usePortfolioWorkspace()
   const riskConfig = useRiskConfigQuery()
   const profiles = useStrategyProfilesQuery()
   const mutation = usePortfolioPlanMutation()
@@ -31,7 +31,7 @@ export function PortfolioPage() {
         <div>
           <p className="eyebrow">Interactive research workflow</p>
           <h1>Portfolio Plan</h1>
-          <p>Provide current state and ask the backend to evaluate stored market data.</p>
+          <p>Ask the backend to evaluate stored market data against the persistent research portfolio.</p>
         </div>
       </header>
 
@@ -39,11 +39,14 @@ export function PortfolioPage() {
       {riskConfig.isError ? <ErrorState error={riskConfig.error} onRetry={() => void riskConfig.refetch()} /> : null}
       {profiles.isPending ? <LoadingState label="Loading strategy profiles" /> : null}
       {profiles.isError ? <ErrorState error={profiles.error} onRetry={() => void profiles.refetch()} /> : null}
-      {riskConfig.data && profiles.data?.find((profile) => profile.strategy === draft.strategy) ? (
+      {portfolioPending ? <LoadingState label="Loading persistent research portfolio" /> : null}
+      {portfolioError ? <ErrorState error={portfolioError} onRetry={() => void refreshPortfolio()} /> : null}
+      {riskConfig.data && portfolio && profiles.data?.find((profile) => profile.strategy === draft.strategy) ? (
         <PlanForm
           draft={draft}
           riskConfig={riskConfig.data}
           strategyProfile={profiles.data.find((profile) => profile.strategy === draft.strategy)!}
+          portfolioId={portfolio.portfolio_id}
           isSubmitting={mutation.isPending}
           onChange={setDraft}
           onSubmit={submit}
@@ -55,7 +58,7 @@ export function PortfolioPage() {
 
       {plan ? (
         <div className="page-stack plan-results" aria-live="polite">
-          {isPlanDirty ? <StalePlanWarning message={lastActionMessage} onRegenerate={() => riskConfig.data && submit(buildPlanRequest(draft, riskConfig.data))} /> : null}
+          {isPlanDirty ? <StalePlanWarning message={lastActionMessage} onRegenerate={() => riskConfig.data && portfolio && submit(buildPlanRequest(draft, riskConfig.data, portfolio.portfolio_id))} /> : null}
           {!isPlanDirty && hasAppliedPlanActions ? <p className="inline-note inline-note--warning" role="status">{lastActionMessage} Analysis metrics remain the original plan snapshot; current draft holdings and cash update on Dashboard.</p> : null}
           <section className="result-banner" aria-labelledby="plan-result-title">
             <div>

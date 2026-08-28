@@ -55,6 +55,7 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
             text(
                 "TRUNCATE TABLE research_dataset_candle_members, "
                 "research_dataset_universe_members, research_dataset_snapshots, "
+                "research_trade_events, research_positions, research_portfolios, "
                 "daily_candle_versions, market_data_ingestion_batches, "
                 "index_constituents, companies CASCADE"
             )
@@ -68,6 +69,7 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
             text(
                 "TRUNCATE TABLE research_dataset_candle_members, "
                 "research_dataset_universe_members, research_dataset_snapshots, "
+                "research_trade_events, research_positions, research_portfolios, "
                 "daily_candle_versions, market_data_ingestion_batches, "
                 "index_constituents, companies CASCADE"
             )

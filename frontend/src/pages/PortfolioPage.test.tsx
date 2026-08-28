@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
 import { API_BASE_URL } from '../api/client'
@@ -6,33 +6,24 @@ import type { PortfolioPlanRequest } from '../types/portfolio'
 import { planFixture } from '../test/fixtures'
 import { renderApp } from '../test/renderApp'
 import { server } from '../test/server'
-import { vi } from 'vitest'
 
 async function renderReadyPortfolio() {
   renderApp('/portfolio')
   return screen.findByRole('button', { name: 'Generate Portfolio Plan' })
 }
 
-test('position editor adds and removes a current position', async () => {
-  const user = userEvent.setup()
+test('financial portfolio controls are backend-owned and absent from the plan form', async () => {
   await renderReadyPortfolio()
-  expect(screen.getByText('No current positions.')).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Add position' }))
-  const group = screen.getByRole('group', { name: 'Position 1' })
-  await user.type(within(group).getByLabelText('Ticker'), 'ibm')
-  expect(within(group).getByLabelText('Ticker')).toHaveValue('IBM')
-  await user.click(screen.getByRole('button', { name: 'Remove IBM' }))
-  expect(screen.queryByRole('group', { name: 'Position 1' })).not.toBeInTheDocument()
+  expect(screen.getByText(/Cash, holdings, cost basis, valuation, and revision are loaded/)).toBeInTheDocument()
+  expect(screen.queryByLabelText('Cash (USD)')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Add position' })).not.toBeInTheDocument()
 })
-
-test('portfolio form reports validation errors without calling the API', async () => {
+test('portfolio form validates the locally editable requested date', async () => {
   const user = userEvent.setup()
   const submit = await renderReadyPortfolio()
-  const cash = screen.getByLabelText('Cash (USD)')
-  await user.clear(cash)
-  await user.type(cash, '-1')
+  await user.clear(screen.getByLabelText('Requested analysis date'))
   await user.click(submit)
-  expect(screen.getByRole('alert')).toHaveTextContent('Cash must be zero or greater.')
+  expect(screen.getByLabelText('Requested analysis date')).toBeInvalid()
 })
 
 test('strategy choice displays its backend-owned frozen profile', async () => {
@@ -86,7 +77,8 @@ test('plan request is exact and response renders BUY SELL HOLD SKIP plus dates a
   if (!received) throw new Error('Expected the plan request to be captured')
   expect(received.tickers).toEqual(['NVDA', 'AAPL'])
   expect(received.selection_policy).toBe('relative-strength-20')
-  expect(received.portfolio).toEqual({ cash: '100000', positions: [] })
+  expect(received.portfolio_id).toBe(planFixture.portfolio_id)
+  expect(received).not.toHaveProperty('portfolio')
   expect(JSON.stringify(received)).not.toContain('ranking_score')
 
   expect(screen.getAllByText('BUY').length).toBeGreaterThan(0)
@@ -170,48 +162,4 @@ test('dense decision and status tables use responsive scroll containers', async 
   expect(screen.getByText('Sorted A-Z')).toBeInTheDocument()
   expect(document.querySelector('.universe-evaluation .table-scroll')).toBeInTheDocument()
   expect(document.querySelector('.app-shell')).toBeInTheDocument()
-})
-
-test('approved BUY applies exact backend shares and cash once while preserving the clean plan', async () => {
-  const user = userEvent.setup()
-  let regenerated: PortfolioPlanRequest | undefined
-  let calls = 0
-  server.use(http.post(`${API_BASE_URL}/api/v1/portfolio/plan`, async ({ request }) => {
-    calls += 1
-    if (calls > 1) regenerated = (await request.json()) as PortfolioPlanRequest
-    return HttpResponse.json(planFixture)
-  }))
-  const submit = await renderReadyPortfolio()
-  await user.click(submit)
-  await user.click(await screen.findByRole('button', { name: 'Review Add' }))
-  expect(await screen.findByRole('dialog')).toHaveTextContent('55 shares')
-  await user.click(screen.getByRole('button', { name: 'Add to Research Portfolio' }))
-  expect(screen.getByLabelText('Cash (USD)')).toHaveValue('90100')
-  const applied = screen.getByRole('group', { name: 'Position 1' })
-  expect(within(applied).getByLabelText('Ticker')).toHaveValue('NVDA')
-  expect(within(applied).getByLabelText('Shares')).toHaveValue(55)
-  expect(screen.getByText(/NVDA was added to the research portfolio/i)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Applied' })).toBeDisabled()
-  expect(screen.queryByText('Displayed plan is stale')).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: 'Generate Portfolio Plan' }))
-  await waitFor(() => expect(regenerated).toBeDefined())
-  expect(regenerated?.portfolio).toEqual({ cash: '90100', positions: [{ ticker: 'NVDA', shares: 55, reference_price: '180', cost_basis: '180', sector: 'Information Technology', modeled_risk_dollars: '0' }] })
-})
-
-test('approved SELL removes the full held position using backend cash-after value', async () => {
-  const user = userEvent.setup()
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-  window.localStorage.setItem('alphapilot.plan-draft.v1', JSON.stringify({
-    cash: '30000', positions: [{ ticker: 'JNJ', shares: 200, reference_price: '150', cost_basis: null }],
-    strategy: 'ema20-pullback', selectionPolicy: 'relative-strength-20', sizingPolicy: 'equal-slot',
-    asOfDate: '2026-08-23', tickerScope: '',
-  }))
-  const submit = await renderReadyPortfolio()
-  await user.click(submit)
-  await user.click(await screen.findByRole('tab', { name: 'Approved Sells 1' }))
-  await user.click(screen.getByRole('button', { name: 'Apply Sell' }))
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Estimated proceeds: $30,000.00'))
-  expect(screen.getByLabelText('Cash (USD)')).toHaveValue('60000')
-  expect(screen.queryByRole('group', { name: 'Position 1' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Apply Sell' })).not.toBeInTheDocument()
 })

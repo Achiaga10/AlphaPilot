@@ -32,6 +32,8 @@ export const riskConfigFixture: PortfolioRiskConfig = {
 
 export const planFixture: PortfolioPlan = {
   plan_id: 'fixture-plan-20260820',
+  portfolio_id: '11111111-1111-4111-8111-111111111111',
+  portfolio_revision: 0,
   portfolio: {
     equity: '100000',
     cash: '30000',

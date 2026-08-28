@@ -40,7 +40,7 @@ export function EvaluatePage() {
   const [evaluation, setEvaluation] = useState<EvaluationSnapshot | null>(null)
   const [isEvaluating, setIsEvaluating] = useState(false)
   const latestRequestId = useRef(0)
-  const { draft } = usePortfolioWorkspace()
+  const { draft, portfolio } = usePortfolioWorkspace()
   const riskConfig = useRiskConfigQuery()
   const mutation = usePortfolioPlanMutation()
 
@@ -51,7 +51,7 @@ export function EvaluatePage() {
       setError('Enter a valid ticker.')
       return
     }
-    if (!riskConfig.data) return
+    if (!riskConfig.data || !portfolio) return
     const requestId = latestRequestId.current + 1
     latestRequestId.current = requestId
     setError(null)
@@ -59,7 +59,7 @@ export function EvaluatePage() {
     setSearchParams({ ticker: normalized })
     try {
       const plan = await mutation.mutateAsync(
-        buildPlanRequest({ ...draft, tickerScope: normalized }, riskConfig.data),
+        buildPlanRequest({ ...draft, tickerScope: normalized }, riskConfig.data, portfolio.portfolio_id),
       )
       if (latestRequestId.current !== requestId) return
       const target = selectEvaluationTarget(plan, normalized)
