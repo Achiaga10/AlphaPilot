@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.core.config import settings
+from alphapilot.core.lifespan import daily_market_scheduler
 from alphapilot.database.models.company import Company
 from alphapilot.database.session import AsyncSessionLocal, get_db
 from alphapilot.market.providers.alpaca import AlpacaProvider
@@ -29,6 +30,7 @@ from alphapilot.schemas.admin_data import (
     AdminTickerSyncRequest,
     AdminTickerSyncResponse,
     AdminToolsCapabilitySchema,
+    DailySchedulerStatusSchema,
 )
 from alphapilot.services.admin_data import (
     AdminSyncJobManager,
@@ -47,6 +49,8 @@ from alphapilot.services.company import CompanyService
 from alphapilot.services.custom_ticker import CustomTickerService
 from alphapilot.services.daily_candle import DailyCandleService
 from alphapilot.services.market_data_ingestion import MarketDataIngestionBatchService
+from alphapilot.services.position_monitoring import PositionMonitoringService
+from alphapilot.services.research_portfolio import ResearchPortfolioService
 
 router = APIRouter(prefix="/admin/data", tags=["research-admin"])
 admin_sync_job_manager = AdminSyncJobManager()
@@ -133,12 +137,17 @@ def build_market_sync_operation(request: AdminFullSyncRequest) -> AdminSyncOpera
         async with AsyncSessionLocal() as session:
             company, _, research, batch = _services(session)
             await _ensure_spy(company)
-            return await ResearchMarketCandleSyncService(research, batch).sync(
+            outcome = await ResearchMarketCandleSyncService(research, batch).sync(
                 start=request.start_date,
                 end=request.end_date,
                 batch_size=request.batch_size,
                 progress_callback=progress,
             )
+            if outcome.failed == 0:
+                portfolio = await ResearchPortfolioService(session).current()
+                if portfolio is not None:
+                    await PositionMonitoringService(session).monitor_portfolio(portfolio.id)
+            return outcome
 
     return operation
 
@@ -188,6 +197,13 @@ async def get_admin_capability() -> AdminToolsCapabilitySchema:
         ),
         market_data_provider="Alpaca",
         market_data_feed=settings.ALPACA_DATA_FEED,
+    )
+
+
+@router.get("/scheduler", response_model=DailySchedulerStatusSchema)
+async def get_daily_scheduler_status() -> DailySchedulerStatusSchema:
+    return DailySchedulerStatusSchema.model_validate(
+        daily_market_scheduler.status, from_attributes=True
     )
 
 

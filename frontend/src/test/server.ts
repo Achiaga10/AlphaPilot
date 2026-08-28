@@ -42,6 +42,7 @@ export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/portfolio/risk-config`, () => HttpResponse.json(riskConfigFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/strategy-profiles`, () => HttpResponse.json(strategyProfilesFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/current`, () => HttpResponse.json(researchPortfolioFixture)),
+  http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/monitoring`, () => HttpResponse.json([])),
   http.post(`${API_BASE_URL}/api/v1/portfolio/initialize`, () => HttpResponse.json(researchPortfolioFixture)),
   http.get(`${API_BASE_URL}/api/v1/admin/data/capability`, () => HttpResponse.json({ enabled: false, warning: 'Research admin tools are disabled by configuration.', market_data_provider: 'Alpaca', market_data_feed: 'iex' })),
   http.get(`${API_BASE_URL}/api/v1/admin/data/summary`, () => HttpResponse.json({ active_company_count: 503, active_sp500_count: 502, active_custom_tracked_count: 0, latest_spy_date: '2026-08-20', earliest_active_stock_latest_date: '2026-08-19', latest_active_stock_latest_date: '2026-08-20', fresh_tracked_ticker_count: 501, stale_tracked_ticker_count: 1, no_data_tracked_ticker_count: 0, latest_sync_job: null, last_universe_sync_at: null, last_candle_sync_at: null, market_data_provider: 'Alpaca', market_data_feed: 'iex' })),

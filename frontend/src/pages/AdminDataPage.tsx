@@ -15,6 +15,7 @@ import {
   useAdminUniverseSyncMutation,
   useCustomTickersQuery,
   useDeactivateCustomTickerMutation,
+  useDailySchedulerStatusQuery,
 } from '../hooks/usePortfolioApi'
 import type { AdminDataSummary, AdminFullSyncRequest, AdminSyncJob } from '../types/portfolio'
 import { formatDate } from '../utils/format'
@@ -31,6 +32,7 @@ export function AdminDataPage() {
   const capability = useAdminCapabilityQuery()
   const enabled = capability.data?.enabled === true
   const summary = useAdminDataSummaryQuery(true)
+  const scheduler = useDailySchedulerStatusQuery()
   const customTickers = useCustomTickersQuery(enabled)
   const tickerSync = useAdminTickerSyncMutation()
   const addCustom = useAddCustomTickerMutation()
@@ -78,6 +80,7 @@ export function AdminDataPage() {
       {summary.isPending ? <LoadingState label="Loading stored-data freshness" /> : null}
       {summary.isError ? <ErrorState error={summary.error} onRetry={() => void summary.refetch()} /> : null}
       {summary.data ? <DataSummary summary={summary.data} /> : null}
+      {scheduler.data ? <section className="panel"><div className="section-heading"><div><p className="eyebrow">Completed-session automation</p><h2>Daily Market Sync</h2></div><span className={`badge ${scheduler.data.enabled ? 'badge--positive' : ''}`}>{scheduler.data.enabled ? 'ENABLED' : 'DISABLED'}</span></div><dl className="config-grid"><div><dt>Schedule</dt><dd>Monday–Friday {scheduler.data.scheduled_local_time}</dd></div><div><dt>Timezone</dt><dd>{scheduler.data.timezone}</dd></div><div><dt>Last status</dt><dd>{scheduler.data.last_status}</dd></div><div><dt>Monitored through</dt><dd>{formatDate(scheduler.data.last_successful_completed_market_session)}</dd></div></dl>{scheduler.data.last_error_summary ? <p className="inline-note inline-note--warning">{scheduler.data.last_error_summary}</p> : null}<p className="muted">Automation updates stored data and monitoring only. It never buys, sells, or submits broker orders.</p></section> : null}
 
       {enabled ? <div className="page-stack">
         <p className="inline-note inline-note--warning" role="status">Research admin tools are enabled. This configuration gate is not authentication. Actions can call external data providers.</p>

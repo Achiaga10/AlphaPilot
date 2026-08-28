@@ -26,7 +26,9 @@ from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
 from alphapilot.schemas.portfolio import (
     CandidateOrchestrationStatusSchema,
+    CashAdjustmentRequestSchema,
     CurrentPortfolioSchema,
+    ExternalPositionRequestSchema,
     LatestStoredPriceSchema,
     ManualSellRequestSchema,
     ManualSellResultSchema,
@@ -43,13 +45,17 @@ from alphapilot.schemas.portfolio import (
     PortfolioPositionSummarySchema,
     PortfolioRiskConfigSchema,
     PortfolioSummarySchema,
+    PositionMonitoringSchema,
+    PositionReconciliationRequestSchema,
     ResearchPortfolioInitializeSchema,
     ResearchPortfolioSchema,
+    ResearchReconciliationEventSchema,
     ResearchTradeEventSchema,
     StrategyProfileSchema,
 )
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
+from alphapilot.services.position_monitoring import PositionMonitoringService
 from alphapilot.services.research_portfolio import (
     ImportedPosition,
     ResearchPortfolioService,
@@ -194,6 +200,12 @@ def get_research_portfolio_service(
     return ResearchPortfolioService(session)
 
 
+def get_position_monitoring_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> PositionMonitoringService:
+    return PositionMonitoringService(session)
+
+
 async def _persistent_state(
     service: ResearchPortfolioService, portfolio_id: UUID
 ) -> tuple[CurrentPortfolioState, ResearchPortfolioSchema]:
@@ -268,6 +280,129 @@ async def get_research_portfolio_events(
         ResearchTradeEventSchema.model_validate(item, from_attributes=True)
         for item in await service.events(portfolio_id)
     ]
+
+
+@router.get(
+    "/{portfolio_id}/reconciliation-events",
+    response_model=list[ResearchReconciliationEventSchema],
+)
+async def get_reconciliation_events(
+    portfolio_id: UUID,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> list[ResearchReconciliationEventSchema]:
+    return [
+        ResearchReconciliationEventSchema.model_validate(item, from_attributes=True)
+        for item in await service.reconciliation_events(portfolio_id)
+    ]
+
+
+@router.get("/{portfolio_id}/monitoring", response_model=list[PositionMonitoringSchema])
+async def get_position_monitoring(
+    portfolio_id: UUID,
+    service: Annotated[PositionMonitoringService, Depends(get_position_monitoring_service)],
+) -> list[PositionMonitoringSchema]:
+    positions = await service.portfolios.list_open_positions(portfolio_id)
+    output: list[PositionMonitoringSchema] = []
+    for position in positions:
+        item = await service.monitor_position(position)
+        output.append(
+            PositionMonitoringSchema(
+                position_id=position.id,
+                ticker=position.ticker_at_entry,
+                strategy_profile_id=position.strategy_profile_id,
+                strategy_profile_version=position.strategy_profile_version,
+                readiness=item.readiness.value,
+                status=item.status.value if item.status else None,
+                reason=item.reason.value,
+                completed_trading_day=item.completed_trading_day,
+                latest_close=item.latest_close,
+                indicator_facts=item.indicator_facts,
+                exit_triggered=item.exit_triggered,
+                exit_triggered_on=item.exit_triggered_on,
+                exit_trigger_reason=item.exit_trigger_reason,
+                protective_stop_policy=item.protective_stop_policy,
+                trailing_stop_policy=item.trailing_stop_policy,
+                profit_target_policy=item.profit_target_policy,
+            )
+        )
+    await service.session.commit()
+    return output
+
+
+async def _valued(service: ResearchPortfolioService, portfolio_id: UUID) -> ResearchPortfolioSchema:
+    return ResearchPortfolioSchema.model_validate(
+        await service.value(portfolio_id), from_attributes=True
+    )
+
+
+@router.post("/{portfolio_id}/cash-adjustments", response_model=ResearchPortfolioSchema)
+async def adjust_research_cash(
+    portfolio_id: UUID,
+    request: CashAdjustmentRequestSchema,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> ResearchPortfolioSchema:
+    try:
+        await service.adjust_cash(
+            portfolio_id=portfolio_id,
+            expected_revision=request.expected_revision,
+            delta=request.delta,
+            reason=request.reason,
+        )
+        return await _valued(service, portfolio_id)
+    except StalePortfolioRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{portfolio_id}/external-positions", response_model=ResearchPortfolioSchema)
+async def add_external_position(
+    portfolio_id: UUID,
+    request: ExternalPositionRequestSchema,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> ResearchPortfolioSchema:
+    try:
+        await service.import_external_position(
+            portfolio_id=portfolio_id,
+            expected_revision=request.expected_revision,
+            ticker=request.ticker,
+            quantity=request.quantity,
+            average_cost=request.average_cost,
+            entry_trading_day=request.entry_trading_day,
+            reason=request.reason,
+        )
+        return await _valued(service, portfolio_id)
+    except StalePortfolioRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{portfolio_id}/positions/{position_id}/reconcile",
+    response_model=ResearchPortfolioSchema,
+)
+async def reconcile_research_position(
+    portfolio_id: UUID,
+    position_id: UUID,
+    request: PositionReconciliationRequestSchema,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> ResearchPortfolioSchema:
+    try:
+        await service.reconcile_position(
+            portfolio_id=portfolio_id,
+            position_id=position_id,
+            expected_revision=request.expected_revision,
+            quantity=request.quantity,
+            average_cost=request.average_cost,
+            entry_trading_day=request.entry_trading_day,
+            reason=request.reason,
+        )
+        return await _valued(service, portfolio_id)
+    except StalePortfolioRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/risk-config", response_model=PortfolioRiskConfigSchema)

@@ -1,12 +1,15 @@
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.database.models.research_portfolio import (
+    PositionMonitoringSnapshot,
     ResearchPortfolio,
     ResearchPosition,
     ResearchPositionStatus,
+    ResearchReconciliationEvent,
     ResearchTradeEvent,
 )
 
@@ -61,7 +64,55 @@ class ResearchPortfolioRepository:
         )
         return list(result.scalars().all())
 
-    def add(self, value: ResearchPortfolio | ResearchPosition | ResearchTradeEvent) -> None:
+    async def list_reconciliation_events(
+        self, portfolio_id: UUID
+    ) -> list[ResearchReconciliationEvent]:
+        result = await self.session.execute(
+            select(ResearchReconciliationEvent)
+            .where(ResearchReconciliationEvent.portfolio_id == portfolio_id)
+            .order_by(ResearchReconciliationEvent.created_at, ResearchReconciliationEvent.id)
+        )
+        return list(result.scalars().all())
+
+    async def get_monitoring_snapshot(
+        self, position_id: UUID, completed_trading_day: date
+    ) -> PositionMonitoringSnapshot | None:
+        result = await self.session.execute(
+            select(PositionMonitoringSnapshot).where(
+                PositionMonitoringSnapshot.position_id == position_id,
+                PositionMonitoringSnapshot.completed_trading_day == completed_trading_day,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_position(self, portfolio_id: UUID, position_id: UUID) -> ResearchPosition | None:
+        result = await self.session.execute(
+            select(ResearchPosition).where(
+                ResearchPosition.portfolio_id == portfolio_id,
+                ResearchPosition.id == position_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def latest_monitoring(self, portfolio_id: UUID) -> list[PositionMonitoringSnapshot]:
+        result = await self.session.execute(
+            select(PositionMonitoringSnapshot)
+            .where(PositionMonitoringSnapshot.portfolio_id == portfolio_id)
+            .order_by(PositionMonitoringSnapshot.completed_trading_day.desc())
+        )
+        latest: dict[UUID, PositionMonitoringSnapshot] = {}
+        for item in result.scalars().all():
+            latest.setdefault(item.position_id, item)
+        return list(latest.values())
+
+    def add(
+        self,
+        value: ResearchPortfolio
+        | ResearchPosition
+        | ResearchTradeEvent
+        | PositionMonitoringSnapshot
+        | ResearchReconciliationEvent,
+    ) -> None:
         self.session.add(value)
 
     async def flush(self) -> None:

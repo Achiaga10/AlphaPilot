@@ -110,6 +110,17 @@ class AdminDataSummarySchema(BaseModel):
     market_data_feed: str
 
 
+class DailySchedulerStatusSchema(BaseModel):
+    enabled: bool
+    timezone: str
+    scheduled_local_time: str
+    last_run_started: datetime | None
+    last_run_completed: datetime | None
+    last_status: str
+    last_successful_completed_market_session: str | None
+    last_error_summary: str | None
+
+
 class AdminTickerSyncRequest(BaseModel):
     ticker: str = Field(min_length=1, max_length=10, pattern=r"^[A-Za-z0-9.-]+$")
     start_date: date = Field(default_factory=default_sync_start)

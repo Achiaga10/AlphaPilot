@@ -32,12 +32,20 @@ class ResearchPositionStatus(StrEnum):
 class ResearchPositionProvenance(StrEnum):
     PLAN_PROFILE = "PLAN_PROFILE"
     LEGACY_IMPORTED = "LEGACY_IMPORTED"
+    MANUAL_EXTERNAL = "MANUAL_EXTERNAL"
 
 
 class ResearchTradeEventType(StrEnum):
     OPEN = "OPEN"
     PARTIAL_EXIT = "PARTIAL_EXIT"
     FULL_EXIT = "FULL_EXIT"
+
+
+class ResearchReconciliationEventType(StrEnum):
+    CASH_DEPOSIT = "CASH_DEPOSIT"
+    CASH_WITHDRAWAL = "CASH_WITHDRAWAL"
+    EXTERNAL_POSITION_IMPORT = "EXTERNAL_POSITION_IMPORT"
+    POSITION_RECONCILIATION = "POSITION_RECONCILIATION"
 
 
 class ResearchPortfolio(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -101,6 +109,13 @@ class ResearchPosition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Numeric(20, 4), nullable=False, default=Decimal("0"), server_default=text("0")
     )
     closed_at_trading_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    exit_triggered: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    exit_triggered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    exit_trigger_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
 class ResearchTradeEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -136,3 +151,45 @@ class ResearchTradeEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     strategy_profile_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     strategy_profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provenance_status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+
+class PositionMonitoringSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "position_monitoring_snapshots"
+    __table_args__ = (
+        UniqueConstraint("position_id", "completed_trading_day", name="uq_position_monitoring_day"),
+        Index("ix_position_monitoring_portfolio_day", "portfolio_id", "completed_trading_day"),
+    )
+
+    portfolio_id: Mapped[UUID] = mapped_column(
+        ForeignKey("research_portfolios.id", ondelete="CASCADE"), nullable=False
+    )
+    position_id: Mapped[UUID] = mapped_column(
+        ForeignKey("research_positions.id", ondelete="CASCADE"), nullable=False
+    )
+    completed_trading_day: Mapped[date] = mapped_column(Date, nullable=False)
+    readiness: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    reason: Mapped[str] = mapped_column(String(80), nullable=False)
+    strategy_profile_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    strategy_profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latest_close: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    indicator_facts: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    exit_triggered: Mapped[bool] = mapped_column(nullable=False, default=False)
+
+
+class ResearchReconciliationEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "research_reconciliation_events"
+    __table_args__ = (Index("ix_reconciliation_portfolio_created", "portfolio_id", "created_at"),)
+
+    portfolio_id: Mapped[UUID] = mapped_column(
+        ForeignKey("research_portfolios.id", ondelete="CASCADE"), nullable=False
+    )
+    position_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("research_positions.id", ondelete="RESTRICT"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    portfolio_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    cash_delta: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    before_facts: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    after_facts: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
