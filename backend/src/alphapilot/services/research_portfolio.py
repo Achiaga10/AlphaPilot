@@ -34,6 +34,30 @@ class StalePortfolioRevisionError(ValueError):
     pass
 
 
+class CashAdjustmentReason(StrEnum):
+    EXTERNAL_DEPOSIT = "EXTERNAL_DEPOSIT"
+    EXTERNAL_WITHDRAWAL = "EXTERNAL_WITHDRAWAL"
+    PAPER_ACCOUNT_RECONCILIATION = "PAPER_ACCOUNT_RECONCILIATION"
+    CORRECTION = "CORRECTION"
+    OTHER = "OTHER"
+
+
+class ExternalPositionReason(StrEnum):
+    ALPACA_PAPER_TRADE = "ALPACA_PAPER_TRADE"
+    EXTERNAL_BROKER_TRADE = "EXTERNAL_BROKER_TRADE"
+    INITIAL_PORTFOLIO_IMPORT = "INITIAL_PORTFOLIO_IMPORT"
+    CORRECTION = "CORRECTION"
+    OTHER = "OTHER"
+
+
+class PositionReconciliationReason(StrEnum):
+    PAPER_ACCOUNT_RECONCILIATION = "PAPER_ACCOUNT_RECONCILIATION"
+    QUANTITY_CORRECTION = "QUANTITY_CORRECTION"
+    COST_BASIS_CORRECTION = "COST_BASIS_CORRECTION"
+    ENTRY_DATE_CORRECTION = "ENTRY_DATE_CORRECTION"
+    OTHER = "OTHER"
+
+
 @dataclass(slots=True, frozen=True)
 class ImportedPosition:
     ticker: str
@@ -430,10 +454,18 @@ class ResearchPortfolioService:
         portfolio_id: UUID,
         expected_revision: int,
         delta: Decimal,
-        reason: str,
+        reason_code: CashAdjustmentReason | None = None,
+        note: str | None = None,
+        reason: str | None = None,
     ) -> ResearchPortfolio:
         if delta == 0:
             raise ValueError("Cash adjustment must not be zero")
+        if reason_code is None and not reason:
+            raise ValueError("Cash adjustment reason is required")
+        if reason_code == CashAdjustmentReason.EXTERNAL_DEPOSIT and delta < 0:
+            raise ValueError("EXTERNAL_DEPOSIT requires a positive delta")
+        if reason_code == CashAdjustmentReason.EXTERNAL_WITHDRAWAL and delta > 0:
+            raise ValueError("EXTERNAL_WITHDRAWAL requires a negative delta")
         portfolio = await self._locked(portfolio_id, expected_revision)
         new_cash = Decimal(portfolio.cash_balance) + delta
         if new_cash < 0:
@@ -453,7 +485,9 @@ class ResearchPortfolioService:
                 cash_delta=delta,
                 before_facts={"cash": str(new_cash - delta)},
                 after_facts={"cash": str(new_cash)},
-                reason=reason,
+                reason=reason_code.value if reason_code else reason or "",
+                reason_code=reason_code.value if reason_code else None,
+                note=note,
             )
         )
         await self.session.commit()
@@ -468,10 +502,14 @@ class ResearchPortfolioService:
         quantity: int,
         average_cost: Decimal,
         entry_trading_day: date | None,
-        reason: str,
+        reason_code: ExternalPositionReason | None = None,
+        note: str | None = None,
+        reason: str | None = None,
     ) -> ResearchPortfolio:
         if quantity <= 0 or average_cost <= 0:
             raise ValueError("External position requires positive whole shares and cost")
+        if reason_code is None and not reason:
+            raise ValueError("External position reason is required")
         portfolio = await self._locked(portfolio_id, expected_revision)
         company = await self.companies.get_by_ticker(ticker.strip().upper())
         if company is None:
@@ -517,7 +555,9 @@ class ResearchPortfolioService:
                     "cost_basis": str(basis),
                     "entry_trading_day": str(entry_trading_day) if entry_trading_day else None,
                 },
-                reason=reason,
+                reason=reason_code.value if reason_code else reason or "",
+                reason_code=reason_code.value if reason_code else None,
+                note=note,
             )
         )
         await self.session.commit()
@@ -532,10 +572,14 @@ class ResearchPortfolioService:
         quantity: int,
         average_cost: Decimal,
         entry_trading_day: date | None,
-        reason: str,
+        reason_code: PositionReconciliationReason | None = None,
+        note: str | None = None,
+        reason: str | None = None,
     ) -> ResearchPortfolio:
         if quantity <= 0 or average_cost <= 0:
             raise ValueError("Reconciliation requires positive whole shares and cost")
+        if reason_code is None and not reason:
+            raise ValueError("Reconciliation reason is required")
         portfolio = await self._locked(portfolio_id, expected_revision)
         position = await self.portfolios.get_position(portfolio.id, position_id)
         if position is None or position.status != ResearchPositionStatus.OPEN.value:
@@ -567,7 +611,9 @@ class ResearchPortfolioService:
                     "cost_basis": str(position.cost_basis),
                     "entry_trading_day": str(entry_trading_day) if entry_trading_day else None,
                 },
-                reason=reason,
+                reason=reason_code.value if reason_code else reason or "",
+                reason_code=reason_code.value if reason_code else None,
+                note=note,
             )
         )
         await self.session.commit()

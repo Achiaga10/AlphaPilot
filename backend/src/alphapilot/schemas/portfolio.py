@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.portfolio.actions import (
@@ -18,6 +18,11 @@ from alphapilot.portfolio.sizing import (
     PortfolioDecisionReason,
     PortfolioDecisionType,
     SizingPolicyName,
+)
+from alphapilot.services.research_portfolio import (
+    CashAdjustmentReason,
+    ExternalPositionReason,
+    PositionReconciliationReason,
 )
 from alphapilot.strategy.exit_mode import TrendExitMode
 from alphapilot.strategy.micho_entry_mode import MichoEntryMode
@@ -413,6 +418,8 @@ class ResearchReconciliationEventSchema(BaseModel):
     before_facts: dict[str, object] | None
     after_facts: dict[str, object] | None
     reason: str
+    reason_code: str | None = None
+    note: str | None = None
 
 
 class PositionMonitoringSchema(BaseModel):
@@ -437,7 +444,8 @@ class PositionMonitoringSchema(BaseModel):
 class CashAdjustmentRequestSchema(BaseModel):
     expected_revision: int = Field(ge=0)
     delta: Decimal
-    reason: str = Field(min_length=1, max_length=200)
+    reason_code: CashAdjustmentReason
+    note: str | None = Field(default=None, max_length=500)
 
 
 class ExternalPositionRequestSchema(BaseModel):
@@ -446,7 +454,8 @@ class ExternalPositionRequestSchema(BaseModel):
     quantity: int = Field(gt=0)
     average_cost: Decimal = Field(gt=0)
     entry_trading_day: date | None = None
-    reason: str = Field(min_length=1, max_length=200)
+    reason_code: ExternalPositionReason
+    note: str | None = Field(default=None, max_length=500)
 
 
 class PositionReconciliationRequestSchema(BaseModel):
@@ -454,4 +463,108 @@ class PositionReconciliationRequestSchema(BaseModel):
     quantity: int = Field(gt=0)
     average_cost: Decimal = Field(gt=0)
     entry_trading_day: date | None = None
-    reason: str = Field(min_length=1, max_length=200)
+    reason_code: PositionReconciliationReason
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PositionIntelligenceSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    portfolio_id: UUID
+    portfolio_revision: int
+    position_id: UUID
+    company_id: UUID
+    ticker: str
+    company_name: str | None
+    position_status: str
+    provenance_status: str
+    quantity: int
+    entry_trading_day: date | None
+    entry_price: Decimal | None
+    average_cost: Decimal
+    cost_basis: Decimal
+    strategy_guidance_available: bool
+    guidance_unavailable_reason: str | None
+    strategy: str | None
+    strategy_profile_id: str | None
+    strategy_profile_version: int | None
+    strategy_profile_snapshot: dict[str, object] | None
+    selection_policy: str | None
+    entry_decision: str | None
+    entry_reason: str | None
+    latest_completed_trading_day: date | None
+    latest_completed_close: Decimal | None
+    market_value: Decimal | None
+    unrealized_pnl: Decimal | None
+    unrealized_pnl_pct: Decimal | None
+    realized_pnl: Decimal
+    monitoring_readiness: str
+    monitoring_status: str | None
+    monitoring_reason: str
+    monitoring_completed_trading_day: date | None
+    indicator_facts: dict[str, object]
+    previous_monitoring_status: str | None
+    latest_monitoring_transition: str | None
+    exit_triggered: bool
+    exit_triggered_on: date | None
+    exit_trigger_reason: str | None
+    active_exit_policy: str | None
+    protective_stop_policy: str
+    trailing_stop_policy: str
+    profit_target_policy: str
+    research_only_stop_candidate: str | None
+    research_only_stop_status: str | None
+    price_change_since_entry: Decimal | None
+    explanation: str
+    trade_event_count: int
+    reconciliation_event_count: int
+
+
+class PaperValidationEntryRequestSchema(BaseModel):
+    actual_quantity: int = Field(gt=0)
+    actual_average_fill_price: Decimal = Field(gt=0)
+    actual_execution_at: AwareDatetime
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PaperValidationExitRequestSchema(BaseModel):
+    actual_exit_quantity: int = Field(gt=0)
+    actual_average_exit_fill: Decimal = Field(gt=0)
+    actual_execution_at: AwareDatetime
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PaperValidationSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    portfolio_id: UUID
+    position_id: UUID
+    ticker: str
+    status: str
+    execution_source: str
+    position_provenance: str
+    strategy: str | None
+    strategy_profile_id: str | None
+    strategy_profile_version: int | None
+    entry_decision: str | None
+    entry_reason: str | None
+    recommendation_day: date | None
+    planned_quantity: int | None
+    reference_entry_price: Decimal | None
+    actual_quantity: int
+    actual_entry_price: Decimal
+    actual_entry_at: datetime
+    entry_note: str | None
+    entry_fill_difference: Decimal | None
+    entry_fill_difference_bps: Decimal | None
+    quantity_difference: int | None
+    actual_exit_quantity: int | None
+    actual_exit_price: Decimal | None
+    actual_exit_at: datetime | None
+    exit_note: str | None
+    paper_entry_value: Decimal
+    paper_exit_value: Decimal | None
+    paper_gross_pnl: Decimal | None
+    paper_gross_return_pct: Decimal | None
+    alphapilot_exit_triggered_on: date | None
+    alphapilot_exit_reason: str | None
+    alphapilot_trigger_close: Decimal | None

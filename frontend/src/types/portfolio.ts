@@ -277,7 +277,7 @@ export interface PortfolioPlanActionResult {
   portfolio: CurrentPortfolioInput
   summary: PortfolioDraftSummary
   validation_status: 'VALID' | 'REJECTED'
-  quantity_semantics: 'SAME_PLAN_ACTION' | 'USER_QUANTITY_OVERRIDE'
+  quantity_semantics: 'SAME_PLAN_ACTION' | 'CURRENT_REVALIDATED_RECOMMENDATION' | 'USER_QUANTITY_OVERRIDE'
   recommended_shares: number
   requested_shares: number
   recommended_allocation_dollars: string
@@ -403,7 +403,8 @@ export interface PositionMonitoring {
 export interface CashAdjustmentRequest {
   expected_revision: number
   delta: string
-  reason: string
+  reason_code: 'EXTERNAL_DEPOSIT' | 'EXTERNAL_WITHDRAWAL' | 'PAPER_ACCOUNT_RECONCILIATION' | 'CORRECTION' | 'OTHER'
+  note: string | null
 }
 
 export interface ExternalPositionRequest {
@@ -412,7 +413,8 @@ export interface ExternalPositionRequest {
   quantity: number
   average_cost: string
   entry_trading_day: string | null
-  reason: string
+  reason_code: 'ALPACA_PAPER_TRADE' | 'EXTERNAL_BROKER_TRADE' | 'INITIAL_PORTFOLIO_IMPORT' | 'CORRECTION' | 'OTHER'
+  note: string | null
 }
 
 export interface PositionReconciliationRequest {
@@ -420,7 +422,101 @@ export interface PositionReconciliationRequest {
   quantity: number
   average_cost: string
   entry_trading_day: string | null
-  reason: string
+  reason_code: 'PAPER_ACCOUNT_RECONCILIATION' | 'QUANTITY_CORRECTION' | 'COST_BASIS_CORRECTION' | 'ENTRY_DATE_CORRECTION' | 'OTHER'
+  note: string | null
+}
+
+export interface PositionIntelligence {
+  portfolio_id: string
+  portfolio_revision: number
+  position_id: string
+  company_id: string
+  ticker: string
+  company_name: string | null
+  position_status: string
+  provenance_status: string
+  quantity: number
+  entry_trading_day: string | null
+  entry_price: string | null
+  average_cost: string
+  cost_basis: string
+  strategy_guidance_available: boolean
+  guidance_unavailable_reason: string | null
+  strategy: string | null
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  strategy_profile_snapshot: Record<string, unknown> | null
+  selection_policy: string | null
+  entry_decision: string | null
+  entry_reason: string | null
+  latest_completed_trading_day: string | null
+  latest_completed_close: string | null
+  market_value: string | null
+  unrealized_pnl: string | null
+  unrealized_pnl_pct: string | null
+  realized_pnl: string
+  monitoring_readiness: string
+  monitoring_status: 'HOLD' | 'ATTENTION' | 'SELL' | null
+  monitoring_reason: string
+  monitoring_completed_trading_day: string | null
+  indicator_facts: Record<string, unknown>
+  previous_monitoring_status: string | null
+  latest_monitoring_transition: string | null
+  exit_triggered: boolean
+  exit_triggered_on: string | null
+  exit_trigger_reason: string | null
+  active_exit_policy: string | null
+  protective_stop_policy: string
+  trailing_stop_policy: string
+  profit_target_policy: string
+  research_only_stop_candidate: string | null
+  research_only_stop_status: 'NOT_ACTIVE' | null
+  price_change_since_entry: string | null
+  explanation: string
+  trade_event_count: number
+  reconciliation_event_count: number
+}
+
+export interface PaperValidation {
+  id: string
+  portfolio_id: string
+  position_id: string
+  ticker: string
+  status: 'OPEN' | 'CLOSED'
+  execution_source: 'ALPACA_PAPER_MANUAL'
+  position_provenance: string
+  strategy: string | null
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  planned_quantity: number | null
+  reference_entry_price: string | null
+  actual_quantity: number
+  actual_entry_price: string
+  actual_entry_at: string
+  entry_fill_difference: string | null
+  entry_fill_difference_bps: string | null
+  quantity_difference: number | null
+  actual_exit_quantity: number | null
+  actual_exit_price: string | null
+  actual_exit_at: string | null
+  paper_gross_pnl: string | null
+  paper_gross_return_pct: string | null
+  alphapilot_exit_triggered_on: string | null
+  alphapilot_exit_reason: string | null
+}
+
+export interface PaperValidationEntryRequest {
+  actual_quantity: number
+  actual_average_fill_price: string
+  actual_execution_at: string
+  note: string | null
+}
+
+export interface PaperValidationExitRequest {
+  actual_exit_quantity: number
+  actual_average_exit_fill: string
+  actual_execution_at: string
+  note: string | null
 }
 
 export interface DailySchedulerStatus {

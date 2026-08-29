@@ -36,6 +36,7 @@ class PlanActionApplyReason(StrEnum):
 
 class PlanActionQuantitySemantics(StrEnum):
     SAME_PLAN_ACTION = "SAME_PLAN_ACTION"
+    CURRENT_REVALIDATED_RECOMMENDATION = "CURRENT_REVALIDATED_RECOMMENDATION"
     USER_QUANTITY_OVERRIDE = "USER_QUANTITY_OVERRIDE"
 
 
@@ -103,14 +104,26 @@ class PortfolioPlanActionService:
                 return self._rejected(
                     state, decision, PlanActionApplyReason.POSITION_ALREADY_HELD, held
                 )
-            shares = decision.proposed_shares if requested_shares is None else requested_shares
+            equity = state.equity
+            if len(state.positions) >= risk_config.max_positions:
+                return self._rejected(state, decision, PlanActionApplyReason.MAX_POSITIONS)
+            current_recommendation = self._current_recommended_shares(
+                state=state,
+                decision=decision,
+                config=risk_config,
+                sizing_policy=sizing_policy,
+            )
+            recommended_shares = current_recommendation or decision.proposed_shares
+            shares = recommended_shares if requested_shares is None else requested_shares
             if decision.proposed_shares <= 0 or shares <= 0:
                 return self._rejected(state, decision, PlanActionApplyReason.INVALID_SHARE_QUANTITY)
             outlay = Decimal(shares) * decision.reference_price
-            equity = state.equity
             semantics = (
                 PlanActionQuantitySemantics.SAME_PLAN_ACTION
                 if shares == decision.proposed_shares
+                and recommended_shares == decision.proposed_shares
+                else PlanActionQuantitySemantics.CURRENT_REVALIDATED_RECOMMENDATION
+                if requested_shares is None
                 else PlanActionQuantitySemantics.USER_QUANTITY_OVERRIDE
             )
             sector_before_value = sum(
@@ -124,13 +137,6 @@ class PortfolioPlanActionService:
             weight_pct = self._pct(outlay, equity)
             sector_before_pct = self._pct(sector_before_value, equity)
             sector_after_pct = self._pct(sector_before_value + outlay, equity)
-            if len(state.positions) >= risk_config.max_positions:
-                return self._rejected(
-                    state,
-                    decision,
-                    PlanActionApplyReason.MAX_POSITIONS,
-                    metrics=(shares, outlay, weight_pct, sector_before_pct, sector_after_pct),
-                )
             if state.cash < outlay:
                 return self._rejected(
                     state,
@@ -224,9 +230,11 @@ class PortfolioPlanActionService:
                 portfolio=updated if apply else state,
                 validation_status=PlanActionValidationStatus.VALID,
                 quantity_semantics=semantics,
-                recommended_shares=decision.proposed_shares,
+                recommended_shares=recommended_shares,
                 requested_shares=shares,
-                recommended_allocation_dollars=decision.target_allocation_dollars,
+                recommended_allocation_dollars=(
+                    Decimal(recommended_shares) * decision.reference_price
+                ),
                 requested_allocation_dollars=outlay,
                 resulting_position_weight_pct=weight_pct,
                 sector_weight_before_pct=sector_before_pct,
@@ -276,6 +284,48 @@ class PortfolioPlanActionService:
             portfolio_risk_after_dollars=None,
             cash_reserve_requirement=None,
         )
+
+    @staticmethod
+    def _current_recommended_shares(
+        *,
+        state: CurrentPortfolioState,
+        decision: PortfolioDecision,
+        config: PortfolioRiskConfig,
+        sizing_policy: SizingPolicyName,
+    ) -> int:
+        if decision.reference_price <= 0 or decision.proposed_shares <= 0:
+            return 0
+        equity = state.equity
+        price = decision.reference_price
+        limits = [
+            decision.proposed_shares,
+            int(state.cash // price),
+            int((equity * config.max_position_weight_pct / Decimal("100")) // price),
+        ]
+        sector_value = sum(
+            (
+                item.market_value
+                for item in state.positions
+                if PortfolioPlanActionService._sector(item.sector)
+                == PortfolioPlanActionService._sector(decision.sector)
+            ),
+            Decimal("0"),
+        )
+        sector_capacity = equity * config.max_sector_weight_pct / Decimal("100") - sector_value
+        limits.append(max(0, int(sector_capacity // price)))
+        if sizing_policy != SizingPolicyName.EQUAL_SLOT:
+            reserve = equity * config.minimum_cash_reserve_pct / Decimal("100")
+            limits.append(max(0, int((state.cash - reserve) // price)))
+            if decision.atr is not None and decision.atr > 0:
+                stop_distance = decision.atr * config.atr_stop_multiple
+                current_risk = sum(
+                    (item.modeled_risk_dollars for item in state.positions), Decimal("0")
+                )
+                risk_capacity = (
+                    equity * config.max_portfolio_risk_pct / Decimal("100") - current_risk
+                )
+                limits.append(max(0, int(risk_capacity // stop_distance)))
+        return max(0, min(limits))
 
     @staticmethod
     def _rejected(

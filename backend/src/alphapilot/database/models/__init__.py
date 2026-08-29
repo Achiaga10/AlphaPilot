@@ -10,6 +10,9 @@ from .research_dataset import (
     ResearchDatasetUniverseMember,
 )
 from .research_portfolio import (
+    PaperExecutionSource,
+    PaperValidationRecord,
+    PaperValidationStatus,
     PositionMonitoringSnapshot,
     ResearchPortfolio,
     ResearchPosition,
@@ -30,6 +33,9 @@ __all__ = [
     "ResearchDatasetSnapshot",
     "ResearchDatasetUniverseMember",
     "ResearchPortfolio",
+    "PaperExecutionSource",
+    "PaperValidationRecord",
+    "PaperValidationStatus",
     "ResearchPosition",
     "ResearchPositionProvenance",
     "ResearchPositionStatus",

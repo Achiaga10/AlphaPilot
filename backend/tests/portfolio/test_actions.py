@@ -126,6 +126,66 @@ def test_buy_preview_recalculates_user_quantity_and_enforces_hard_caps() -> None
     assert rejected.reason == PlanActionApplyReason.MAX_POSITION_WEIGHT
 
 
+def test_same_plan_candidate_gets_current_quantity_and_constraint_revalidation() -> None:
+    first, _ = _buy_plan()
+    held = PortfolioStatePosition(
+        "HELD",
+        250,
+        Decimal("100"),
+        sector=first.sector,
+    )
+    state = CurrentPortfolioState(cash=Decimal("75000"), positions=(held,))
+    service = PortfolioPlanActionService()
+
+    current = service.apply(
+        state=state,
+        decision=first,
+        applied_action_ids=frozenset(),
+        requested_shares=None,
+        sizing_policy=SizingPolicyName.EQUAL_SLOT,
+        apply=False,
+    )
+    assert current.validation_status == PlanActionValidationStatus.VALID
+    assert current.quantity_semantics == (
+        PlanActionQuantitySemantics.CURRENT_REVALIDATED_RECOMMENDATION
+    )
+    assert current.recommended_shares == 50
+    assert current.requested_shares == 50
+
+    stale_original_quantity = service.apply(
+        state=state,
+        decision=first,
+        applied_action_ids=frozenset(),
+        requested_shares=100,
+        sizing_policy=SizingPolicyName.EQUAL_SLOT,
+        apply=False,
+    )
+    assert stale_original_quantity.validation_status == PlanActionValidationStatus.REJECTED
+    assert stale_original_quantity.reason == PlanActionApplyReason.SECTOR_LIMIT
+
+    already_held = service.apply(
+        state=CurrentPortfolioState(
+            cash=Decimal("90000"),
+            positions=(PortfolioStatePosition("AAA", 100, Decimal("100")),),
+        ),
+        decision=first,
+        applied_action_ids=frozenset(),
+        sizing_policy=SizingPolicyName.EQUAL_SLOT,
+    )
+    assert already_held.reason == PlanActionApplyReason.POSITION_ALREADY_HELD
+
+    max_positions = service.apply(
+        state=CurrentPortfolioState(
+            cash=Decimal("10000"),
+            positions=tuple(PortfolioStatePosition(f"P{i}", 1, Decimal("9000")) for i in range(10)),
+        ),
+        decision=first,
+        applied_action_ids=frozenset(),
+        sizing_policy=SizingPolicyName.EQUAL_SLOT,
+    )
+    assert max_positions.reason == PlanActionApplyReason.MAX_POSITIONS
+
+
 def test_approved_sell_applies_full_position_after_dependencies() -> None:
     held = PortfolioStatePosition("EXIT", 10, Decimal("50"), cost_basis=Decimal("40"))
     plan = PortfolioDecisionEngine().build_plan(

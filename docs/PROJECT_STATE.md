@@ -2,12 +2,12 @@
 
 ## Current Phase
 
-Sprint 17 — Position Monitoring, Exit Guidance, Portfolio Reconciliation &
-Daily Completed-Session Sync Automation
+Sprint 18 —
+Position Intelligence & Paper Validation Foundation
 COMPLETE LOCALLY
 
 Current development branch:
-feature/position-monitoring
+feature/position-intelligence-paper-validation
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -20,7 +20,8 @@ and snapshot-bound research replay are implemented without changing strategy or
 normal UI behavior. Sprint 14 is complete, reviewed, and merged with
 backend-owned versioned strategy profiles. Sprint 15 is complete, reviewed, and
 merged with a frozen-snapshot, stage-governed Strategy Lab. Sprint 16 is complete,
-reviewed, and merged. Sprint 17 is complete locally. Sprint 18 is not started.
+reviewed, and merged. Sprint 17 is complete, reviewed, and merged. Sprint 18 is
+complete locally. Sprint 19 is not started.
 
 ## Project Goal
 

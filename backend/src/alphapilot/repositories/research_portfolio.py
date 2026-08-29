@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.database.models.research_portfolio import (
+    PaperValidationRecord,
     PositionMonitoringSnapshot,
     ResearchPortfolio,
     ResearchPosition,
@@ -105,13 +106,65 @@ class ResearchPortfolioRepository:
             latest.setdefault(item.position_id, item)
         return list(latest.values())
 
+    async def monitoring_history(self, position_id: UUID) -> list[PositionMonitoringSnapshot]:
+        result = await self.session.execute(
+            select(PositionMonitoringSnapshot)
+            .where(PositionMonitoringSnapshot.position_id == position_id)
+            .order_by(PositionMonitoringSnapshot.completed_trading_day.desc())
+        )
+        return list(result.scalars().all())
+
+    async def position_events(self, position_id: UUID) -> list[ResearchTradeEvent]:
+        result = await self.session.execute(
+            select(ResearchTradeEvent)
+            .where(ResearchTradeEvent.position_id == position_id)
+            .order_by(ResearchTradeEvent.created_at, ResearchTradeEvent.id)
+        )
+        return list(result.scalars().all())
+
+    async def position_reconciliation_events(
+        self, position_id: UUID
+    ) -> list[ResearchReconciliationEvent]:
+        result = await self.session.execute(
+            select(ResearchReconciliationEvent)
+            .where(ResearchReconciliationEvent.position_id == position_id)
+            .order_by(ResearchReconciliationEvent.created_at, ResearchReconciliationEvent.id)
+        )
+        return list(result.scalars().all())
+
+    async def list_paper_validations(
+        self, portfolio_id: UUID, *, position_id: UUID | None = None
+    ) -> list[PaperValidationRecord]:
+        statement = select(PaperValidationRecord).where(
+            PaperValidationRecord.portfolio_id == portfolio_id
+        )
+        if position_id is not None:
+            statement = statement.where(PaperValidationRecord.position_id == position_id)
+        result = await self.session.execute(
+            statement.order_by(PaperValidationRecord.created_at, PaperValidationRecord.id)
+        )
+        return list(result.scalars().all())
+
+    async def get_paper_validation(
+        self, portfolio_id: UUID, validation_id: UUID, *, for_update: bool = False
+    ) -> PaperValidationRecord | None:
+        statement = select(PaperValidationRecord).where(
+            PaperValidationRecord.portfolio_id == portfolio_id,
+            PaperValidationRecord.id == validation_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
     def add(
         self,
         value: ResearchPortfolio
         | ResearchPosition
         | ResearchTradeEvent
         | PositionMonitoringSnapshot
-        | ResearchReconciliationEvent,
+        | ResearchReconciliationEvent
+        | PaperValidationRecord,
     ) -> None:
         self.session.add(value)
 
