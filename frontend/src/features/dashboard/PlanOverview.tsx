@@ -10,7 +10,7 @@ import { StalePlanWarning } from '../portfolio/StalePlanWarning'
 import { PlanReadinessBanner } from '../portfolio/PlanReadinessBanner'
 import type { PortfolioDecision, PortfolioPlanActionResult } from '../../types/portfolio'
 
-export function PlanOverview({ plan, isDirty = false, hasAppliedActions = false, appliedActionIds, actionPendingId, onApplyDecision, onPreviewDecision }: { plan: PortfolioPlan | null; isDirty?: boolean; hasAppliedActions?: boolean; appliedActionIds?: ReadonlySet<string>; actionPendingId?: string | null; onApplyDecision?: (decision: PortfolioDecision, requestedShares?: number) => void | Promise<unknown>; onPreviewDecision?: (decision: PortfolioDecision, requestedShares: number) => Promise<PortfolioPlanActionResult | null> }) {
+export function PlanOverview({ plan, isDirty = false, hasAppliedActions = false, appliedActionIds, actionPendingId, onApplyDecision, onPreviewDecision }: { plan: PortfolioPlan | null; isDirty?: boolean; hasAppliedActions?: boolean; appliedActionIds?: ReadonlySet<string>; actionPendingId?: string | null; onApplyDecision?: (decision: PortfolioDecision, requestedShares?: number) => void | Promise<unknown>; onPreviewDecision?: (decision: PortfolioDecision, requestedShares?: number) => Promise<PortfolioPlanActionResult | null> }) {
   if (!plan) {
     return (
       <EmptyState title="No portfolio plan yet">

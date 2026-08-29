@@ -10,6 +10,10 @@ import {
   adjustResearchCash,
   addExternalPosition,
   reconcileResearchPosition,
+  getPositionIntelligence,
+  getPositionPaperValidations,
+  recordPaperValidationEntry,
+  recordPaperValidationExit,
   previewManualSell,
 } from '../api/portfolio'
 import {
@@ -33,6 +37,8 @@ import type {
   CashAdjustmentRequest,
   ExternalPositionRequest,
   PositionReconciliationRequest,
+  PaperValidationEntryRequest,
+  PaperValidationExitRequest,
 } from '../types/portfolio'
 
 export function useHealthQuery() {
@@ -85,6 +91,36 @@ export function useExternalPositionMutation(portfolioId: string) {
 
 export function usePositionReconciliationMutation(portfolioId: string, positionId: string) {
   return useMutation({ mutationFn: (request: PositionReconciliationRequest) => reconcileResearchPosition(portfolioId, positionId, request) })
+}
+
+export function usePositionIntelligenceQuery(portfolioId: string, positionId: string | null) {
+  return useQuery({
+    queryKey: ['position-intelligence', portfolioId, positionId],
+    queryFn: ({ signal }) => getPositionIntelligence(portfolioId, positionId ?? '', signal),
+    enabled: Boolean(positionId),
+  })
+}
+
+export function usePositionPaperValidationsQuery(portfolioId: string, positionId: string | null) {
+  return useQuery({
+    queryKey: ['paper-validations', portfolioId, positionId],
+    queryFn: ({ signal }) => getPositionPaperValidations(portfolioId, positionId ?? '', signal),
+    enabled: Boolean(positionId),
+  })
+}
+
+export function usePaperValidationEntryMutation(portfolioId: string, positionId: string) {
+  return useMutation({
+    mutationFn: (request: PaperValidationEntryRequest) =>
+      recordPaperValidationEntry(portfolioId, positionId, request),
+  })
+}
+
+export function usePaperValidationExitMutation(portfolioId: string) {
+  return useMutation({
+    mutationFn: ({ validationId, request }: { validationId: string; request: PaperValidationExitRequest }) =>
+      recordPaperValidationExit(portfolioId, validationId, request),
+  })
 }
 
 export function useLatestStoredPriceQuery(ticker: string | null) {

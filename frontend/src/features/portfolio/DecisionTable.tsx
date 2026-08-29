@@ -17,7 +17,7 @@ interface DecisionTableProps {
   rankByTicker?: Record<string, number | null | undefined>
   canApplyDecisions?: boolean
   onApplyDecision?: (decision: PortfolioDecision, requestedShares?: number) => void | Promise<unknown>
-  onPreviewDecision?: (decision: PortfolioDecision, requestedShares: number) => Promise<PortfolioPlanActionResult | null>
+  onPreviewDecision?: (decision: PortfolioDecision, requestedShares?: number) => Promise<PortfolioPlanActionResult | null>
   sizingPolicy?: SizingPolicy
   appliedActionIds?: ReadonlySet<string>
   actionPendingId?: string | null
@@ -44,7 +44,10 @@ export function DecisionTable({
     const key = decision.action_id ?? decision.ticker
     const shares = Number(quantities[key] ?? decision.proposed_shares)
     if (!Number.isInteger(shares) || shares <= 0) return
-    const result = await onPreviewDecision?.(decision, shares)
+    const result = await onPreviewDecision?.(
+      decision,
+      quantities[key] === undefined ? undefined : shares,
+    )
     if (result) setPreview({ decision, result })
   }
 
@@ -117,7 +120,7 @@ export function DecisionTable({
           })}
         </div>
       )}
-      {preview ? <BuyActionPreviewDialog decision={preview.decision} preview={preview.result} pending={actionPendingId === preview.decision.action_id} onCancel={() => setPreview(null)} onConfirm={() => { void Promise.resolve(onApplyDecision?.(preview.decision, preview.result.requested_shares)).then(() => setPreview(null)) }} /> : null}
+      {preview ? <BuyActionPreviewDialog decision={preview.decision} preview={preview.result} pending={actionPendingId === preview.decision.action_id} onCancel={() => setPreview(null)} onConfirm={() => { const shares = preview.result.quantity_semantics === 'USER_QUANTITY_OVERRIDE' ? preview.result.requested_shares : undefined; void Promise.resolve(onApplyDecision?.(preview.decision, shares)).then(() => setPreview(null)) }} /> : null}
     </div>
   )
 }

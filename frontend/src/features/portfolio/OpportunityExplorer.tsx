@@ -35,7 +35,7 @@ export function OpportunityExplorer({
   statuses: CandidateStatus[]
   canApplyDecisions?: boolean
   onApplyDecision?: (decision: PortfolioDecision, requestedShares?: number) => void | Promise<unknown>
-  onPreviewDecision?: (decision: PortfolioDecision, requestedShares: number) => Promise<PortfolioPlanActionResult | null>
+  onPreviewDecision?: (decision: PortfolioDecision, requestedShares?: number) => Promise<PortfolioPlanActionResult | null>
   sizingPolicy?: SizingPolicy
   adminEnabled?: boolean
   onSyncTicker?: (ticker: string) => void

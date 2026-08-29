@@ -32,6 +32,9 @@ from alphapilot.schemas.portfolio import (
     LatestStoredPriceSchema,
     ManualSellRequestSchema,
     ManualSellResultSchema,
+    PaperValidationEntryRequestSchema,
+    PaperValidationExitRequestSchema,
+    PaperValidationSchema,
     PortfolioDecisionPlanSchema,
     PortfolioDecisionRequest,
     PortfolioDecisionSchema,
@@ -45,6 +48,7 @@ from alphapilot.schemas.portfolio import (
     PortfolioPositionSummarySchema,
     PortfolioRiskConfigSchema,
     PortfolioSummarySchema,
+    PositionIntelligenceSchema,
     PositionMonitoringSchema,
     PositionReconciliationRequestSchema,
     ResearchPortfolioInitializeSchema,
@@ -55,6 +59,8 @@ from alphapilot.schemas.portfolio import (
 )
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
+from alphapilot.services.paper_validation import PaperValidationService
+from alphapilot.services.position_intelligence import PositionIntelligenceService
 from alphapilot.services.position_monitoring import PositionMonitoringService
 from alphapilot.services.research_portfolio import (
     ImportedPosition,
@@ -206,6 +212,18 @@ def get_position_monitoring_service(
     return PositionMonitoringService(session)
 
 
+def get_position_intelligence_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> PositionIntelligenceService:
+    return PositionIntelligenceService(session)
+
+
+def get_paper_validation_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> PaperValidationService:
+    return PaperValidationService(session)
+
+
 async def _persistent_state(
     service: ResearchPortfolioService, portfolio_id: UUID
 ) -> tuple[CurrentPortfolioState, ResearchPortfolioSchema]:
@@ -329,6 +347,102 @@ async def get_position_monitoring(
     return output
 
 
+@router.get(
+    "/{portfolio_id}/positions/{position_id}/intelligence",
+    response_model=PositionIntelligenceSchema,
+)
+async def get_position_intelligence(
+    portfolio_id: UUID,
+    position_id: UUID,
+    service: Annotated[PositionIntelligenceService, Depends(get_position_intelligence_service)],
+) -> PositionIntelligenceSchema:
+    try:
+        return PositionIntelligenceSchema.model_validate(
+            await service.get_position_intelligence(portfolio_id, position_id),
+            from_attributes=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{portfolio_id}/positions/{position_id}/paper-validations",
+    response_model=PaperValidationSchema,
+)
+async def record_paper_validation_entry(
+    portfolio_id: UUID,
+    position_id: UUID,
+    request: PaperValidationEntryRequestSchema,
+    service: Annotated[PaperValidationService, Depends(get_paper_validation_service)],
+) -> PaperValidationSchema:
+    try:
+        return PaperValidationSchema.model_validate(
+            await service.record_entry(
+                portfolio_id=portfolio_id,
+                position_id=position_id,
+                actual_quantity=request.actual_quantity,
+                actual_entry_price=request.actual_average_fill_price,
+                actual_entry_at=request.actual_execution_at,
+                note=request.note,
+            ),
+            from_attributes=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{portfolio_id}/paper-validations", response_model=list[PaperValidationSchema])
+async def list_paper_validations(
+    portfolio_id: UUID,
+    service: Annotated[PaperValidationService, Depends(get_paper_validation_service)],
+) -> list[PaperValidationSchema]:
+    return [
+        PaperValidationSchema.model_validate(item, from_attributes=True)
+        for item in await service.list(portfolio_id)
+    ]
+
+
+@router.get(
+    "/{portfolio_id}/positions/{position_id}/paper-validations",
+    response_model=list[PaperValidationSchema],
+)
+async def list_position_paper_validations(
+    portfolio_id: UUID,
+    position_id: UUID,
+    service: Annotated[PaperValidationService, Depends(get_paper_validation_service)],
+) -> list[PaperValidationSchema]:
+    return [
+        PaperValidationSchema.model_validate(item, from_attributes=True)
+        for item in await service.list(portfolio_id, position_id=position_id)
+    ]
+
+
+@router.post(
+    "/{portfolio_id}/paper-validations/{validation_id}/exit",
+    response_model=PaperValidationSchema,
+)
+async def record_paper_validation_exit(
+    portfolio_id: UUID,
+    validation_id: UUID,
+    request: PaperValidationExitRequestSchema,
+    service: Annotated[PaperValidationService, Depends(get_paper_validation_service)],
+) -> PaperValidationSchema:
+    try:
+        return PaperValidationSchema.model_validate(
+            await service.record_exit(
+                portfolio_id=portfolio_id,
+                validation_id=validation_id,
+                actual_exit_quantity=request.actual_exit_quantity,
+                actual_exit_price=request.actual_average_exit_fill,
+                actual_exit_at=request.actual_execution_at,
+                note=request.note,
+            ),
+            from_attributes=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 async def _valued(service: ResearchPortfolioService, portfolio_id: UUID) -> ResearchPortfolioSchema:
     return ResearchPortfolioSchema.model_validate(
         await service.value(portfolio_id), from_attributes=True
@@ -346,7 +460,8 @@ async def adjust_research_cash(
             portfolio_id=portfolio_id,
             expected_revision=request.expected_revision,
             delta=request.delta,
-            reason=request.reason,
+            reason_code=request.reason_code,
+            note=request.note,
         )
         return await _valued(service, portfolio_id)
     except StalePortfolioRevisionError as exc:
@@ -369,7 +484,8 @@ async def add_external_position(
             quantity=request.quantity,
             average_cost=request.average_cost,
             entry_trading_day=request.entry_trading_day,
-            reason=request.reason,
+            reason_code=request.reason_code,
+            note=request.note,
         )
         return await _valued(service, portfolio_id)
     except StalePortfolioRevisionError as exc:
@@ -396,7 +512,8 @@ async def reconcile_research_position(
             quantity=request.quantity,
             average_cost=request.average_cost,
             entry_trading_day=request.entry_trading_day,
-            reason=request.reason,
+            reason_code=request.reason_code,
+            note=request.note,
         )
         return await _valued(service, portfolio_id)
     except StalePortfolioRevisionError as exc:

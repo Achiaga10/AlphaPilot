@@ -17,6 +17,10 @@ import type {
   CashAdjustmentRequest,
   ExternalPositionRequest,
   PositionReconciliationRequest,
+  PositionIntelligence,
+  PaperValidation,
+  PaperValidationEntryRequest,
+  PaperValidationExitRequest,
   StrategyProfile,
 } from '../types/portfolio'
 
@@ -130,6 +134,28 @@ const isMonitoring = (value: unknown): value is PositionMonitoring[] =>
     (item.status === 'HOLD' || item.status === 'ATTENTION' || item.status === 'SELL' || item.status === null) &&
     typeof item.reason === 'string' && isObject(item.indicator_facts))
 
+const isPositionIntelligence = (value: unknown): value is PositionIntelligence =>
+  isObject(value) && typeof value.portfolio_id === 'string' &&
+  typeof value.position_id === 'string' && typeof value.ticker === 'string' &&
+  typeof value.strategy_guidance_available === 'boolean' &&
+  typeof value.average_cost === 'string' && typeof value.cost_basis === 'string' &&
+  typeof value.monitoring_readiness === 'string' &&
+  (value.monitoring_status === 'HOLD' || value.monitoring_status === 'ATTENTION' ||
+    value.monitoring_status === 'SELL' || value.monitoring_status === null) &&
+  isObject(value.indicator_facts) && typeof value.explanation === 'string' &&
+  typeof value.protective_stop_policy === 'string' &&
+  typeof value.trailing_stop_policy === 'string' && typeof value.profit_target_policy === 'string'
+
+const isPaperValidation = (value: unknown): value is PaperValidation =>
+  isObject(value) && typeof value.id === 'string' && typeof value.position_id === 'string' &&
+  typeof value.ticker === 'string' && (value.status === 'OPEN' || value.status === 'CLOSED') &&
+  value.execution_source === 'ALPACA_PAPER_MANUAL' && typeof value.actual_quantity === 'number' &&
+  typeof value.actual_entry_price === 'string' && typeof value.actual_entry_at === 'string' &&
+  (typeof value.entry_fill_difference_bps === 'string' || value.entry_fill_difference_bps === null)
+
+const isPaperValidations = (value: unknown): value is PaperValidation[] =>
+  Array.isArray(value) && value.every(isPaperValidation)
+
 export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return requestJson('/api/v1/health/', { signal }, isHealth)
 }
@@ -170,6 +196,22 @@ export function addExternalPosition(portfolioId: string, request: ExternalPositi
 
 export function reconcileResearchPosition(portfolioId: string, positionId: string, request: PositionReconciliationRequest): Promise<ResearchPortfolio> {
   return requestJson(`/api/v1/portfolio/${portfolioId}/positions/${positionId}/reconcile`, { method: 'POST', body: JSON.stringify(request) }, isResearchPortfolio)
+}
+
+export function getPositionIntelligence(portfolioId: string, positionId: string, signal?: AbortSignal): Promise<PositionIntelligence> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/positions/${positionId}/intelligence`, { signal }, isPositionIntelligence)
+}
+
+export function getPositionPaperValidations(portfolioId: string, positionId: string, signal?: AbortSignal): Promise<PaperValidation[]> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/positions/${positionId}/paper-validations`, { signal }, isPaperValidations)
+}
+
+export function recordPaperValidationEntry(portfolioId: string, positionId: string, request: PaperValidationEntryRequest): Promise<PaperValidation> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/positions/${positionId}/paper-validations`, { method: 'POST', body: JSON.stringify(request) }, isPaperValidation)
+}
+
+export function recordPaperValidationExit(portfolioId: string, validationId: string, request: PaperValidationExitRequest): Promise<PaperValidation> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/paper-validations/${validationId}/exit`, { method: 'POST', body: JSON.stringify(request) }, isPaperValidation)
 }
 
 export function createPortfolioPlan(

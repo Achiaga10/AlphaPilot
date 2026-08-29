@@ -18,6 +18,17 @@ test('financial portfolio controls are backend-owned and absent from the plan fo
   expect(screen.queryByLabelText('Cash (USD)')).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Add position' })).not.toBeInTheDocument()
 })
+
+test('position intelligence renders backend facts and inactive research policy', async () => {
+  const user = userEvent.setup()
+  await renderReadyPortfolio()
+  await user.click((await screen.findAllByRole('button', { name: 'Why this position?' }))[0]!)
+  expect(await screen.findByRole('heading', { name: 'Position Intelligence' })).toBeInTheDocument()
+  expect(screen.getByText('EMA20 is still held.')).toBeInTheDocument()
+  expect(screen.getByText(/Static 3 × ATR14 · NOT ACTIVE/)).toBeInTheDocument()
+  expect(screen.getByText(/manually recorded, not broker-connected/i)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Record Alpaca Paper Entry' })).toBeInTheDocument()
+})
 test('portfolio form validates the locally editable requested date', async () => {
   const user = userEvent.setup()
   const submit = await renderReadyPortfolio()

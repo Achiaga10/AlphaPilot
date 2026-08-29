@@ -436,6 +436,91 @@ async def test_persistent_action_uses_id_revision_and_makes_old_revision_stale(
 
 
 @pytest.mark.asyncio
+async def test_same_plan_applies_two_candidates_with_fresh_persistent_revision(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    for ticker in ("ONE", "TWO"):
+        company = Company(ticker=ticker, name=ticker, exchange="NYSE", sector="Technology")
+        db_session.add(company)
+        await db_session.flush()
+        db_session.add(
+            DailyCandle(
+                company_id=company.id,
+                trading_day=date(2025, 1, 2),
+                open=Decimal("100"),
+                high=Decimal("100"),
+                low=Decimal("100"),
+                close=Decimal("100"),
+                volume=100,
+            )
+        )
+    await db_session.commit()
+    portfolio = (
+        await client.post(
+            "/api/v1/portfolio/initialize",
+            json={"starting_cash": "100000", "imported_positions": []},
+        )
+    ).json()
+    decisions = (
+        await client.post(
+            "/api/v1/portfolio/decisions",
+            json={
+                "strategy": "ema20-pullback",
+                "sizing_policy": "equal-slot",
+                "portfolio": {"cash": "100000", "positions": []},
+                "candidates": [
+                    {"ticker": ticker, "signal": "BUY", "reference_price": "100"}
+                    for ticker in ("ONE", "TWO")
+                ],
+            },
+        )
+    ).json()["decisions"]
+
+    def request(decision, revision: int, applied: list[str]) -> dict[str, object]:
+        return {
+            "plan_id": "same-plan",
+            "portfolio_id": portfolio["portfolio_id"],
+            "portfolio_revision": revision,
+            "analysis_as_of_date": "2025-01-02",
+            "selection_policy": "relative-strength-20",
+            "decision": decision,
+            "applied_action_ids": applied,
+            "strategy_profile_id": "ema20-pullback-v1",
+            "strategy_profile_version": 1,
+            "sizing_policy": "equal-slot",
+        }
+
+    first = await client.post("/api/v1/portfolio/apply-action", json=request(decisions[0], 0, []))
+    assert first.status_code == 200
+    assert first.json()["portfolio_revision"] == 1
+    first_action = decisions[0]["action_id"]
+
+    second_preview = await client.post(
+        "/api/v1/portfolio/preview-action",
+        json=request(decisions[1], 1, [first_action]),
+    )
+    assert second_preview.status_code == 200
+    assert second_preview.json()["validation_status"] == "VALID"
+    assert Decimal(second_preview.json()["cash_before"]) == Decimal("90000")
+
+    second = await client.post(
+        "/api/v1/portfolio/apply-action",
+        json=request(decisions[1], 1, [first_action]),
+    )
+    assert second.status_code == 200
+    assert second.json()["portfolio_revision"] == 2
+    current = (await client.get("/api/v1/portfolio/current")).json()
+    assert {item["ticker"] for item in current["positions"]} == {"ONE", "TWO"}
+
+    stale = await client.post(
+        "/api/v1/portfolio/preview-action",
+        json=request(decisions[1], 0, [first_action]),
+    )
+    assert stale.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_manual_sell_uses_latest_stored_close_and_supports_partial_sale(
     client: AsyncClient,
     db_session: AsyncSession,

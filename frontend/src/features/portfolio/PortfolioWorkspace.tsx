@@ -36,7 +36,7 @@ interface WorkspaceValue {
   portfolio: ResearchPortfolio | null; portfolioPending: boolean; portfolioError: Error | null; refreshPortfolio: () => Promise<void>
   draftSummary: PortfolioDraftSummary | null; plan: PortfolioPlan | null
   setPlanResult: (plan: PortfolioPlan, draft: PlanDraft) => void
-  previewDecision: (decision: PortfolioDecision, requestedShares: number) => Promise<PortfolioPlanActionResult | null>
+  previewDecision: (decision: PortfolioDecision, requestedShares?: number) => Promise<PortfolioPlanActionResult | null>
   applyDecision: (decision: PortfolioDecision, requestedShares?: number) => Promise<PortfolioPlanActionResult | null>
   applyManualSellResult: (result: ManualSellResult) => void
   appliedActionIds: ReadonlySet<string>; actionPendingId: string | null; lastActionMessage: string | null
@@ -74,22 +74,22 @@ export function PortfolioWorkspaceProvider({ children }: { children: ReactNode }
     draftSummary: portfolio ? summary(portfolio) : null, plan,
     setPlanResult: (nextPlan, submittedDraft) => { setPlan(nextPlan); setPlanPreferences(JSON.stringify({ strategy: submittedDraft.strategy, selectionPolicy: submittedDraft.selectionPolicy, asOfDate: submittedDraft.asOfDate, tickerScope: submittedDraft.tickerScope })); setAppliedActionIds(new Set()); setLastActionMessage(null); setHasPlanDeviation(false); setManualMutation(false) },
     previewDecision: async (decision, requestedShares) => {
-      if (!plan || !portfolio || decision.action_id === null || actionPendingId !== null || plan.portfolio_revision !== portfolio.revision) return null
+      if (!plan || !portfolio || decision.action_id === null || actionPendingId !== null) return null
       setActionPendingId(decision.action_id)
-      try { return await previewPortfolioPlanAction({ plan_id: plan.plan_id, portfolio_id: portfolio.portfolio_id, portfolio_revision: plan.portfolio_revision, analysis_as_of_date: plan.analysis_as_of_date, selection_policy: plan.selection_policy, decision, applied_action_ids: [...appliedActionIds], requested_shares: requestedShares, strategy_profile_id: plan.strategy_profile.profile_id, strategy_profile_version: plan.strategy_profile.version, sizing_policy: plan.sizing_policy, risk_config: plan.config }) } finally { setActionPendingId(null) }
+      try { return await previewPortfolioPlanAction({ plan_id: plan.plan_id, portfolio_id: portfolio.portfolio_id, portfolio_revision: portfolio.revision, analysis_as_of_date: plan.analysis_as_of_date, selection_policy: plan.selection_policy, decision, applied_action_ids: [...appliedActionIds], requested_shares: requestedShares ?? null, strategy_profile_id: plan.strategy_profile.profile_id, strategy_profile_version: plan.strategy_profile.version, sizing_policy: plan.sizing_policy, risk_config: plan.config }) } finally { setActionPendingId(null) }
     },
-    applyDecision: async (decision, requestedShares = decision.proposed_shares) => {
-      if (!plan || !portfolio || decision.action_id === null || actionPendingId !== null || plan.portfolio_revision !== portfolio.revision) return null
+    applyDecision: async (decision, requestedShares) => {
+      if (!plan || !portfolio || decision.action_id === null || actionPendingId !== null) return null
       setActionPendingId(decision.action_id)
       try {
-        const result = await applyPortfolioPlanAction({ plan_id: plan.plan_id, portfolio_id: portfolio.portfolio_id, portfolio_revision: plan.portfolio_revision, analysis_as_of_date: plan.analysis_as_of_date, selection_policy: plan.selection_policy, decision, applied_action_ids: [...appliedActionIds], requested_shares: requestedShares, strategy_profile_id: plan.strategy_profile.profile_id, strategy_profile_version: plan.strategy_profile.version, sizing_policy: plan.sizing_policy, risk_config: plan.config })
-        if (result.applied && result.action_id) { setAppliedActionIds((current) => new Set([...current, result.action_id!])); setLastActionMessage(`${decision.ticker} research portfolio action was persisted. Regenerate the plan for the new portfolio revision.`); if (result.quantity_semantics === 'USER_QUANTITY_OVERRIDE') setHasPlanDeviation(true); await refreshPortfolio() }
+        const result = await applyPortfolioPlanAction({ plan_id: plan.plan_id, portfolio_id: portfolio.portfolio_id, portfolio_revision: portfolio.revision, analysis_as_of_date: plan.analysis_as_of_date, selection_policy: plan.selection_policy, decision, applied_action_ids: [...appliedActionIds], requested_shares: requestedShares ?? null, strategy_profile_id: plan.strategy_profile.profile_id, strategy_profile_version: plan.strategy_profile.version, sizing_policy: plan.sizing_policy, risk_config: plan.config })
+        if (result.applied && result.action_id) { setAppliedActionIds((current) => new Set([...current, result.action_id!])); setLastActionMessage(`${decision.ticker} research portfolio action was persisted. Remaining candidates will be freshly revalidated against revision ${result.portfolio_revision}.`); if (result.quantity_semantics === 'USER_QUANTITY_OVERRIDE') setHasPlanDeviation(true); await refreshPortfolio() }
         return result
       } finally { setActionPendingId(null) }
     },
     applyManualSellResult: (result) => { if (result.applied) { setManualMutation(true); setLastActionMessage('Research portfolio sale was persisted. Regenerate the plan for the new portfolio revision.'); void refreshPortfolio() } },
     appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions: appliedActionIds.size > 0,
-    isPlanDirty: plan !== null && (portfolio === null || plan.portfolio_revision !== portfolio.revision || appliedActionIds.size > 0 || manualMutation || planPreferences !== JSON.stringify({ strategy: draft.strategy, selectionPolicy: draft.selectionPolicy, asOfDate: draft.asOfDate, tickerScope: draft.tickerScope })), hasPlanDeviation,
+    isPlanDirty: plan !== null && (portfolio === null || manualMutation || planPreferences !== JSON.stringify({ strategy: draft.strategy, selectionPolicy: draft.selectionPolicy, asOfDate: draft.asOfDate, tickerScope: draft.tickerScope })), hasPlanDeviation,
   }), [actionPendingId, appliedActionIds, draft, hasPlanDeviation, lastActionMessage, manualMutation, plan, planPreferences, portfolio, portfolioQuery.data, portfolioQuery.error, portfolioQuery.isPending, refreshPortfolio])
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

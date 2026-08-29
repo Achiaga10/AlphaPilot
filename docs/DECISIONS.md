@@ -1,5 +1,21 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 18 Frozen Decisions
+
+- Position Intelligence is a deterministic, side-effect-free backend assembly
+  of stored position, profile, valuation, monitoring/history, exit-policy, and
+  audit facts; clients must not reconstruct strategy guidance.
+- Unknown-profile legacy/manual positions expose valuation/history with explicit
+  unavailable guidance and never fabricated HOLD/ATTENTION/SELL.
+- Manual paper records use `ALPACA_PAPER_MANUAL`, are observational only, and
+  cannot mutate portfolio cash, quantity, revision, monitoring, or strategy.
+- V1 supports one immutable aggregated entry and one one-time full exit, using
+  Decimal/Numeric comparisons and P&L; it is not broker synchronization.
+- Reconciliation machine classification uses validated reason codes plus an
+  optional note, while legacy free-text reason remains readable.
+- Sprint 17 monitoring, sticky SELL, scheduler, completed-session, Strategy
+  Profile, Strategy Lab, and frozen research semantics remain unchanged.
+
 ## Sprint 17 Frozen Decisions
 
 - Monitoring uses only stored Strategy Profile provenance and completed daily
