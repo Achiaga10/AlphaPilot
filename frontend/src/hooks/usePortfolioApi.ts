@@ -14,6 +14,7 @@ import {
   getPositionPaperValidations,
   recordPaperValidationEntry,
   recordPaperValidationExit,
+  askPositionCopilot,
   previewManualSell,
 } from '../api/portfolio'
 import {
@@ -121,6 +122,10 @@ export function usePaperValidationExitMutation(portfolioId: string) {
     mutationFn: ({ validationId, request }: { validationId: string; request: PaperValidationExitRequest }) =>
       recordPaperValidationExit(portfolioId, validationId, request),
   })
+}
+
+export function usePositionCopilotMutation(portfolioId: string, positionId: string) {
+  return useMutation({ mutationFn: (question: string) => askPositionCopilot(portfolioId, positionId, question) })
 }
 
 export function useLatestStoredPriceQuery(ticker: string | null) {

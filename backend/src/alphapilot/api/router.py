@@ -4,6 +4,7 @@ from alphapilot.api.routes.admin_data import router as admin_data_router
 from alphapilot.api.routes.companies import (
     router as companies_router,
 )
+from alphapilot.api.routes.copilot import router as copilot_router
 from alphapilot.api.routes.daily_candles import (
     router as daily_candles_router,
 )
@@ -54,6 +55,8 @@ router.include_router(
 )
 
 router.include_router(portfolio_router)
+
+router.include_router(copilot_router)
 
 router.include_router(admin_data_router)
 

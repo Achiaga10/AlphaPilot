@@ -22,6 +22,7 @@ import type {
   PaperValidationEntryRequest,
   PaperValidationExitRequest,
   StrategyProfile,
+  CopilotAnswer,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -156,6 +157,20 @@ const isPaperValidation = (value: unknown): value is PaperValidation =>
 const isPaperValidations = (value: unknown): value is PaperValidation[] =>
   Array.isArray(value) && value.every(isPaperValidation)
 
+const isCopilotAnswer = (value: unknown): value is CopilotAnswer =>
+  isObject(value) && typeof value.answer === 'string' && value.answer.length > 0 &&
+  (value.scope === 'POSITION' || value.scope === 'PORTFOLIO') &&
+  typeof value.portfolio_id === 'string' &&
+  (typeof value.position_id === 'string' || value.position_id === null) &&
+  (typeof value.ticker === 'string' || value.ticker === null) &&
+  (value.grounding_status === 'GROUNDED' || value.grounding_status === 'LIMITED') &&
+  Array.isArray(value.fact_refs) && value.fact_refs.length > 0 &&
+  value.fact_refs.every((fact) => isObject(fact) && typeof fact.fact_id === 'string' &&
+    typeof fact.source === 'string' && typeof fact.field === 'string' &&
+    typeof fact.label === 'string' && 'value' in fact) &&
+  Array.isArray(value.limitations) && value.limitations.every((item) => typeof item === 'string') &&
+  typeof value.provider === 'string' && typeof value.model === 'string'
+
 export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return requestJson('/api/v1/health/', { signal }, isHealth)
 }
@@ -212,6 +227,14 @@ export function recordPaperValidationEntry(portfolioId: string, positionId: stri
 
 export function recordPaperValidationExit(portfolioId: string, validationId: string, request: PaperValidationExitRequest): Promise<PaperValidation> {
   return requestJson(`/api/v1/portfolio/${portfolioId}/paper-validations/${validationId}/exit`, { method: 'POST', body: JSON.stringify(request) }, isPaperValidation)
+}
+
+export function askPositionCopilot(portfolioId: string, positionId: string, question: string): Promise<CopilotAnswer> {
+  return requestJson(
+    `/api/v1/ai/copilot/portfolio/${portfolioId}/positions/${positionId}/ask`,
+    { method: 'POST', body: JSON.stringify({ question }) },
+    isCopilotAnswer,
+  )
 }
 
 export function createPortfolioPlan(

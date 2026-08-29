@@ -24,14 +24,14 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 18 —
-Position Intelligence & Paper Validation Foundation (COMPLETE LOCALLY)
+Sprint 19 — AlphaPilot AI Copilot Foundation (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
 complete, reviewed, and merged. Sprint 17 is complete, reviewed, and merged.
-Sprint 18 is complete locally on `feature/position-intelligence-paper-validation`.
-Do not add or tune strategies. Do not begin Sprint 19.
+Sprint 18 is complete and merged. Sprint 19 is complete locally on
+`feature/ai-copilot-foundation`. Do not add or tune strategies. Do not begin
+Sprint 20.
 
 ## Development Environment
 
@@ -251,13 +251,14 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 18 Task
+## Sprint 19 Task
 
-Add a deterministic Position Intelligence contract, a manual Alpaca Paper
-forward-validation journal, and structured reconciliation reason codes. Do not
-connect to a broker, auto-trade, add AI/LLM, or activate research-only stops.
+Add a read-only grounded Copilot over deterministic AlphaPilot facts plus a
+typed Stop/Exit Guidance contract. Do not give AI trading authority, connect a
+broker, add SQL/shell tools, use LangChain/LangGraph, or activate research-only
+stops.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT18_COMPLETION_REPORT.md`, stop. Do not begin
-Sprint 19.
+After creating `docs/sprints/SPRINT19_COMPLETION_REPORT.md`, stop. Do not begin
+Sprint 20.

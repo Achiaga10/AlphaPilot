@@ -29,6 +29,38 @@ test('position intelligence renders backend facts and inactive research policy',
   expect(screen.getByText(/manually recorded, not broker-connected/i)).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Record Alpaca Paper Entry' })).toBeInTheDocument()
 })
+
+test('position Copilot renders grounded stop references separately from active policy', async () => {
+  const user = userEvent.setup()
+  await renderReadyPortfolio()
+  await user.click((await screen.findAllByRole('button', { name: 'Why this position?' }))[0]!)
+  expect(await screen.findByRole('heading', { name: /Ask AlphaPilot AI about MSFT/ })).toBeInTheDocument()
+  await user.type(screen.getByLabelText('Question for MSFT'), 'What is my stop?')
+  await user.click(screen.getByRole('button', { name: 'Ask AlphaPilot AI' }))
+  expect(await screen.findByRole('heading', { name: 'AI explanation' })).toBeInTheDocument()
+  expect(screen.getByText(/no active protective stop/i)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Based on AlphaPilot data' })).toBeInTheDocument()
+  expect(screen.getByText('Active protective stop').nextSibling).toHaveTextContent('NONE')
+  expect(screen.getByText('EMA50_HARD_BREAKDOWN').nextSibling).toHaveTextContent('19.16')
+  expect(screen.getByText('EMA20_CONDITIONAL_BREAKDOWN').nextSibling).toHaveTextContent('20.10')
+  expect(screen.getByText(/As of completed session/)).toHaveTextContent('Aug 20, 2026')
+  expect(screen.getByText(/no broker order or portfolio mutation/i)).toBeInTheDocument()
+  expect(screen.queryByText(/Stop Loss/i)).not.toBeInTheDocument()
+})
+
+test('malformed Copilot response fails closed', async () => {
+  const user = userEvent.setup()
+  server.use(
+    http.post(`${API_BASE_URL}/api/v1/ai/copilot/portfolio/:portfolioId/positions/:positionId/ask`, () =>
+      HttpResponse.json({ answer: 'unsupported without evidence' }),
+    ),
+  )
+  await renderReadyPortfolio()
+  await user.click((await screen.findAllByRole('button', { name: 'Why this position?' }))[0]!)
+  await user.type(screen.getByLabelText('Question for MSFT'), 'What is my stop?')
+  await user.click(screen.getByRole('button', { name: 'Ask AlphaPilot AI' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(/disabled, unavailable, or returned an invalid grounded response/i)
+})
 test('portfolio form validates the locally editable requested date', async () => {
   const user = userEvent.setup()
   const submit = await renderReadyPortfolio()

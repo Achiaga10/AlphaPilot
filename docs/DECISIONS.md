@@ -1,5 +1,24 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 19 Frozen Decisions
+
+- AlphaPilot deterministic services calculate and decide; the AI only explains
+  structured facts and has no portfolio-write, broker, SQL, shell, or browsing tool.
+- Stop/Exit Guidance distinguishes active policy, strategy exit reference,
+  research-only evidence, none, and unavailable. Current protective/trailing/
+  profit policies remain NONE.
+- EMA50 is a hard completed-close exit reference; EMA20 is conditional under
+  frozen HYBRID 2%. Micho SMA150 is a completed-close exit reference. None is a
+  broker stop order.
+- Sprint 12 ATR candidates remain RESEARCH_ONLY / NOT_ACTIVE.
+- The provider boundary receives canonical facts only. Ollama is local,
+  environment-configured, optional, and never required by tests/CI.
+- Sprint 19 uses direct application code, not LangChain or LangGraph, and adds
+  no strategy/profile/ranking/sizing/monitoring/paper-accounting change.
+- Sprint 19 completed locally with typed position and portfolio Copilot APIs,
+  deterministic Stop/Exit Guidance, local Ollama support, fake-only automated
+  tests, grounded evidence rendering, and no write or trade authority.
+
 ## Sprint 18 Frozen Decisions
 
 - Position Intelligence is a deterministic, side-effect-free backend assembly

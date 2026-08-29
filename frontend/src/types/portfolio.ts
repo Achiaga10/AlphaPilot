@@ -477,6 +477,28 @@ export interface PositionIntelligence {
   reconciliation_event_count: number
 }
 
+export interface CopilotFactReference {
+  fact_id: string
+  source: string
+  field: string
+  label: string
+  value: unknown
+}
+
+export interface CopilotAnswer {
+  answer: string
+  scope: 'POSITION' | 'PORTFOLIO'
+  portfolio_id: string
+  position_id: string | null
+  ticker: string | null
+  as_of_date: string | null
+  grounding_status: 'GROUNDED' | 'LIMITED'
+  fact_refs: CopilotFactReference[]
+  limitations: string[]
+  provider: string
+  model: string
+}
+
 export interface PaperValidation {
   id: string
   portfolio_id: string

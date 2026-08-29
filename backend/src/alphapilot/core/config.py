@@ -19,6 +19,12 @@ class Settings(BaseSettings):
 
     DAILY_MARKET_SYNC_ENABLED: bool = False
 
+    AI_COPILOT_ENABLED: bool = False
+    AI_PROVIDER: Literal["ollama"] = "ollama"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    OLLAMA_MODEL: str = ""
+    OLLAMA_TIMEOUT_SECONDS: float = 30.0
+
     DATABASE_URL: str = "postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot"
     TEST_DATABASE_URL: str | None = None
 
