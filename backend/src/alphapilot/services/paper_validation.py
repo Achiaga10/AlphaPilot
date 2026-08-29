@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -69,6 +69,7 @@ class PaperValidationService:
     ) -> PaperValidationView:
         if actual_quantity <= 0 or actual_entry_price <= 0:
             raise ValueError("Paper entry requires positive whole shares and fill price")
+        actual_entry_at = self._utc_execution_instant(actual_entry_at)
         position = await self.portfolios.get_position(portfolio_id, position_id)
         if position is None:
             raise ValueError("Research position not found")
@@ -123,6 +124,7 @@ class PaperValidationService:
         actual_exit_at: datetime,
         note: str | None,
     ) -> PaperValidationView:
+        actual_exit_at = self._utc_execution_instant(actual_exit_at)
         record = await self.portfolios.get_paper_validation(
             portfolio_id, validation_id, for_update=True
         )
@@ -156,6 +158,12 @@ class PaperValidationService:
         await self.session.commit()
         await self.session.refresh(record)
         return self._view(record)
+
+    @staticmethod
+    def _utc_execution_instant(value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Paper execution timestamp must include a timezone offset")
+        return value.astimezone(UTC)
 
     @staticmethod
     def _view(record: PaperValidationRecord) -> PaperValidationView:

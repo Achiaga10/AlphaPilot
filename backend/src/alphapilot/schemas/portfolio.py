@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.portfolio.actions import (
@@ -522,14 +522,14 @@ class PositionIntelligenceSchema(BaseModel):
 class PaperValidationEntryRequestSchema(BaseModel):
     actual_quantity: int = Field(gt=0)
     actual_average_fill_price: Decimal = Field(gt=0)
-    actual_execution_at: datetime
+    actual_execution_at: AwareDatetime
     note: str | None = Field(default=None, max_length=500)
 
 
 class PaperValidationExitRequestSchema(BaseModel):
     actual_exit_quantity: int = Field(gt=0)
     actual_average_exit_fill: Decimal = Field(gt=0)
-    actual_execution_at: datetime
+    actual_execution_at: AwareDatetime
     note: str | None = Field(default=None, max_length=500)
 
 

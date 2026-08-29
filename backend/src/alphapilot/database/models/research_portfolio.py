@@ -10,6 +10,7 @@ from sqlalchemy import (
     JSON,
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -246,11 +247,11 @@ class PaperValidationRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reference_entry_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
     actual_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     actual_entry_price: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
-    actual_entry_at: Mapped[datetime] = mapped_column(nullable=False)
+    actual_entry_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     entry_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     actual_exit_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_exit_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
-    actual_exit_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    actual_exit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exit_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     alphapilot_exit_triggered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     alphapilot_exit_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)

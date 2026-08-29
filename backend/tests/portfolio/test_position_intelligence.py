@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import text
 
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
@@ -133,6 +134,8 @@ async def test_manual_paper_entry_exit_is_decimal_and_cannot_mutate_portfolio(db
         note="Manual Alpaca Paper fill",
     )
     assert entry.execution_source == "ALPACA_PAPER_MANUAL"
+    assert entry.actual_entry_at == datetime(2025, 1, 3, 15, tzinfo=UTC)
+    assert entry.actual_entry_at.utcoffset() is not None
     assert entry.entry_fill_difference == Decimal("0.25")
     assert entry.entry_fill_difference_bps == Decimal("25.00")
     assert entry.quantity_difference == 0
@@ -146,6 +149,9 @@ async def test_manual_paper_entry_exit_is_decimal_and_cannot_mutate_portfolio(db
     )
     assert closed.paper_gross_pnl == Decimal("97.50")
     assert closed.paper_gross_return_pct == Decimal("9.725685785536159600997506234")
+    assert closed.actual_exit_at == datetime(2025, 7, 1, 15, tzinfo=UTC)
+    assert closed.actual_exit_at is not None
+    assert closed.actual_exit_at.utcoffset() is not None
     portfolio_after = await ResearchPortfolioService(db_session).value(portfolio.id)
     assert portfolio_after.cash == portfolio_before.cash
     assert portfolio_after.revision == portfolio_before.revision
@@ -205,6 +211,7 @@ async def test_position_intelligence_and_paper_api_contract(client, db_session) 
         },
     )
     assert entry.status_code == 200
+    assert entry.json()["actual_entry_at"] == "2025-01-03T15:00:00Z"
     assert Decimal(entry.json()["entry_fill_difference_bps"]) == Decimal("25")
     validation_id = entry.json()["id"]
     closed = await client.post(
@@ -218,9 +225,51 @@ async def test_position_intelligence_and_paper_api_contract(client, db_session) 
     )
     assert closed.status_code == 200
     assert closed.json()["paper_gross_pnl"] == "97.5000"
+    assert closed.json()["actual_exit_at"] == "2025-07-01T15:00:00Z"
 
     invalid_reason = await client.post(
         f"/api/v1/portfolio/{portfolio.id}/cash-adjustments",
         json={"expected_revision": 1, "delta": "1", "reason_code": "ARBITRARY"},
     )
     assert invalid_reason.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_paper_execution_timestamps_require_explicit_timezone(client, db_session) -> None:
+    portfolio, position = await _managed_position(db_session)
+    response = await client.post(
+        f"/api/v1/portfolio/{portfolio.id}/positions/{position.id}/paper-validations",
+        json={
+            "actual_quantity": 10,
+            "actual_average_fill_price": "100.25",
+            "actual_execution_at": "2025-01-03T15:00:00",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "timezone_aware"
+
+    with pytest.raises(ValueError, match="must include a timezone offset"):
+        await PaperValidationService(db_session).record_entry(
+            portfolio_id=portfolio.id,
+            position_id=position.id,
+            actual_quantity=10,
+            actual_entry_price=Decimal("100.25"),
+            actual_entry_at=datetime(2025, 1, 3, 15),
+            note=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_paper_execution_columns_are_postgresql_timestamptz(db_session) -> None:
+    result = await db_session.execute(
+        text(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_schema = current_schema() "
+            "AND table_name = 'paper_validation_records' "
+            "AND column_name IN ('actual_entry_at', 'actual_exit_at')"
+        )
+    )
+    assert dict(result.all()) == {
+        "actual_entry_at": "timestamp with time zone",
+        "actual_exit_at": "timestamp with time zone",
+    }

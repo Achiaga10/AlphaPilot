@@ -243,13 +243,41 @@ PostgreSQL databases, upgrades both to head, runs backend Ruff/format/mypy/
 pytest and frontend lint/test/build, leaves the scheduler disabled by default,
 provides no broker credentials, and makes no Alpaca Trading API call.
 
+## CI Timezone Regression Fix
+
+GitHub Actions on Linux/PostgreSQL exposed a real mismatch that the earlier
+local run did not reveal: the API and service supplied timezone-aware execution
+instants, but Sprint 18 migration `a18c4d9e2f70` and the inferred ORM mapping
+created `paper_validation_records.actual_entry_at` and `actual_exit_at` as
+`TIMESTAMP WITHOUT TIME ZONE`. Asyncpg consequently failed while binding an
+aware UTC datetime. The earlier 309-test result was a local result, not a
+successful GitHub CI result; CI initially reported 307 passed and two failed.
+
+Follow-up revision `c5e8f1a2b3d4` upgrades both columns to PostgreSQL
+`TIMESTAMP WITH TIME ZONE` (`TIMESTAMPTZ`). Its explicit PostgreSQL `USING`
+expressions interpret any legacy naive stored values as UTC, independent of the
+database session timezone; downgrade conversion is also explicitly UTC. The ORM
+now uses `DateTime(timezone=True)` for both fields. Entry and exit request
+schemas require an aware ISO-8601 datetime, the domain service rejects naive
+values with a clear error, and accepted instants are normalized to UTC without
+changing the represented instant.
+
+The focused Position Intelligence/Paper Validation suite passed **7 tests**.
+The existing-database path was verified on the dedicated test database by
+downgrading only the new revision to `a18c4d9e2f70`, upgrading to
+`c5e8f1a2b3d4`, and confirming both final column types and aware persistence.
+The final backend gate passed: Ruff PASS, formatting PASS, mypy PASS across 157
+source files, and pytest **311 passed in 37.73s**. Paper Decimal calculations,
+portfolio cash/quantity/revision isolation, Position Intelligence, monitoring,
+and all paper-validation semantics remain unchanged.
+
 ## Regression guarantees
 
 EMA HYBRID 2%, Micho BOTH/SMA150, HOLD/ATTENTION/SELL classifications, sticky
 SELL, completed-session valuation, the 16:30 New York scheduler, Strategy
 Profiles, Strategy Lab, Sprint 13 reproducibility, Scanner/Evaluate identity,
 portfolio accounting/revisions, sizing/risk, and T+1 research semantics did not
-change. All corresponding suites passed within the 309-test gate. No stop,
+change. All corresponding suites passed within the final 311-test gate. No stop,
 trailing stop, or profit target became active. Paper facts do not feed strategy,
 monitoring, ranking, sizing, plans, or portfolio mutations.
 
@@ -304,6 +332,14 @@ uv run pytest tests/portfolio/test_position_intelligence.py `
   tests/api/test_portfolio_decisions.py tests/api/test_scanner.py -q
 .\run_checks.ps1
 
+# CI timezone regression follow-up
+uv run alembic upgrade head
+# On the dedicated test database only:
+uv run alembic downgrade a18c4d9e2f70
+uv run alembic upgrade head
+uv run pytest tests/portfolio/test_position_intelligence.py -q
+.\run_checks.ps1
+
 cd ..\frontend
 npm run lint
 npm test -- --run --reporter=dot
@@ -318,28 +354,15 @@ git status --short
 
 ## Git handoff
 
-The working tree intentionally contains only local Sprint 18 changes on
-`feature/position-intelligence-paper-validation`. No commit, push, PR, merge,
-force-push, or tag operation was performed. The final `git status` and diff stat
-are: 24 modified tracked files and eight untracked Sprint 18 files. Tracked diff
-stat is **24 files changed, 962 insertions, 65 deletions**; untracked files are
-not included by `git diff --stat`. `git diff --check` passed with only expected
-Windows LF-to-CRLF working-copy notices.
+Sprint 18 is already committed on
+`feature/position-intelligence-paper-validation`. The CI timezone repair remains
+local and uncommitted: four tracked backend files plus this report are modified,
+and follow-up migration
+`backend/migrations/versions/c5e8f1a2b3d4_make_paper_execution_timestamps_aware.py`
+is untracked. No commit, push, PR, merge, force-push, or tag operation was
+performed for this repair. These files are ready for user review and inclusion
+in the existing Sprint 18 PR.
 
-Untracked files:
+Recommended fix commit message:
 
-- `backend/migrations/versions/a18c4d9e2f70_add_position_intelligence_paper_validation.py`
-- `backend/src/alphapilot/services/paper_validation.py`
-- `backend/src/alphapilot/services/position_intelligence.py`
-- `backend/tests/portfolio/test_position_intelligence.py`
-- `docs/sprints/SPRINT18_COMPLETION_REPORT.md`
-- `docs/sprints/SPRINT18_PLAN.md`
-- `frontend/scripts/sprint18-multi-action-smoke.mjs`
-- `frontend/src/features/portfolio/PositionIntelligencePanel.tsx`
-
-All modified and untracked files listed by final Git status are ready for user
-review and commit.
-
-Recommended commit message:
-
-`feat(portfolio): add position intelligence and paper validation`
+`fix(portfolio): preserve timezone-aware paper execution timestamps`
