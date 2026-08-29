@@ -63,7 +63,12 @@ async def _managed_position(db_session):
             strategy_profile_id="ema20-pullback-v1",
             strategy_profile_version=1,
             latest_close=Decimal("110"),
-            indicator_facts={"ema20": "108", "active_exit_policy": "HYBRID"},
+            indicator_facts={
+                "ema20": "108",
+                "ema50": "105",
+                "strong_trend": True,
+                "active_exit_policy": "HYBRID",
+            },
             exit_triggered=False,
         )
     )
