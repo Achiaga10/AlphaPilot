@@ -17,6 +17,12 @@ class Sprint12ResearchStage(StrEnum):
     DEVELOPMENT = "development"
     VALIDATION = "validation"
     FOLD = "fold"
+    SPRINT20_DEVELOPMENT = "sprint20-development"
+    SPRINT20_VALIDATION = "sprint20-validation"
+    SPRINT20_FOLD = "sprint20-fold"
+    SPRINT20_ROUND2_DEVELOPMENT = "sprint20-round2-development"
+    SPRINT20_ROUND2_VALIDATION = "sprint20-round2-validation"
+    SPRINT20_ROUND2_FOLD = "sprint20-round2-fold"
 
 
 @dataclass(slots=True, frozen=True)
@@ -32,6 +38,27 @@ class Sprint12ExitConfiguration:
 
     @classmethod
     def parse(cls, value: str) -> Sprint12ExitConfiguration:
+        return cls._parse(
+            value,
+            allowed_protective={
+                ProtectiveStopPolicyName.CONTROL,
+                ProtectiveStopPolicyName.ATR_STOP_1_5,
+                ProtectiveStopPolicyName.ATR_STOP_2_0,
+                ProtectiveStopPolicyName.ATR_STOP_3_0,
+            },
+        )
+
+    @classmethod
+    def parse_sprint20(cls, value: str) -> Sprint12ExitConfiguration:
+        return cls._parse(value, allowed_protective=set(ProtectiveStopPolicyName))
+
+    @classmethod
+    def _parse(
+        cls,
+        value: str,
+        *,
+        allowed_protective: set[ProtectiveStopPolicyName],
+    ) -> Sprint12ExitConfiguration:
         parts = value.split("+")
         if len(parts) > 2:
             raise ValueError("configuration permits one protective stop and one overlay")
@@ -40,6 +67,8 @@ class Sprint12ExitConfiguration:
             protective = ProtectiveStopPolicyName(parts[0])
         except ValueError as exc:
             raise ValueError(f"undeclared Sprint 12 protective stop: {parts[0]}") from exc
+        if protective not in allowed_protective:
+            raise ValueError(f"undeclared Sprint 12 protective stop: {parts[0]}")
 
         trailing = TrailingStopPolicyName.NONE
         profit = ProfitManagementPolicyName.NONE
@@ -100,6 +129,25 @@ def validate_stage_configurations(
     if len({item.label for item in configurations}) != len(configurations):
         raise ValueError("duplicate exit configurations are not permitted")
     if stage in (Sprint12ResearchStage.BASELINE, Sprint12ResearchStage.DEVELOPMENT):
+        return
+    if stage in (
+        Sprint12ResearchStage.SPRINT20_DEVELOPMENT,
+        Sprint12ResearchStage.SPRINT20_ROUND2_DEVELOPMENT,
+    ):
+        return
+    if stage in (
+        Sprint12ResearchStage.SPRINT20_VALIDATION,
+        Sprint12ResearchStage.SPRINT20_FOLD,
+        Sprint12ResearchStage.SPRINT20_ROUND2_VALIDATION,
+        Sprint12ResearchStage.SPRINT20_ROUND2_FOLD,
+    ):
+        if (
+            len(configurations) != 2
+            or configurations[0].trade_management != TradeManagementConfig()
+        ):
+            raise ValueError(
+                "Sprint 20 validation/folds require control followed by one frozen candidate"
+            )
         return
 
     frozen = (frozen_selections or FROZEN_EXIT_SELECTIONS).get(strategy)

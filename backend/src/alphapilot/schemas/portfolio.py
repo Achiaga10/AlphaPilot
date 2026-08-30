@@ -12,6 +12,7 @@ from alphapilot.portfolio.actions import (
     PlanActionQuantitySemantics,
     PlanActionValidationStatus,
 )
+from alphapilot.portfolio.execution_readiness import ExecutionReadiness, ExecutionReadinessReason
 from alphapilot.portfolio.exit_guidance import FixedTakeProfitPolicy, StrategyExitState
 from alphapilot.portfolio.orchestration import CandidateDataStatus, PlanReadinessStatus
 from alphapilot.portfolio.sizing import (
@@ -146,6 +147,16 @@ class PortfolioDecisionSchema(BaseModel):
     application_order: int | None = None
     depends_on_action_ids: list[str] = []
     exit_context: StrategyExitContextSchema | None = None
+    execution_readiness: ExecutionReadiness = ExecutionReadiness.RESEARCH_ONLY
+    execution_readiness_reason: ExecutionReadinessReason = (
+        ExecutionReadinessReason.NO_APPROVED_LOSS_CONTROL_POLICY
+    )
+    approved_protective_stop_price: Decimal | None = None
+    loss_control_policy: str = "NONE"
+    loss_control_boundary_price: Decimal | None = None
+    loss_control_trigger: str | None = None
+    loss_control_active: bool = False
+    loss_control_broker_stop_order: bool = False
 
 
 class PortfolioPositionSummarySchema(BaseModel):
@@ -513,6 +524,11 @@ class PositionIntelligenceSchema(BaseModel):
     profit_target_policy: str
     research_only_stop_candidate: str | None
     research_only_stop_status: str | None
+    loss_control_policy: str
+    current_loss_control_boundary: Decimal | None
+    loss_control_trigger: str | None
+    loss_control_active: bool
+    loss_control_broker_stop_order: bool
     price_change_since_entry: Decimal | None
     explanation: str
     trade_event_count: int

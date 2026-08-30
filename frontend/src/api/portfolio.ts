@@ -23,6 +23,7 @@ import type {
   PaperValidationExitRequest,
   StrategyProfile,
   CopilotAnswer,
+  UnifiedCopilotQuestion,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -159,12 +160,12 @@ const isPaperValidations = (value: unknown): value is PaperValidation[] =>
 
 const isCopilotAnswer = (value: unknown): value is CopilotAnswer =>
   isObject(value) && typeof value.answer === 'string' && value.answer.length > 0 &&
-  (value.scope === 'POSITION' || value.scope === 'PORTFOLIO') &&
-  typeof value.portfolio_id === 'string' &&
+  (value.scope === 'GENERAL' || value.scope === 'POSITION' || value.scope === 'PORTFOLIO') &&
+  (typeof value.portfolio_id === 'string' || value.portfolio_id === null) &&
   (typeof value.position_id === 'string' || value.position_id === null) &&
   (typeof value.ticker === 'string' || value.ticker === null) &&
   (value.grounding_status === 'GROUNDED' || value.grounding_status === 'LIMITED') &&
-  Array.isArray(value.fact_refs) && value.fact_refs.length > 0 &&
+  Array.isArray(value.fact_refs) &&
   value.fact_refs.every((fact) => isObject(fact) && typeof fact.fact_id === 'string' &&
     typeof fact.source === 'string' && typeof fact.field === 'string' &&
     typeof fact.label === 'string' && 'value' in fact) &&
@@ -233,6 +234,25 @@ export function askPositionCopilot(portfolioId: string, positionId: string, ques
   return requestJson(
     `/api/v1/ai/copilot/portfolio/${portfolioId}/positions/${positionId}/ask`,
     { method: 'POST', body: JSON.stringify({ question }) },
+    isCopilotAnswer,
+  )
+}
+
+export function askPortfolioCopilot(portfolioId: string, question: string): Promise<CopilotAnswer> {
+  return requestJson(`/api/v1/ai/copilot/portfolio/${portfolioId}/ask`, { method: 'POST', body: JSON.stringify({ question }) }, isCopilotAnswer)
+}
+
+export function askGeneralCopilot(question: string): Promise<CopilotAnswer> {
+  return requestJson('/api/v1/ai/copilot/general/ask', { method: 'POST', body: JSON.stringify({ question }) }, isCopilotAnswer)
+}
+
+export function askUnifiedCopilot(
+  portfolioId: string,
+  request: UnifiedCopilotQuestion,
+): Promise<CopilotAnswer> {
+  return requestJson(
+    `/api/v1/ai/copilot/portfolio/${portfolioId}/query`,
+    { method: 'POST', body: JSON.stringify(request) },
     isCopilotAnswer,
   )
 }

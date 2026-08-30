@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
+from alphapilot.portfolio.execution_readiness import (
+    ExecutionReadiness,
+    ExecutionReadinessReason,
+    LossControlEvidence,
+    classify_new_buy,
+)
 from alphapilot.portfolio.exit_guidance import StrategyExitContext
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.portfolio.sizing import (
@@ -86,6 +92,16 @@ class PortfolioDecision:
     application_order: int | None = None
     depends_on_action_ids: tuple[str, ...] = ()
     exit_context: StrategyExitContext | None = None
+    execution_readiness: ExecutionReadiness = ExecutionReadiness.RESEARCH_ONLY
+    execution_readiness_reason: ExecutionReadinessReason = (
+        ExecutionReadinessReason.NO_APPROVED_LOSS_CONTROL_POLICY
+    )
+    approved_protective_stop_price: Decimal | None = None
+    loss_control_policy: str = "NONE"
+    loss_control_boundary_price: Decimal | None = None
+    loss_control_trigger: str | None = None
+    loss_control_active: bool = False
+    loss_control_broker_stop_order: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -465,6 +481,12 @@ class PortfolioDecisionEngine:
                 if action_order > 0 and (outlay is not None or cash_after is not None)
                 else None
             )
+            evidence = PortfolioDecisionEngine._micho_loss_control(decision)
+            readiness, readiness_reason = (
+                classify_new_buy(evidence)
+                if decision.decision == PortfolioDecisionType.BUY
+                else (ExecutionReadiness.RESEARCH_ONLY, ExecutionReadinessReason.NOT_A_NEW_BUY)
+            )
             enriched.append(
                 replace(
                     decision,
@@ -474,9 +496,40 @@ class PortfolioDecisionEngine:
                     action_id=action_id,
                     application_order=action_order if action_id is not None else None,
                     depends_on_action_ids=(),
+                    execution_readiness=readiness,
+                    execution_readiness_reason=readiness_reason,
+                    approved_protective_stop_price=None,
+                    loss_control_policy=evidence.policy_name if evidence else "NONE",
+                    loss_control_boundary_price=evidence.boundary_price if evidence else None,
+                    loss_control_trigger=evidence.trigger if evidence else None,
+                    loss_control_active=evidence is not None,
+                    loss_control_broker_stop_order=evidence.broker_stop_order
+                    if evidence
+                    else False,
                 )
             )
         return tuple(enriched)
+
+    @staticmethod
+    def _micho_loss_control(decision: PortfolioDecision) -> LossControlEvidence | None:
+        context = decision.exit_context
+        if context is None or context.strategy.value != "micho-150" or context.sma150 is None:
+            return None
+        boundary = context.sma150
+        distance = decision.reference_price - boundary
+        if boundary <= 0 or distance <= 0 or decision.reference_price <= 0:
+            return None
+        return LossControlEvidence(
+            policy_name="SMA150_COMPLETED_CLOSE_EXIT",
+            boundary_price=boundary,
+            distance_dollars=distance,
+            distance_pct=distance / decision.reference_price * Decimal("100"),
+            trigger="COMPLETED_DAILY_CLOSE_BELOW",
+            strategy_profile_id="micho-150-v1",
+            strategy_profile_version=1,
+            classification="ACTIVE_STRATEGY_LOSS_CONTROL",
+            broker_stop_order=False,
+        )
 
     @staticmethod
     def _sector(value: str | None) -> str:

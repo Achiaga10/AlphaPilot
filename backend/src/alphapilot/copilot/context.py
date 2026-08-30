@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from alphapilot.copilot.navigation import navigation_facts
 from alphapilot.portfolio.stop_exit_guidance import StopExitGuidanceService
 from alphapilot.services.paper_validation import PaperValidationService
 from alphapilot.services.position_intelligence import PositionIntelligenceService
@@ -16,7 +17,7 @@ from alphapilot.services.research_portfolio import ResearchPortfolioService
 @dataclass(frozen=True, slots=True)
 class CopilotContext:
     scope: str
-    portfolio_id: UUID
+    portfolio_id: UUID | None
     position_id: UUID | None
     ticker: str | None
     as_of_date: date | None
@@ -48,6 +49,49 @@ class CopilotContextAssembler:
             }
 
         add("position.ticker", "position_intelligence", "ticker", item.ticker, "Ticker")
+        add(
+            "position.average_cost",
+            "position_intelligence",
+            "average_cost",
+            item.average_cost,
+            "Average cost per share",
+        )
+        add("position.quantity", "position_intelligence", "quantity", item.quantity, "Quantity")
+        add(
+            "position.entry_price",
+            "position_intelligence",
+            "entry_price",
+            item.entry_price,
+            "Entry price",
+        )
+        add(
+            "position.latest_completed_close",
+            "position_intelligence",
+            "latest_completed_close",
+            item.latest_completed_close,
+            "Latest completed close",
+        )
+        add(
+            "position.market_value",
+            "position_intelligence",
+            "market_value",
+            item.market_value,
+            "Market value",
+        )
+        add(
+            "position.unrealized_pnl",
+            "position_intelligence",
+            "unrealized_pnl",
+            item.unrealized_pnl,
+            "Unrealized P&L",
+        )
+        add(
+            "position.unrealized_pnl_pct",
+            "position_intelligence",
+            "unrealized_pnl_pct",
+            item.unrealized_pnl_pct,
+            "Unrealized P&L percent",
+        )
         add(
             "position.profile",
             "position_intelligence",
@@ -107,6 +151,19 @@ class CopilotContextAssembler:
             },
             "Research-only stop evidence",
         )
+        add(
+            "guidance.loss_control",
+            "stop_exit_guidance",
+            "loss_control",
+            {
+                "policy": guidance.loss_control_policy,
+                "boundary": guidance.current_loss_control_boundary,
+                "trigger": guidance.loss_control_trigger,
+                "active": guidance.loss_control_active,
+                "broker_stop_order": guidance.broker_stop_order,
+            },
+            "Active strategy loss control",
+        )
         for index, reference in enumerate(guidance.references):
             add(
                 f"guidance.reference.{index}",
@@ -144,6 +201,17 @@ class CopilotContextAssembler:
             guidance.as_of_date,
             facts,
             limitations,
+        )
+
+    def general(self) -> CopilotContext:
+        return CopilotContext(
+            "GENERAL",
+            None,
+            None,
+            None,
+            None,
+            navigation_facts(),
+            ("Read-only product help; no sync, portfolio mutation, or order is performed.",),
         )
 
     async def portfolio(self, portfolio_id: UUID) -> CopilotContext:

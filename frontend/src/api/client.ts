@@ -9,6 +9,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number | null,
     public readonly validationIssues: ApiValidationIssue[] = [],
+    public readonly code: string | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -21,17 +22,21 @@ export const API_BASE_URL = (configuredBaseUrl ?? 'http://localhost:8000').repla
 function readableDetail(value: unknown): {
   message: string
   validationIssues: ApiValidationIssue[]
+  code: string | null
 } {
   if (typeof value === 'string') {
-    return { message: value, validationIssues: [] }
+    return { message: value, validationIssues: [], code: null }
   }
   if (Array.isArray(value)) {
     const issues = value.filter((item): item is ApiValidationIssue => {
       return typeof item === 'object' && item !== null
     })
-    return { message: 'Please correct the highlighted request fields.', validationIssues: issues }
+    return { message: 'Please correct the highlighted request fields.', validationIssues: issues, code: null }
   }
-  return { message: 'The backend rejected this request.', validationIssues: [] }
+  if (typeof value === 'object' && value !== null && 'code' in value && typeof value.code === 'string') {
+    return { message: value.code, validationIssues: [], code: value.code }
+  }
+  return { message: 'The backend rejected this request.', validationIssues: [], code: null }
 }
 
 function hasDetail(value: unknown): value is { detail: unknown } {
@@ -67,8 +72,8 @@ export async function requestJson<T>(
   if (!response.ok) {
     const detail = hasDetail(body)
       ? readableDetail(body.detail)
-      : { message: 'AlphaPilot backend returned an unexpected error.', validationIssues: [] }
-    throw new ApiError(detail.message, response.status, detail.validationIssues)
+      : { message: 'AlphaPilot backend returned an unexpected error.', validationIssues: [], code: null }
+    throw new ApiError(detail.message, response.status, detail.validationIssues, detail.code)
   }
 
   if (!validate(body)) {

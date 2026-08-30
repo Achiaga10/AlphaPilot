@@ -24,14 +24,14 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 19 — AlphaPilot AI Copilot Foundation (COMPLETE LOCALLY)
+Sprint 20 — Conversational Copilot UX & Governed Exit/Stop Research (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
 complete, reviewed, and merged. Sprint 17 is complete, reviewed, and merged.
-Sprint 18 is complete and merged. Sprint 19 is complete locally on
-`feature/ai-copilot-foundation`. Do not add or tune strategies. Do not begin
-Sprint 20.
+Sprint 18 and Sprint 19 are complete and merged. Sprint 20 is complete locally on
+`feature/conversational-copilot-risk-policy`; it found no approved protective-stop
+winner. Do not begin Sprint 21.
 
 ## Development Environment
 
@@ -251,14 +251,14 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 19 Task
+## Sprint 20 Task
 
-Add a read-only grounded Copilot over deterministic AlphaPilot facts plus a
-typed Stop/Exit Guidance contract. Do not give AI trading authority, connect a
-broker, add SQL/shell tools, use LangChain/LangGraph, or activate research-only
-stops.
+Add an English-answer Copilot UX that accepts English/Hebrew questions and governed
+reproducible loss-control research. No actionable new trade may exist without an
+approved deterministic numeric loss-control boundary. No arbitrary, AI-generated,
+or React-generated boundary.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT19_COMPLETION_REPORT.md`, stop. Do not begin
-Sprint 20.
+After creating `docs/sprints/SPRINT20_COMPLETION_REPORT.md`, stop. Do not begin
+Sprint 21.

@@ -148,6 +148,14 @@ export interface PortfolioDecision {
   application_order: number | null
   depends_on_action_ids: string[]
   exit_context: StrategyExitContext | null
+  execution_readiness?: 'ACTIONABLE' | 'RESEARCH_ONLY' | 'UNAVAILABLE'
+  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY'
+  loss_control_policy?: string
+  loss_control_boundary_price?: string | null
+  loss_control_trigger?: string | null
+  loss_control_active?: boolean
+  loss_control_broker_stop_order?: boolean
+  approved_protective_stop_price?: string | null
 }
 
 export interface StrategyExitContext {
@@ -471,6 +479,11 @@ export interface PositionIntelligence {
   profit_target_policy: string
   research_only_stop_candidate: string | null
   research_only_stop_status: 'NOT_ACTIVE' | null
+  loss_control_policy?: string
+  current_loss_control_boundary?: string | null
+  loss_control_trigger?: string | null
+  loss_control_active?: boolean
+  loss_control_broker_stop_order?: boolean
   price_change_since_entry: string | null
   explanation: string
   trade_event_count: number
@@ -487,8 +500,8 @@ export interface CopilotFactReference {
 
 export interface CopilotAnswer {
   answer: string
-  scope: 'POSITION' | 'PORTFOLIO'
-  portfolio_id: string
+  scope: 'GENERAL' | 'POSITION' | 'PORTFOLIO'
+  portfolio_id: string | null
   position_id: string | null
   ticker: string | null
   as_of_date: string | null
@@ -497,6 +510,15 @@ export interface CopilotAnswer {
   limitations: string[]
   provider: string
   model: string
+  result_status?: 'ANSWERED' | 'FACT_UNAVAILABLE' | 'CLARIFICATION_REQUIRED' | 'ENTITY_ESTABLISHED' | 'MULTIPLE_TICKERS' | 'UNKNOWN_TICKER' | 'POSITION_NOT_HELD'
+  intent?: string | null
+  resolution_status?: 'RESOLVED' | 'CLARIFICATION_REQUIRED' | 'ENTITY_ESTABLISHED' | 'MULTIPLE_TICKERS' | 'UNKNOWN_TICKER' | 'POSITION_NOT_HELD'
+}
+
+export interface UnifiedCopilotQuestion {
+  question: string
+  active_ticker: string | null
+  pending_intent: string | null
 }
 
 export interface PaperValidation {

@@ -71,7 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         required=True,
         help=(
-            "Repeat for each run: control, atr-stop-1-5, atr-stop-2-0, atr-stop-3-0, "
+            "Repeat for each run: control, atr-stop-1-0, atr-stop-1-5, atr-stop-2-0, "
+            "atr-stop-2-5, atr-stop-3-0, "
+            "signal-day-low-invalidation, "
             "or one stop plus one declared trailing/profit overlay joined by '+'."
         ),
     )
@@ -83,8 +85,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_configurations(values: list[str]) -> tuple[Sprint12ExitConfiguration, ...]:
-    return tuple(Sprint12ExitConfiguration.parse(value) for value in values)
+def parse_configurations(
+    values: list[str], stage: Sprint12ResearchStage
+) -> tuple[Sprint12ExitConfiguration, ...]:
+    parser = (
+        Sprint12ExitConfiguration.parse_sprint20
+        if stage.value.startswith("sprint20-")
+        else Sprint12ExitConfiguration.parse
+    )
+    return tuple(parser(value) for value in values)
 
 
 def build_portfolio_config(
@@ -122,7 +131,7 @@ def entry_configuration(strategy: StrategyName) -> str:
 async def run(args: argparse.Namespace) -> None:
     strategy_name = StrategyName(args.strategy)
     stage = Sprint12ResearchStage(args.stage)
-    configurations = parse_configurations(args.configuration)
+    configurations = parse_configurations(args.configuration, stage)
     validate_stage_configurations(
         stage=stage,
         strategy=strategy_name,
