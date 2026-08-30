@@ -627,8 +627,9 @@ class MultiPortfolioSimulator:
         initial_stop = self.trade_management_policy.initial_stop(
             entry_price=execution_price,
             atr=atr,
+            signal_bar_low=candidate.signal_bar.effective_low,
         )
-        if self.config.trade_management.requires_atr and initial_stop is None:
+        if self.config.trade_management.requires_initial_stop and initial_stop is None:
             return cash, None, sizing
         profit_target = self.trade_management_policy.profit_target(
             entry_price=execution_price,

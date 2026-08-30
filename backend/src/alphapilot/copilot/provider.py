@@ -18,8 +18,8 @@ class CopilotResponseInvalid(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ProviderResponse:
     answer: str
-    grounding_status: str
-    fact_refs: tuple[str, ...]
+    grounding_status: str = "GROUNDED"
+    fact_refs: tuple[str, ...] = ()
 
 
 class LLMProvider(Protocol):
@@ -93,17 +93,11 @@ class OllamaProvider:
         try:
             content = json.loads(body["message"]["content"])
             answer = content["answer"].strip()
-            status = content["grounding_status"]
-            refs = tuple(content["fact_refs"])
-            if (
-                not answer
-                or status not in {"GROUNDED", "LIMITED"}
-                or not all(isinstance(item, str) for item in refs)
-            ):
+            if not answer:
                 raise ValueError
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise CopilotResponseInvalid("AI provider returned an invalid response") from exc
-        return ProviderResponse(answer, status, refs)
+        return ProviderResponse(answer)
 
 
 class FakeLLMProvider:

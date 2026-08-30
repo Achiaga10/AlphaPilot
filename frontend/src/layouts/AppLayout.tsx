@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import alphaPilotLogo from '../assets/images/alphapilot-logo.png'
 import { StatusBadge } from '../components/StatusBadge'
 import { useAdminCapabilityQuery, useHealthQuery } from '../hooks/usePortfolioApi'
+import { FloatingCopilot } from '../features/copilot/FloatingCopilot'
 
 export function AppLayout() {
   const health = useHealthQuery()
@@ -48,6 +49,7 @@ export function AppLayout() {
           AlphaPilot outputs are research/advisory decisions. Current models are not live-trading validated.
         </footer>
       </div>
+      <FloatingCopilot />
     </div>
   )
 }

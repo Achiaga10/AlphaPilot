@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from alphapilot.portfolio.decisions import (
@@ -6,12 +7,18 @@ from alphapilot.portfolio.decisions import (
     PortfolioDecisionEngine,
     PortfolioStatePosition,
 )
+from alphapilot.portfolio.execution_readiness import (
+    ExecutionReadiness,
+    ExecutionReadinessReason,
+)
+from alphapilot.portfolio.exit_guidance import StrategyExitContext, StrategyExitState
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.portfolio.sizing import (
     PortfolioDecisionReason,
     PortfolioDecisionType,
     SizingPolicyName,
 )
+from alphapilot.strategy.name import StrategyName
 from alphapilot.strategy.signal import Signal
 
 
@@ -62,6 +69,12 @@ def test_plan_respects_sell_ranking_held_sector_and_risk_constraints() -> None:
     assert decisions["NEW"].application_order == 2
     assert decisions["NEW"].depends_on_action_ids == ()
     assert decisions["NEW"].modeled_stop_reference_price == Decimal("90")
+    assert decisions["NEW"].execution_readiness == ExecutionReadiness.RESEARCH_ONLY
+    assert (
+        decisions["NEW"].execution_readiness_reason
+        == ExecutionReadinessReason.NO_APPROVED_LOSS_CONTROL_POLICY
+    )
+    assert decisions["NEW"].approved_protective_stop_price is None
     assert decisions["SELL"].estimated_proceeds == Decimal("40000")
     assert decisions["SELL"].cash_after_decision == Decimal("70000")
     assert plan.equity == Decimal("100000")
@@ -129,3 +142,37 @@ def test_equal_slot_reports_actual_sector_weights_without_changing_share_formula
     assert decision.proposed_shares == 100
     assert decision.sector_weight_before_pct == Decimal("10.0")
     assert decision.sector_weight_after_pct == Decimal("20.0")
+
+
+def test_micho_numeric_completed_close_boundary_satisfies_loss_control_readiness() -> None:
+    context = StrategyExitContext(
+        strategy=StrategyName.MICHO_150,
+        data_as_of_date=date(2026, 8, 20),
+        reference_close=Decimal("110"),
+        current_signal=Signal.BUY,
+        signal_reason="MICHO_BREAKOUT",
+        exit_mode="close-below-sma150",
+        current_exit_state=StrategyExitState.ABOVE_SMA150,
+        sma150=Decimal("100"),
+    )
+    decision = (
+        PortfolioDecisionEngine()
+        .build_plan(
+            CurrentPortfolioState(cash=Decimal("100000")),
+            (
+                PortfolioCandidate(
+                    "MCH", Signal.BUY, Decimal("110"), atr=Decimal("5"), exit_context=context
+                ),
+            ),
+        )
+        .decisions[0]
+    )
+
+    assert decision.execution_readiness == ExecutionReadiness.ACTIONABLE
+    assert decision.execution_readiness_reason == ExecutionReadinessReason.LOSS_CONTROL_READY
+    assert decision.loss_control_policy == "SMA150_COMPLETED_CLOSE_EXIT"
+    assert decision.loss_control_boundary_price == Decimal("100")
+    assert decision.loss_control_trigger == "COMPLETED_DAILY_CLOSE_BELOW"
+    assert decision.loss_control_active
+    assert not decision.loss_control_broker_stop_order
+    assert decision.approved_protective_stop_price is None

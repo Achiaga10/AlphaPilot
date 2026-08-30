@@ -90,6 +90,10 @@ async def test_position_intelligence_composes_stored_facts_without_mutation(db_s
     assert result.unrealized_pnl == Decimal("100")
     assert result.monitoring_status == "HOLD"
     assert result.indicator_facts["ema20"] == "108"
+    assert result.loss_control_policy == "NONE"
+    assert result.current_loss_control_boundary is None
+    assert not result.loss_control_active
+    assert not result.loss_control_broker_stop_order
     assert result.active_exit_policy == "HYBRID exit with frozen 2% threshold"
     assert result.protective_stop_policy == "NONE"
     assert result.trailing_stop_policy == "NONE"

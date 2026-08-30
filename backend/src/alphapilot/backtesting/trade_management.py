@@ -8,17 +8,23 @@ from typing import Protocol
 
 class ProtectiveStopPolicyName(StrEnum):
     CONTROL = "control"
+    ATR_STOP_1_0 = "atr-stop-1-0"
     ATR_STOP_1_5 = "atr-stop-1-5"
     ATR_STOP_2_0 = "atr-stop-2-0"
+    ATR_STOP_2_5 = "atr-stop-2-5"
     ATR_STOP_3_0 = "atr-stop-3-0"
+    SIGNAL_DAY_LOW = "signal-day-low-invalidation"
 
     @property
     def atr_multiple(self) -> Decimal | None:
         return {
             self.CONTROL: None,
+            self.ATR_STOP_1_0: Decimal("1"),
             self.ATR_STOP_1_5: Decimal("1.5"),
             self.ATR_STOP_2_0: Decimal("2"),
+            self.ATR_STOP_2_5: Decimal("2.5"),
             self.ATR_STOP_3_0: Decimal("3"),
+            self.SIGNAL_DAY_LOW: None,
         }[self]
 
 
@@ -74,6 +80,13 @@ class TradeManagementConfig:
 
     @property
     def requires_atr(self) -> bool:
+        return self.protective_stop not in {
+            ProtectiveStopPolicyName.CONTROL,
+            ProtectiveStopPolicyName.SIGNAL_DAY_LOW,
+        }
+
+    @property
+    def requires_initial_stop(self) -> bool:
         return self.protective_stop != ProtectiveStopPolicyName.CONTROL
 
 
@@ -89,7 +102,9 @@ class TradeManagementAction:
 class TradeManagementPolicy(Protocol):
     config: TradeManagementConfig
 
-    def initial_stop(self, *, entry_price: Decimal, atr: Decimal | None) -> Decimal | None: ...
+    def initial_stop(
+        self, *, entry_price: Decimal, atr: Decimal | None, signal_bar_low: Decimal | None = None
+    ) -> Decimal | None: ...
 
     def profit_target(
         self, *, entry_price: Decimal, initial_stop: Decimal | None
@@ -124,7 +139,15 @@ class ConfiguredTradeManagementPolicy:
     def __init__(self, config: TradeManagementConfig) -> None:
         self.config = config
 
-    def initial_stop(self, *, entry_price: Decimal, atr: Decimal | None) -> Decimal | None:
+    def initial_stop(
+        self, *, entry_price: Decimal, atr: Decimal | None, signal_bar_low: Decimal | None = None
+    ) -> Decimal | None:
+        if self.config.protective_stop == ProtectiveStopPolicyName.SIGNAL_DAY_LOW:
+            return (
+                signal_bar_low
+                if signal_bar_low is not None and 0 < signal_bar_low < entry_price
+                else None
+            )
         multiple = self.config.protective_stop.atr_multiple
         if multiple is None or atr is None or atr <= 0:
             return None

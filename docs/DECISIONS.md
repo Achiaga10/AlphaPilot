@@ -1,5 +1,44 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 20 Product Constitution and Frozen Protocol
+
+- No ACTIONABLE new trade exists without a deterministic numeric loss-control
+  boundary, policy/version provenance, and explicit trigger semantics. A boundary
+  need not be an intraday broker stop.
+- No arbitrary fallback stop, AI-generated stop, React-generated stop, or
+  browser override is permitted. A missing approved stop means RESEARCH_ONLY.
+- Protective stop, active strategy loss control, strategy exit reference, trailing
+  stop, and profit target remain distinct. Trailing/profit may legitimately remain NONE.
+- Micho's frozen completed-daily-close-below-SMA150 exit is active numeric strategy
+  loss control (`SMA150_COMPLETED_CLOSE_EXIT`), not an intraday broker stop. With
+  complete/fresh data it satisfies loss-control readiness without an ATR stop.
+- A Micho exit creates no automatic re-buy. Any later entry must satisfy normal
+  frozen Micho V1 BOTH entry, ranking, selection, and portfolio constraints.
+- Copilot accepts English/Hebrew/mixed questions but always responds in concise
+  professional English. General navigation context is canonical and read-only.
+- Copilot is one unified chat. GENERAL, PORTFOLIO, and POSITION remain typed
+  backend scopes, but users do not operate a visible context selector.
+- Position identity is resolved deterministically from stored companies and open
+  holdings. Missing identity produces clarification; known-but-not-held and unknown
+  tickers remain distinct. Ollama never resolves database identity or fact IDs.
+- The browser may retain only the explicitly established active ticker and one
+  pending position intent for a clarification reply. It does not infer a ticker from
+  the page underneath the chat, and clear context removes both values.
+- Exact factual and product-navigation answers remain backend deterministic. Ollama
+  is reserved for grounded explanatory prose after successful scope/entity resolution.
+- Historical candidates use governed frozen-snapshot research. A passing result
+  is at most PAPER_FORWARD_CANDIDATE pending human review, never production-ready.
+- Existing positions never receive fabricated entry-time stop provenance.
+- Sprint 20 completed with `NO_WINNER` for both strategies. EMA 2.0× ATR14 and
+  Micho 1.5× ATR14 passed development but failed reused-validation gates;
+  neither is approved, promoted, or used as a fallback.
+- Existing strategy profiles retain protective stop `NONE`, trailing stop
+  `NONE`, and profit management `NONE`. EMA BUY decisions without approved numeric
+  loss-control evidence remain explicitly `RESEARCH_ONLY`.
+- EMA Round 2 compared control, Round 1 ATR2 reference, and completed signal-day-low
+  invalidation. Signal-day-low failed development turnover; ATR2 failed the reused-
+  validation 1.5-point drawdown ceiling. Outcome: `NO_WINNER`, no fallback/default.
+
 ## Sprint 19 Frozen Decisions
 
 - AlphaPilot deterministic services calculate and decide; the AI only explains

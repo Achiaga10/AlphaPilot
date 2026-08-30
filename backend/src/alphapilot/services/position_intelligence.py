@@ -61,6 +61,11 @@ class PositionIntelligence:
     profit_target_policy: str
     research_only_stop_candidate: str | None
     research_only_stop_status: str | None
+    loss_control_policy: str
+    current_loss_control_boundary: Decimal | None
+    loss_control_trigger: str | None
+    loss_control_active: bool
+    loss_control_broker_stop_order: bool
     price_change_since_entry: Decimal | None
     explanation: str
     trade_event_count: int
@@ -124,6 +129,8 @@ class PositionIntelligenceService:
         )
         explanation = self._explanation(monitoring_status, monitoring_reason, guidance_available)
         facts = latest.indicator_facts if latest and guidance_available else {}
+        raw_sma150 = facts.get("sma150") if position.strategy_profile_id == "micho-150-v1" else None
+        sma150 = Decimal(str(raw_sma150)) if raw_sma150 is not None else None
         return PositionIntelligence(
             portfolio_id=portfolio.id,
             portfolio_revision=portfolio.revision,
@@ -179,6 +186,15 @@ class PositionIntelligenceService:
                 profile.research_only_stop_candidate if profile else None
             ),
             research_only_stop_status="NOT_ACTIVE" if profile else None,
+            loss_control_policy=(
+                "SMA150_COMPLETED_CLOSE_EXIT" if sma150 is not None and sma150 > 0 else "NONE"
+            ),
+            current_loss_control_boundary=(sma150 if sma150 is not None and sma150 > 0 else None),
+            loss_control_trigger=(
+                "COMPLETED_DAILY_CLOSE_BELOW" if sma150 is not None and sma150 > 0 else None
+            ),
+            loss_control_active=sma150 is not None and sma150 > 0,
+            loss_control_broker_stop_order=False,
             price_change_since_entry=change,
             explanation=explanation,
             trade_event_count=len(trade_events),

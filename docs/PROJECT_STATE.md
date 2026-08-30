@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-Sprint 19 — AlphaPilot AI Copilot Foundation
-COMPLETE LOCALLY
+Sprint 20 — Conversational Copilot UX & Governed Exit/Stop Research
+COMPLETE LOCALLY — awaiting user review and Git publishing
 
 Current development branch:
-feature/ai-copilot-foundation
+feature/conversational-copilot-risk-policy
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -20,7 +20,13 @@ normal UI behavior. Sprint 14 is complete, reviewed, and merged with
 backend-owned versioned strategy profiles. Sprint 15 is complete, reviewed, and
 merged with a frozen-snapshot, stage-governed Strategy Lab. Sprint 16 is complete,
 reviewed, and merged. Sprint 17 and Sprint 18 are complete, reviewed, and
-merged. Sprint 19 is complete locally. Sprint 20 is not started.
+merged. Sprint 19 is complete and merged. Sprint 20 and hardening are complete
+locally: Round 1 and EMA Round 2 are `NO_WINNER`; Micho's frozen SMA150 completed-
+close exit is explicitly active strategy loss control; Copilot answers in English
+through one unified chat whose General/Portfolio/Position scope and ticker resolution
+are backend-owned. The visible context selector is removed, deterministic clarification
+and short-lived explicit ticker follow-up are implemented, and only the inner message
+history auto-scrolls. Sprint 21 is not started.
 
 ## Project Goal
 

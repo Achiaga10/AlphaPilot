@@ -92,8 +92,10 @@ def run(
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
+        (ProtectiveStopPolicyName.ATR_STOP_1_0, Decimal("95")),
         (ProtectiveStopPolicyName.ATR_STOP_1_5, Decimal("92.5")),
         (ProtectiveStopPolicyName.ATR_STOP_2_0, Decimal("90")),
+        (ProtectiveStopPolicyName.ATR_STOP_2_5, Decimal("87.5")),
         (ProtectiveStopPolicyName.ATR_STOP_3_0, Decimal("85")),
     ],
 )
@@ -398,6 +400,19 @@ def test_legitimate_buy_signal_after_stop_can_reenter_without_cooldown() -> None
     assert result.open_positions[0].entry_day == START + timedelta(days=3)
     assert result.trade_management_diagnostics.reentry_count == 1
     assert result.trade_management_diagnostics.average_sessions_to_reentry == Decimal("1")
+
+
+def test_signal_day_low_invalidation_uses_frozen_completed_signal_low() -> None:
+    configured = ConfiguredTradeManagementPolicy(
+        TradeManagementConfig(protective_stop=ProtectiveStopPolicyName.SIGNAL_DAY_LOW)
+    )
+    assert configured.initial_stop(
+        entry_price=Decimal("100"), atr=Decimal("999"), signal_bar_low=Decimal("94")
+    ) == Decimal("94")
+    assert (
+        configured.initial_stop(entry_price=Decimal("100"), atr=None, signal_bar_low=Decimal("101"))
+        is None
+    )
 
 
 def test_stop_execution_accounting_and_repeated_runs_are_deterministic() -> None:

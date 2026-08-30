@@ -87,7 +87,7 @@ export function DecisionTable({
                 {canApplyDecisions && decision.cash_after_decision !== null && ((decision.decision === 'BUY' && decision.proposed_shares > 0) || (decision.decision === 'SELL' && decision.current_shares > 0)) ? (
                   <div className="decision-action">
                     {decision.decision === 'BUY' ? <>
-                      <div className="quantity-choice"><span>AlphaPilot recommendation: <strong>{decision.proposed_shares} shares</strong></span><label><span>Shares to add</span><input aria-label={`Shares to add for ${decision.ticker}`} type="number" min="1" step="1" value={quantity} disabled={applied || pending} onChange={(event) => setQuantities((current) => ({ ...current, [quantityKey]: event.target.value }))} /></label></div>
+                      <div className="quantity-choice"><span>AlphaPilot research allocation: <strong>{decision.proposed_shares} shares</strong><small>{decision.execution_readiness === 'ACTIONABLE' ? 'Actionable stop evidence approved' : 'Research only · no approved protective stop'}</small></span><label><span>Shares to add</span><input aria-label={`Shares to add for ${decision.ticker}`} type="number" min="1" step="1" value={quantity} disabled={applied || pending} onChange={(event) => setQuantities((current) => ({ ...current, [quantityKey]: event.target.value }))} /></label></div>
                       <button className="button button--primary button--small" type="button" disabled={applied || pending || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0} onClick={() => void reviewBuy(decision)}>{applied ? 'Applied' : pending ? 'Validating…' : 'Review Add'}</button>
                     </> : <><p>Research portfolio update only — no broker order is sent.</p><button className="button button--primary button--small" type="button" disabled={applied || pending} onClick={() => applySell(decision)}>{applied ? 'Applied' : pending ? 'Applying…' : 'Apply Sell'}</button></>}
                   </div>
@@ -112,6 +112,9 @@ export function DecisionTable({
                     <Detail label="Current shares" help={METRIC_GLOSSARY.currentShares}>{decision.current_shares}</Detail>
                     <Detail label="Estimated proceeds" help={METRIC_GLOSSARY.estimatedProceeds}>{formatMoney(decision.estimated_proceeds)}</Detail>
                     <Detail label="Decision reason" help={METRIC_GLOSSARY.decisionReason}><code>{decision.reason}</code></Detail>
+                    <Detail label="Execution readiness" help="Actionability requires an approved deterministic numeric loss-control boundary; it need not be an intraday broker stop.">{decision.execution_readiness ?? 'RESEARCH_ONLY'} · <code>{decision.execution_readiness_reason ?? 'NO_APPROVED_LOSS_CONTROL_POLICY'}</code></Detail>
+                    {decision.loss_control_active ? <Detail label="Loss-control boundary" help="Backend-owned numeric strategy boundary and exact trigger semantics.">{decision.loss_control_policy} · {formatMoney(decision.loss_control_boundary_price)} · {decision.loss_control_trigger} · broker stop: {decision.loss_control_broker_stop_order ? 'YES' : 'NONE'}</Detail> : null}
+                    <Detail label="Approved protective stop" help="Null means no approved actionable stop; research references are not substituted.">{decision.approved_protective_stop_price === null || decision.approved_protective_stop_price === undefined ? 'None · research only' : formatMoney(decision.approved_protective_stop_price)}</Detail>
                   </dl>
                   <ExitGuidance decision={decision} riskApplicable={riskApplicable} />
                 </details>
