@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-Sprint 21 — Daily Portfolio Manager / Trading Command Center
-COMPLETE LOCALLY — awaiting user review and Git publishing
+Sprint 22 — Intraday Market Intelligence
+COMPLETE LOCALLY / awaiting user review and Git operations
 
 Current development branch:
-feature/daily-portfolio-manager
+feature/intraday-market-intelligence
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -26,9 +26,11 @@ close exit is explicitly active strategy loss control; Copilot answers in Englis
 through one unified chat whose General/Portfolio/Position scope and ticker resolution
 are backend-owned. The visible context selector is removed, deterministic clarification
 and short-lived explicit ticker follow-up are implemented, and only the inner message
-history auto-scrolls. Sprint 21 is complete locally as a read-only orchestration layer
-over existing portfolio, monitoring, readiness, plan, sync-status, and Copilot
-authorities. Sprint 22 has not started.
+history auto-scrolls. Sprint 21 is merged as a read-only orchestration layer over existing
+portfolio, monitoring, readiness, plan, sync-status, and Copilot authorities. Sprint 22 is
+complete locally with read-only, open-position-only Alpaca live snapshots, provisional
+indicator/strategy projection, explicit freshness, deterministic live Copilot facts, and a
+Dashboard Live Market Monitor. Sprint 23 has not started.
 
 Sprint 21 performance hardening is also complete locally. The Dashboard core and
 opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,

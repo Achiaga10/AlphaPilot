@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     OLLAMA_MODEL: str = ""
     OLLAMA_TIMEOUT_SECONDS: float = 30.0
+    AI_GENERATIVE_EXPLANATIONS_ENABLED: bool = True
+
+    LIVE_QUOTE_MAX_AGE_SECONDS: int = 120
 
     DATABASE_URL: str = "postgresql+asyncpg://alphapilot:alphapilot@localhost:5432/alphapilot"
     TEST_DATABASE_URL: str | None = None

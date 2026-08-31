@@ -26,6 +26,7 @@ import type {
   UnifiedCopilotQuestion,
   DailyPortfolioBrief,
   DailyBriefOpportunities,
+  PortfolioLiveBrief,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -150,6 +151,16 @@ const isDailyBriefOpportunities = (value: unknown): value is DailyBriefOpportuni
   typeof value.research_only_total_count === 'number' &&
   typeof value.deferred_total_count === 'number'
 
+const isPortfolioLiveBrief = (value: unknown): value is PortfolioLiveBrief =>
+  isObject(value) && typeof value.portfolio_id === 'string' &&
+  typeof value.portfolio_revision === 'number' &&
+  typeof value.live_refresh_timestamp === 'string' &&
+  typeof value.provider === 'string' && typeof value.feed === 'string' &&
+  typeof value.overall_readiness === 'string' && Array.isArray(value.positions) &&
+  value.positions.every((item) => isObject(item) && typeof item.position_id === 'string' &&
+    typeof item.ticker === 'string' && typeof item.live_status === 'string') &&
+  Array.isArray(value.partial_failures)
+
 const isMonitoring = (value: unknown): value is PositionMonitoring[] =>
   Array.isArray(value) && value.every((item) => isObject(item) &&
     typeof item.position_id === 'string' && typeof item.ticker === 'string' &&
@@ -229,6 +240,14 @@ export function getDailyBriefOpportunities(
     `/api/v1/portfolio/${portfolioId}/daily-brief/opportunities?research_only_limit=${researchOnlyLimit}`,
     { signal },
     isDailyBriefOpportunities,
+  )
+}
+
+export function refreshLivePortfolio(portfolioId: string): Promise<PortfolioLiveBrief> {
+  return requestJson(
+    `/api/v1/portfolio/${portfolioId}/live-refresh`,
+    { method: 'POST' },
+    isPortfolioLiveBrief,
   )
 }
 

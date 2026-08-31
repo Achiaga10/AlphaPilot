@@ -25,10 +25,65 @@ class CopilotIntent(StrEnum):
     NAVIGATION = "NAVIGATION"
     GENERAL = "GENERAL"
     EXPLANATION = "EXPLANATION"
+    INDICATOR_VALUE = "INDICATOR_VALUE"
+    LIVE_PRICE = "LIVE_PRICE"
+    LIVE_POSITION_STATUS = "LIVE_POSITION_STATUS"
+    LIVE_STRATEGY_PROJECTION = "LIVE_STRATEGY_PROJECTION"
 
 
 def classify_question(question: str, *, general_scope: bool = False) -> CopilotIntent:
     normalized = question.casefold()
+    if ("should i sell" in normalized and "now" in normalized) or (
+        "require action" in normalized and "right now" in normalized
+    ):
+        return CopilotIntent.LIVE_STRATEGY_PROJECTION
+    if any(
+        phrase in normalized
+        for phrase in ("session closed", "closed at this price", "close at this price")
+    ):
+        return CopilotIntent.LIVE_STRATEGY_PROJECTION
+    if re.fullmatch(
+        r"\s*what (?:is|does) (?:the )?(?:ema\s*(?:20|50)|sma\s*150|atr\s*14)(?: mean)?\??\s*",
+        normalized,
+    ):
+        return CopilotIntent.GLOSSARY
+    indicator = re.search(
+        r"\b(?:ema\s*(?:20|50)|(?:20|50)(?:-day)?\s*ema|sma\s*150|"
+        r"150(?:-day)?\s*(?:sma|moving average)|atr\s*14)\b",
+        normalized,
+    )
+    if indicator:
+        if any(
+            phrase in normalized
+            for phrase in (
+                "should i sell",
+                "require action",
+                "what happens",
+                "closed now",
+                "close now",
+            )
+        ):
+            return CopilotIntent.LIVE_STRATEGY_PROJECTION
+        if any(
+            phrase in normalized
+            for phrase in ("below", "above", "distance", "how far", "right now")
+        ):
+            return CopilotIntent.LIVE_POSITION_STATUS
+        return CopilotIntent.INDICATOR_VALUE
+    if re.search(r"\b[a-z]{3,5}\s+current price\b", normalized):
+        return CopilotIntent.LIVE_PRICE
+    if any(
+        phrase in normalized
+        for phrase in (
+            "trading at",
+            "today's high",
+            "today's low",
+            "current session high",
+            "current session low",
+            "price right now",
+        )
+    ):
+        return CopilotIntent.LIVE_PRICE
     if glossary_concept(question) is not None:
         return CopilotIntent.GLOSSARY
     if any(
@@ -191,6 +246,15 @@ FACT_PREFIXES: dict[CopilotIntent, tuple[str, ...]] = {
         "guidance.",
         "paper.",
     ),
+    CopilotIntent.INDICATOR_VALUE: ("position.ticker", "live.", "query.question"),
+    CopilotIntent.LIVE_PRICE: ("position.ticker", "live.", "query.question"),
+    CopilotIntent.LIVE_POSITION_STATUS: ("position.ticker", "live.", "query.question"),
+    CopilotIntent.LIVE_STRATEGY_PROJECTION: (
+        "position.ticker",
+        "live.",
+        "guidance.loss_control",
+        "query.question",
+    ),
 }
 
 
@@ -211,6 +275,10 @@ DETERMINISTIC_INTENTS = frozenset(
         CopilotIntent.PORTFOLIO_CASH,
         CopilotIntent.PORTFOLIO_POSITIONS,
         CopilotIntent.PORTFOLIO_MONITORING,
+        CopilotIntent.INDICATOR_VALUE,
+        CopilotIntent.LIVE_PRICE,
+        CopilotIntent.LIVE_POSITION_STATUS,
+        CopilotIntent.LIVE_STRATEGY_PROJECTION,
     }
 )
 
@@ -229,6 +297,10 @@ POSITION_INTENTS = frozenset(
         CopilotIntent.PROFIT_TARGET,
         CopilotIntent.PAPER_VALIDATION,
         CopilotIntent.EXPLANATION,
+        CopilotIntent.INDICATOR_VALUE,
+        CopilotIntent.LIVE_PRICE,
+        CopilotIntent.LIVE_POSITION_STATUS,
+        CopilotIntent.LIVE_STRATEGY_PROJECTION,
     }
 )
 

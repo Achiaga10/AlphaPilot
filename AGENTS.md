@@ -24,7 +24,7 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 21 — Daily Portfolio Manager / Trading Command Center (COMPLETE LOCALLY)
+Sprint 22 — Intraday Market Intelligence (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
@@ -33,6 +33,9 @@ Sprint 18 and Sprint 19 are complete and merged. Sprint 20 is complete and merge
 found no approved protective-stop winner. Sprint 21 is complete locally on
 `feature/daily-portfolio-manager`; it added product orchestration only, with no new
 research, strategy, broker integration, or autonomous trading.
+
+Sprint 21 is now merged. Sprint 22 adds read-only ephemeral live monitoring and
+deterministic indicator facts without changing completed-session strategy semantics.
 
 ## Development Environment
 

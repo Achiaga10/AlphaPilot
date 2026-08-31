@@ -70,7 +70,8 @@ def get_copilot_orchestrator(
 async def status(
     provider: Annotated[LLMProvider, Depends(get_llm_provider)],
 ) -> CopilotStatusSchema:
-    available = settings.AI_COPILOT_ENABLED and await provider.available()
+    generative_enabled = settings.AI_COPILOT_ENABLED and settings.AI_GENERATIVE_EXPLANATIONS_ENABLED
+    available = generative_enabled and await provider.available()
     return CopilotStatusSchema(
         enabled=settings.AI_COPILOT_ENABLED,
         provider=provider.name,
@@ -81,6 +82,8 @@ async def status(
             if available
             else "DISABLED"
             if not settings.AI_COPILOT_ENABLED
+            else "DETERMINISTIC_ONLY"
+            if not settings.AI_GENERATIVE_EXPLANATIONS_ENABLED
             else "AI_PROVIDER_UNAVAILABLE"
         ),
     )

@@ -18,6 +18,7 @@ from alphapilot.copilot.resolution import (
     CopilotQueryResolver,
     CopilotResolutionStatus,
 )
+from alphapilot.core.config import settings
 
 if TYPE_CHECKING:
     from alphapilot.services.daily_portfolio_brief import DailyPortfolioBriefService
@@ -217,6 +218,18 @@ class CopilotOrchestrator:
                 provider="alphapilot",
                 model="deterministic-direct-answer-v1",
                 result_status="ANSWERED" if direct.fact_available else "FACT_UNAVAILABLE",
+                intent=intent,
+            )
+        if not settings.AI_GENERATIVE_EXPLANATIONS_ENABLED:
+            return self._build_answer(
+                context,
+                "Generative explanation is disabled. AlphaPilot's deterministic portfolio, "
+                "market, indicator, and strategy facts remain available.",
+                facts,
+                (),
+                provider="alphapilot",
+                model="generative-disabled-v1",
+                result_status="GENERATIVE_EXPLANATION_UNAVAILABLE",
                 intent=intent,
             )
         response = await self.provider.generate(

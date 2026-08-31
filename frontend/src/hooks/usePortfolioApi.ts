@@ -18,6 +18,7 @@ import {
   previewManualSell,
   getDailyPortfolioBrief,
   getDailyBriefOpportunities,
+  refreshLivePortfolio,
 } from '../api/portfolio'
 import {
   addCustomTicker,
@@ -95,6 +96,10 @@ export function useDailyBriefOpportunitiesQuery(
     ),
     enabled: Boolean(portfolioId),
   })
+}
+
+export function useLivePortfolioRefreshMutation(portfolioId: string | null) {
+  return useMutation({ mutationFn: () => refreshLivePortfolio(portfolioId ?? '') })
 }
 
 export function usePositionMonitoringQuery(portfolioId: string | null) {
