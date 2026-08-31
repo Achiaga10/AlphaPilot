@@ -4,12 +4,14 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.backtesting.ranking_features import RelativeStrength20Calculator
 from alphapilot.backtesting.service import CandleHistoryService, CompanyLookupService
+from alphapilot.database.models.company import Company
+from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.database.models.index_constituent import IndexConstituent
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.portfolio.decisions import (
@@ -35,6 +37,16 @@ from alphapilot.strategy.signal import Signal
 
 class ActiveUniverseRepository(Protocol):
     async def list_active(self, index_symbol: str) -> list[IndexConstituent]: ...
+
+
+class BulkCompanyLookupService(CompanyLookupService, Protocol):
+    async def list_companies(self) -> list[Company]: ...
+
+
+class BulkCandleHistoryService(CandleHistoryService, Protocol):
+    async def get_histories(
+        self, company_ids: list[UUID], start: date, end: date
+    ) -> dict[UUID, list[DailyCandle]]: ...
 
 
 class CandidateDataStatus(StrEnum):
@@ -99,6 +111,19 @@ class PortfolioOrchestrationResult:
     evaluation_target_ticker: str | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class PortfolioMarketSnapshot:
+    """One immutable universe/candle load reusable across strategy profiles."""
+
+    requested_as_of_date: date
+    analysis_as_of_date: date
+    scope: tuple[str, ...]
+    companies_by_ticker: dict[str, Company]
+    candles_by_company_id: dict[UUID, tuple[DailyCandle, ...]]
+    benchmark: Company
+    benchmark_candles: tuple[DailyCandle, ...]
+
+
 class PortfolioDecisionOrchestrator:
     SP500_INDEX_SYMBOL = "^GSPC"
     BENCHMARK_TICKER = "SPY"
@@ -118,6 +143,72 @@ class PortfolioDecisionOrchestrator:
         self.decision_engine = decision_engine or PortfolioDecisionEngine()
         self.session_policy = session_policy or CompletedDailySessionPolicy()
 
+    async def load_market_snapshot(
+        self,
+        *,
+        state: CurrentPortfolioState,
+        requested_as_of_date: date,
+        tickers: tuple[str, ...] | None = None,
+    ) -> PortfolioMarketSnapshot:
+        """Bulk-load a shared market snapshot for deterministic multi-profile evaluation."""
+        if not hasattr(self.company_service, "list_companies") or not hasattr(
+            self.candle_service, "get_histories"
+        ):
+            raise TypeError("Portfolio orchestrator services do not support bulk snapshots")
+        company_service = cast(BulkCompanyLookupService, self.company_service)
+        candle_service = cast(BulkCandleHistoryService, self.candle_service)
+        companies = await company_service.list_companies()
+        companies_by_ticker = {item.ticker.upper(): item for item in companies}
+        benchmark = companies_by_ticker.get(self.BENCHMARK_TICKER)
+        if benchmark is None:
+            raise ValueError("SPY benchmark company not found")
+        requested_scope = tuple(
+            sorted({ticker.strip().upper() for ticker in tickers or () if ticker.strip()})
+        )
+        if tickers is None:
+            constituents = await self.universe_repository.list_active(self.SP500_INDEX_SYMBOL)
+            scope = {item.ticker.upper() for item in constituents}
+        else:
+            scope = set(requested_scope)
+        scope.update(position.ticker.upper() for position in state.positions)
+        scope.discard(self.BENCHMARK_TICKER)
+        selected_companies = [
+            companies_by_ticker[ticker] for ticker in sorted(scope) if ticker in companies_by_ticker
+        ]
+        histories = await candle_service.get_histories(
+            [benchmark.id, *(item.id for item in selected_companies)],
+            requested_as_of_date - timedelta(days=self.HISTORY_DAYS),
+            requested_as_of_date,
+        )
+        benchmark_candles = tuple(
+            item
+            for item in histories.get(benchmark.id, [])
+            if item.trading_day <= requested_as_of_date
+            and self.session_policy.is_complete(item.trading_day)
+        )
+        if not benchmark_candles:
+            raise ValueError(
+                "No completed stored SPY candles available on or before requested as-of date"
+            )
+        analysis_day = benchmark_candles[-1].trading_day
+        return PortfolioMarketSnapshot(
+            requested_as_of_date,
+            analysis_day,
+            tuple(sorted(scope)),
+            companies_by_ticker,
+            {
+                company_id: tuple(
+                    item
+                    for item in items
+                    if item.trading_day <= analysis_day
+                    and self.session_policy.is_complete(item.trading_day)
+                )
+                for company_id, items in histories.items()
+            },
+            benchmark,
+            benchmark_candles,
+        )
+
     async def build_plan(
         self,
         *,
@@ -131,29 +222,38 @@ class PortfolioDecisionOrchestrator:
         exit_mode: TrendExitMode = TrendExitMode.HYBRID,
         hybrid_trend_threshold_pct: Decimal = Decimal("2"),
         micho_entry_mode: MichoEntryMode = MichoEntryMode.BOTH,
+        evaluate_existing_position_exits: bool = True,
+        market_snapshot: PortfolioMarketSnapshot | None = None,
     ) -> PortfolioOrchestrationResult:
-        benchmark = await self.company_service.get_company(self.BENCHMARK_TICKER)
-        if benchmark is None:
-            raise ValueError("SPY benchmark company not found")
-        benchmark_candles = await self.candle_service.get_history(
-            benchmark.id,
-            requested_as_of_date - timedelta(days=self.HISTORY_DAYS),
-            requested_as_of_date,
-        )
-        benchmark_candles = sorted(
-            (
-                item
-                for item in benchmark_candles
-                if item.trading_day <= requested_as_of_date
-                and self.session_policy.is_complete(item.trading_day)
-            ),
-            key=lambda item: item.trading_day,
-        )
-        if not benchmark_candles:
-            raise ValueError(
-                "No completed stored SPY candles available on or before requested as-of date"
+        if market_snapshot is None:
+            benchmark = await self.company_service.get_company(self.BENCHMARK_TICKER)
+            if benchmark is None:
+                raise ValueError("SPY benchmark company not found")
+            benchmark_candles = await self.candle_service.get_history(
+                benchmark.id,
+                requested_as_of_date - timedelta(days=self.HISTORY_DAYS),
+                requested_as_of_date,
             )
-        analysis_day = benchmark_candles[-1].trading_day
+            benchmark_candles = sorted(
+                (
+                    item
+                    for item in benchmark_candles
+                    if item.trading_day <= requested_as_of_date
+                    and self.session_policy.is_complete(item.trading_day)
+                ),
+                key=lambda item: item.trading_day,
+            )
+            if not benchmark_candles:
+                raise ValueError(
+                    "No completed stored SPY candles available on or before requested as-of date"
+                )
+            analysis_day = benchmark_candles[-1].trading_day
+        else:
+            if market_snapshot.requested_as_of_date != requested_as_of_date:
+                raise ValueError("Market snapshot does not match requested as-of date")
+            benchmark = market_snapshot.benchmark
+            benchmark_candles = list(market_snapshot.benchmark_candles)
+            analysis_day = market_snapshot.analysis_as_of_date
         strategy = create_strategy(
             strategy_name,
             exit_mode=exit_mode,
@@ -163,7 +263,9 @@ class PortfolioDecisionOrchestrator:
         requested_scope = tuple(
             sorted({ticker.strip().upper() for ticker in tickers or () if ticker.strip()})
         )
-        if tickers is None:
+        if market_snapshot is not None:
+            scope = set(market_snapshot.scope)
+        elif tickers is None:
             constituents = await self.universe_repository.list_active(self.SP500_INDEX_SYMBOL)
             scope = {item.ticker.upper() for item in constituents}
         else:
@@ -181,7 +283,11 @@ class PortfolioDecisionOrchestrator:
         history_days = max(self.HISTORY_DAYS, get_strategy_stock_warmup_days(strategy_name))
 
         for ticker in sorted(scope):
-            company = await self.company_service.get_company(ticker)
+            company = (
+                market_snapshot.companies_by_ticker.get(ticker)
+                if market_snapshot is not None
+                else await self.company_service.get_company(ticker)
+            )
             if company is None:
                 statuses.append(
                     CandidateOrchestrationStatus(
@@ -193,16 +299,21 @@ class PortfolioDecisionOrchestrator:
                     )
                 )
                 continue
-            candles = await self.candle_service.get_history(
-                company.id,
-                analysis_day - timedelta(days=history_days),
-                analysis_day,
+            candles = (
+                list(market_snapshot.candles_by_company_id.get(company.id, ()))
+                if market_snapshot is not None
+                else await self.candle_service.get_history(
+                    company.id,
+                    analysis_day - timedelta(days=history_days),
+                    analysis_day,
+                )
             )
             candles = sorted(
                 (
                     item
                     for item in candles
-                    if item.trading_day <= analysis_day
+                    if item.trading_day >= analysis_day - timedelta(days=history_days)
+                    and item.trading_day <= analysis_day
                     and self.session_policy.is_complete(item.trading_day)
                 ),
                 key=lambda item: item.trading_day,
@@ -239,6 +350,10 @@ class PortfolioDecisionOrchestrator:
                 )
                 continue
             evaluation = strategy.evaluate(company, candles, context)
+            held = any(position.ticker.upper() == ticker for position in state.positions)
+            portfolio_signal = (
+                evaluation.signal if evaluate_existing_position_exits or not held else Signal.HOLD
+            )
             exit_context = build_strategy_exit_context(
                 strategy=strategy_name,
                 evaluation=evaluation,
@@ -253,7 +368,7 @@ class PortfolioDecisionOrchestrator:
                     benchmark_candles=benchmark_candles,
                     signal_day=analysis_day,
                 )
-                if evaluation.signal == Signal.BUY
+                if portfolio_signal == Signal.BUY
                 and selection_policy == SelectionPolicyName.RELATIVE_STRENGTH_20
                 else None
             )
@@ -263,16 +378,15 @@ class PortfolioDecisionOrchestrator:
                     signal_day=analysis_day,
                     period=risk_config.atr_period,
                 )
-                if evaluation.signal == Signal.BUY
+                if portfolio_signal == Signal.BUY
                 else None
             )
-            held = any(position.ticker.upper() == ticker for position in state.positions)
             data_status = (
                 CandidateDataStatus.INSUFFICIENT_HISTORY
                 if evaluation.reason.value == "INSUFFICIENT_DATA"
                 else (
                     CandidateDataStatus.READY
-                    if evaluation.signal != Signal.HOLD or held
+                    if portfolio_signal != Signal.HOLD or held
                     else CandidateDataStatus.NO_ACTION
                 )
             )
@@ -281,7 +395,7 @@ class PortfolioDecisionOrchestrator:
                     ticker,
                     data_status,
                     latest.trading_day,
-                    evaluation.signal,
+                    portfolio_signal,
                     evaluation.reason.value,
                     company.name,
                     company.sector,
@@ -291,11 +405,11 @@ class PortfolioDecisionOrchestrator:
                     company_id=company.id,
                 )
             )
-            if evaluation.signal != Signal.HOLD or held:
+            if portfolio_signal != Signal.HOLD or held:
                 candidates.append(
                     PortfolioCandidate(
                         ticker=ticker,
-                        signal=evaluation.signal,
+                        signal=portfolio_signal,
                         reference_price=latest.close,
                         ranking_score=score,
                         atr=atr_value,

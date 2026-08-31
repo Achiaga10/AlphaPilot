@@ -21,6 +21,71 @@ class ResearchDataRepository:
         self.session = session
         self.session_policy = session_policy or CompletedDailySessionPolicy()
 
+    async def freshness_metrics(
+        self, index_symbol: str
+    ) -> tuple[int, int, int, date | None, date | None, date | None, int, int, int]:
+        """Return the complete admin freshness snapshot with one database round trip."""
+        completed_through = self.session_policy.completed_through()
+        latest_by_ticker = self._active_tracked_latest_dates(index_symbol, completed_through)
+        benchmark_date = (
+            select(func.max(DailyCandle.trading_day))
+            .join(Company, Company.id == DailyCandle.company_id)
+            .where(
+                Company.ticker == "SPY",
+                DailyCandle.trading_day <= completed_through,
+            )
+            .scalar_subquery()
+        )
+        active_companies = (
+            select(func.count())
+            .select_from(Company)
+            .where(Company.is_active.is_(True))
+            .scalar_subquery()
+        )
+        active_constituents = (
+            select(func.count())
+            .select_from(IndexConstituent)
+            .where(
+                IndexConstituent.index_symbol == index_symbol.upper(),
+                IndexConstituent.is_active.is_(True),
+            )
+            .scalar_subquery()
+        )
+        active_custom = (
+            select(func.count())
+            .select_from(Company)
+            .where(
+                Company.is_active.is_(True),
+                Company.is_custom_tracked.is_(True),
+            )
+            .scalar_subquery()
+        )
+        result = await self.session.execute(
+            select(
+                active_companies,
+                active_constituents,
+                active_custom,
+                benchmark_date,
+                func.min(latest_by_ticker.c.latest_day),
+                func.max(latest_by_ticker.c.latest_day),
+                func.count().filter(latest_by_ticker.c.latest_day < benchmark_date),
+                func.count().filter(latest_by_ticker.c.latest_day == benchmark_date),
+                func.count().filter(latest_by_ticker.c.latest_day.is_(None)),
+            ).select_from(latest_by_ticker)
+        )
+        row = result.one()
+        return (
+            int(row[0]),
+            int(row[1]),
+            int(row[2]),
+            row[3],
+            row[4],
+            row[5],
+            int(row[6]),
+            int(row[7]),
+            int(row[8]),
+        )
+
     async def count_active_companies(self) -> int:
         result = await self.session.execute(
             select(func.count()).select_from(Company).where(Company.is_active.is_(True))

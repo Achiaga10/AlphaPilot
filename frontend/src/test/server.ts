@@ -19,6 +19,20 @@ const researchPortfolioFixture = {
   positions: planFixture.portfolio.positions.map((position, index) => ({ position_id: `21111111-1111-4111-8111-11111111111${index}`, company_id: `31111111-1111-4111-8111-11111111111${index}`, ticker: position.ticker, sector: position.sector, status: 'OPEN', quantity: position.shares, average_cost: position.cost_basis ?? position.reference_price, cost_basis: String(Number(position.cost_basis ?? position.reference_price) * position.shares), entry_trading_day: '2026-01-02', entry_price: position.cost_basis, strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, selection_policy: 'relative-strength-20', provenance_status: 'PLAN_PROFILE', modeled_risk_dollars: position.modeled_risk_dollars, latest_completed_trading_day: '2026-08-20', latest_completed_close: position.reference_price, market_value: position.market_value, portfolio_weight_pct: position.portfolio_weight_pct, unrealized_pnl: '0', unrealized_pnl_pct: '0', valuation_status: 'VALUED' })),
 }
 
+export const dailyBriefFixture = {
+  portfolio_id: planFixture.portfolio_id, portfolio_revision: 0, generated_at: '2026-08-29T10:00:00Z',
+  data_status: { readiness: 'READY', expected_completed_session: '2026-08-28', latest_synchronized_session: '2026-08-28', brief_session: '2026-08-28', sync_status: 'SUCCEEDED', explanation: 'Stored facts are aligned to the latest completed SPY session.' },
+  workflow_status: 'WAITING_FOR_REQUIRED_EXITS',
+  summary: { portfolio_value: '100000', cash: '30000', invested_market_value: '70000', cash_pct: '30', open_positions: 3, max_positions: 10, valuation_readiness: 'COMPLETE', modeled_risk_dollars: null },
+  required_actions: [{ position_id: 'sell-position', ticker: 'MCHO', company_name: 'Micho Corp', strategy: 'micho-150', strategy_profile_id: 'micho-150-v1', strategy_profile_version: 1, status: 'SELL', reason: 'SMA150_BREAKDOWN', explanation: 'SMA150 breakdown triggered the stored strategy exit.', quantity: 20, latest_completed_close: '100', unrealized_pnl: '-200', unrealized_pnl_pct: '-9.09', as_of_session: '2026-08-28', sticky_sell: true, exit_triggered_on: '2026-08-28', loss_control_policy: 'SMA150_COMPLETED_CLOSE_EXIT', loss_control_boundary: '105', loss_control_trigger: 'COMPLETED_DAILY_CLOSE_BELOW', broker_stop_order: false, references: [] }],
+  attention_positions: [{ position_id: 'attention-position', ticker: 'APA', company_name: 'APA Corp', strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, status: 'ATTENTION', reason: 'EMA20_LOST_STRONG_TREND_HOLD', explanation: 'EMA20 was lost, but the frozen HYBRID strong-trend exception remains active.', quantity: 25, latest_completed_close: '42.53', unrealized_pnl: '35.25', unrealized_pnl_pct: '0.35', as_of_session: '2026-08-28', sticky_sell: false, exit_triggered_on: null, loss_control_policy: 'NONE', loss_control_boundary: null, loss_control_trigger: null, broker_stop_order: false, references: [] }],
+  actionable_opportunities: [],
+  research_only_opportunities: [{ ticker: 'EMA', strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, source_plan_id: 'ema-plan', portfolio_revision: 0, selection_policy: 'relative-strength-20', sizing_policy: 'equal-slot', decision: 'BUY', decision_reason: 'BUY_APPROVED', ranking_score: '0.05', reference_price: '50', proposed_shares: 100, target_allocation_dollars: '5000', target_weight_pct: '5', sector: 'Technology', execution_readiness: 'RESEARCH_ONLY', execution_readiness_reason: 'NO_APPROVED_LOSS_CONTROL_POLICY', loss_control_policy: 'NONE', loss_control_boundary: null, loss_control_trigger: null, loss_control_distance_dollars: null, loss_control_distance_pct: null, broker_stop_order: false, strategy_references: [], analysis_as_of_date: '2026-08-28', action_id: '1:BUY:EMA', workflow_status: 'READY_FOR_REVIEW' }],
+  deferred_opportunities: [{ ticker: 'FAST', strategy: 'micho-150', strategy_profile_id: 'micho-150-v1', strategy_profile_version: 1, source_plan_id: 'micho-plan', portfolio_revision: 0, selection_policy: 'relative-strength-20', sizing_policy: 'atr-volatility-normalized', decision: 'BUY', decision_reason: 'BUY_APPROVED', ranking_score: '0.10', reference_price: '120', proposed_shares: 80, target_allocation_dollars: '9600', target_weight_pct: '9.6', sector: 'Industrials', execution_readiness: 'ACTIONABLE', execution_readiness_reason: 'LOSS_CONTROL_READY', loss_control_policy: 'SMA150_COMPLETED_CLOSE_EXIT', loss_control_boundary: '108', loss_control_trigger: 'COMPLETED_DAILY_CLOSE_BELOW', loss_control_distance_dollars: '12', loss_control_distance_pct: '10', broker_stop_order: false, strategy_references: [], analysis_as_of_date: '2026-08-28', action_id: '1:BUY:FAST', workflow_status: 'WAITING_FOR_REQUIRED_EXITS' }],
+  hold_positions: [{ position_id: 'hold-position', ticker: 'MSFT', company_name: 'Microsoft', strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, status: 'HOLD', reason: 'EMA20_HELD', explanation: 'EMA20 is still held.', quantity: 100, latest_completed_close: '400', unrealized_pnl: '5000', unrealized_pnl_pct: '14.28', as_of_session: '2026-08-28', sticky_sell: false, exit_triggered_on: null, loss_control_policy: 'NONE', loss_control_boundary: null, loss_control_trigger: null, broker_stop_order: false, references: [] }],
+  unavailable_positions: [], blockers: ['REQUIRED_EXITS_MUST_BE_RESOLVED_FIRST'],
+}
+
 function summarize(portfolio: { cash: string; positions: TestPosition[] }) {
   const cash = Number(portfolio.cash) || 0
   const values = portfolio.positions.map((position) => Number(position.reference_price) * position.shares)
@@ -37,11 +51,28 @@ function summarize(portfolio: { cash: string; positions: TestPosition[] }) {
   }
 }
 
+export const dailyOpportunitiesFixture = {
+  portfolio_id: dailyBriefFixture.portfolio_id,
+  portfolio_revision: dailyBriefFixture.portfolio_revision,
+  generated_at: dailyBriefFixture.generated_at,
+  analysis_as_of_date: '2026-08-28',
+  workflow_status: dailyBriefFixture.workflow_status,
+  actionable_opportunities: dailyBriefFixture.actionable_opportunities,
+  research_only_opportunities: dailyBriefFixture.research_only_opportunities,
+  deferred_opportunities: dailyBriefFixture.deferred_opportunities,
+  actionable_total_count: dailyBriefFixture.actionable_opportunities.length,
+  research_only_total_count: dailyBriefFixture.research_only_opportunities.length,
+  deferred_total_count: dailyBriefFixture.deferred_opportunities.length,
+  research_only_limit: 10,
+}
+
 export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/health/`, () => HttpResponse.json({ status: 'ok', application: 'AlphaPilot' })),
   http.get(`${API_BASE_URL}/api/v1/portfolio/risk-config`, () => HttpResponse.json(riskConfigFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/strategy-profiles`, () => HttpResponse.json(strategyProfilesFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/current`, () => HttpResponse.json(researchPortfolioFixture)),
+  http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/daily-brief`, () => HttpResponse.json(dailyBriefFixture)),
+  http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/daily-brief/opportunities`, () => HttpResponse.json(dailyOpportunitiesFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/monitoring`, () => HttpResponse.json([])),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/positions/:positionId/intelligence`, ({ params }) => HttpResponse.json({ portfolio_id: String(params.portfolioId), portfolio_revision: 0, position_id: String(params.positionId), company_id: '31111111-1111-4111-8111-111111111110', ticker: 'MSFT', company_name: 'Microsoft', position_status: 'OPEN', provenance_status: 'PLAN_PROFILE', quantity: 100, entry_trading_day: '2026-01-02', entry_price: '400', average_cost: '400', cost_basis: '40000', strategy_guidance_available: true, guidance_unavailable_reason: null, strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, strategy_profile_snapshot: {}, selection_policy: 'relative-strength-20', entry_decision: 'BUY', entry_reason: 'BUY_APPROVED', latest_completed_trading_day: '2026-08-20', latest_completed_close: '400', market_value: '40000', unrealized_pnl: '0', unrealized_pnl_pct: '0', realized_pnl: '0', monitoring_readiness: 'READY', monitoring_status: 'HOLD', monitoring_reason: 'EMA20_HELD', monitoring_completed_trading_day: '2026-08-20', indicator_facts: { ema20: '390' }, previous_monitoring_status: null, latest_monitoring_transition: null, exit_triggered: false, exit_triggered_on: null, exit_trigger_reason: null, active_exit_policy: 'HYBRID exit with frozen 2% threshold', protective_stop_policy: 'NONE', trailing_stop_policy: 'NONE', profit_target_policy: 'NONE', research_only_stop_candidate: 'Static 3 × ATR14', research_only_stop_status: 'NOT_ACTIVE', price_change_since_entry: '0', explanation: 'EMA20 is still held.', trade_event_count: 1, reconciliation_event_count: 0 })),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/positions/:positionId/paper-validations`, () => HttpResponse.json([])),

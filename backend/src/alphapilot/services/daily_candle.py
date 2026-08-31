@@ -55,6 +55,14 @@ class DailyCandleService:
             end,
         )
 
+    async def get_histories(
+        self,
+        company_ids: list[UUID],
+        start: date,
+        end: date,
+    ) -> dict[UUID, list[DailyCandle]]:
+        return await self.repository.get_histories(company_ids, start, end)
+
     async def upsert_many(
         self,
         candles: list[DailyCandle],

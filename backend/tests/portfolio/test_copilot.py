@@ -1,6 +1,8 @@
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from uuid import UUID
 
 import httpx
 import pytest
@@ -18,7 +20,11 @@ from alphapilot.copilot.provider import (
     OllamaProvider,
     ProviderResponse,
 )
-from alphapilot.copilot.resolution import CopilotQueryResolver, CopilotResolutionStatus
+from alphapilot.copilot.resolution import (
+    CopilotQueryResolver,
+    CopilotResolutionStatus,
+    ResolvedCopilotQuery,
+)
 from alphapilot.core.config import settings
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
@@ -361,6 +367,43 @@ def test_specific_question_intents_limit_context_to_relevant_authoritative_facts
     }
     for wording in ("average cost", "avg cost", "cost basis per share", "avarge cost"):
         assert classify_question(wording) == CopilotIntent.AVERAGE_COST
+
+
+@pytest.mark.asyncio
+async def test_daily_brief_action_summary_is_deterministic_and_read_only() -> None:
+    portfolio_id = UUID("11111111-1111-4111-8111-111111111111")
+
+    class Resolver:
+        async def resolve(self, *_args, **_kwargs):
+            return ResolvedCopilotQuery(
+                CopilotIntent.DAILY_BRIEF,
+                "GENERAL",
+                CopilotResolutionStatus.RESOLVED,
+            )
+
+    class BriefService:
+        async def build(self, _portfolio_id):
+            return SimpleNamespace(
+                data_status=SimpleNamespace(
+                    readiness=SimpleNamespace(value="READY"), brief_session=date(2026, 8, 28)
+                ),
+                required_actions=(SimpleNamespace(ticker="MCHO"),),
+                attention_positions=(SimpleNamespace(ticker="APA"),),
+            )
+
+    fake = FakeLLMProvider(ProviderResponse("must not be used"))
+    orchestrator = CopilotOrchestrator(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        fake,
+        Resolver(),  # type: ignore[arg-type]
+        BriefService(),  # type: ignore[arg-type]
+    )
+    answer = await orchestrator.ask_unified(portfolio_id, "What requires action today?")
+    assert classify_question("What requires action today?") == CopilotIntent.DAILY_BRIEF
+    assert answer.answer == "Required exits come first today: MCHO."
+    assert answer.scope == "PORTFOLIO"
+    assert answer.provider == "alphapilot"
+    assert fake.last_request is None
 
 
 @pytest.mark.asyncio

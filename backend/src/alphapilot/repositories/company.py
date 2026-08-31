@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +28,14 @@ class CompanyRepository(BaseRepository[Company]):
         )
 
         return result.scalar_one_or_none()
+
+    async def get_many(self, company_ids: list[UUID]) -> list[Company]:
+        if not company_ids:
+            return []
+        result = await self.session.execute(
+            select(Company).where(Company.id.in_(company_ids)).order_by(Company.ticker)
+        )
+        return list(result.scalars().all())
 
     async def update(
         self,

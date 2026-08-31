@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 class ResearchDataSummaryRepository(Protocol):
+    async def freshness_metrics(
+        self, index_symbol: str
+    ) -> tuple[int, int, int, date | None, date | None, date | None, int, int, int]: ...
+
     async def count_active_companies(self) -> int: ...
 
     async def count_active_constituents(self, index_symbol: str) -> int: ...
@@ -202,6 +206,9 @@ class ResearchDataSummaryService:
         self.repository = repository
 
     async def get_freshness(self) -> ResearchDataFreshness:
+        if hasattr(self.repository, "freshness_metrics"):
+            metrics = await self.repository.freshness_metrics(self.SP500_INDEX_SYMBOL)
+            return ResearchDataFreshness(*metrics)
         benchmark_date = await self.repository.latest_candle_date("SPY")
         earliest, latest = await self.repository.active_tracked_latest_date_range(
             self.SP500_INDEX_SYMBOL

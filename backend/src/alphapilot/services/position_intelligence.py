@@ -8,10 +8,22 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from alphapilot.database.models.research_portfolio import ResearchPositionProvenance
+from alphapilot.database.models.company import Company
+from alphapilot.database.models.research_portfolio import (
+    PositionMonitoringSnapshot,
+    ResearchPortfolio,
+    ResearchPosition,
+    ResearchPositionProvenance,
+    ResearchReconciliationEvent,
+    ResearchTradeEvent,
+)
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.research_portfolio import ResearchPortfolioRepository
-from alphapilot.services.research_portfolio import ResearchPortfolioService
+from alphapilot.services.research_portfolio import (
+    PositionValuation,
+    ResearchPortfolioService,
+    ResearchPortfolioValuation,
+)
 from alphapilot.strategy.profile import resolve_strategy_profile_identity
 
 
@@ -93,12 +105,66 @@ class PositionIntelligenceService:
         )
         company = await self.companies.get(position.company_id)
         history = await self.portfolios.monitoring_history(position_id)
-        latest = history[0] if history else None
-        previous = history[1] if len(history) > 1 else None
         trade_events = await self.portfolios.position_events(position_id)
         reconciliations = await self.portfolios.position_reconciliation_events(position_id)
-        realized = sum((Decimal(item.realized_pnl) for item in trade_events), Decimal("0"))
+        return self._assemble(
+            portfolio, position, valued, company, history, trade_events, reconciliations
+        )
 
+    async def get_portfolio_intelligence(
+        self,
+        portfolio_id: UUID,
+        *,
+        valuation: ResearchPortfolioValuation,
+    ) -> tuple[PositionIntelligence, ...]:
+        """Bulk-assemble all open-position intelligence without per-position revaluation."""
+        portfolio = await self.portfolios.get(portfolio_id)
+        positions = await self.portfolios.list_open_positions(portfolio_id)
+        if portfolio is None:
+            raise ValueError("Research portfolio not found")
+        companies = {
+            item.id: item
+            for item in await self.companies.get_many(
+                [position.company_id for position in positions]
+            )
+        }
+        histories: dict[UUID, list[PositionMonitoringSnapshot]] = {}
+        for monitor in await self.portfolios.portfolio_monitoring_history(portfolio_id):
+            histories.setdefault(monitor.position_id, []).append(monitor)
+        events: dict[UUID, list[ResearchTradeEvent]] = {}
+        for trade_event in await self.portfolios.list_events(portfolio_id):
+            events.setdefault(trade_event.position_id, []).append(trade_event)
+        reconciliations: dict[UUID, list[ResearchReconciliationEvent]] = {}
+        for reconciliation in await self.portfolios.list_reconciliation_events(portfolio_id):
+            if reconciliation.position_id is not None:
+                reconciliations.setdefault(reconciliation.position_id, []).append(reconciliation)
+        valued_by_id = {item.position_id: item for item in valuation.positions}
+        return tuple(
+            self._assemble(
+                portfolio,
+                position,
+                valued_by_id.get(position.id),
+                companies.get(position.company_id),
+                histories.get(position.id, []),
+                events.get(position.id, []),
+                reconciliations.get(position.id, []),
+            )
+            for position in positions
+        )
+
+    def _assemble(
+        self,
+        portfolio: ResearchPortfolio,
+        position: ResearchPosition,
+        valued: PositionValuation | None,
+        company: Company | None,
+        history: list[PositionMonitoringSnapshot],
+        trade_events: list[ResearchTradeEvent],
+        reconciliations: list[ResearchReconciliationEvent],
+    ) -> PositionIntelligence:
+        latest = history[0] if history else None
+        previous = history[1] if len(history) > 1 else None
+        realized = sum((Decimal(item.realized_pnl) for item in trade_events), Decimal("0"))
         profile = None
         if (
             position.provenance_status == ResearchPositionProvenance.PLAN_PROFILE.value

@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-Sprint 20 — Conversational Copilot UX & Governed Exit/Stop Research
+Sprint 21 — Daily Portfolio Manager / Trading Command Center
 COMPLETE LOCALLY — awaiting user review and Git publishing
 
 Current development branch:
-feature/conversational-copilot-risk-policy
+feature/daily-portfolio-manager
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -21,12 +21,20 @@ backend-owned versioned strategy profiles. Sprint 15 is complete, reviewed, and
 merged with a frozen-snapshot, stage-governed Strategy Lab. Sprint 16 is complete,
 reviewed, and merged. Sprint 17 and Sprint 18 are complete, reviewed, and
 merged. Sprint 19 is complete and merged. Sprint 20 and hardening are complete
-locally: Round 1 and EMA Round 2 are `NO_WINNER`; Micho's frozen SMA150 completed-
+and merged: Round 1 and EMA Round 2 are `NO_WINNER`; Micho's frozen SMA150 completed-
 close exit is explicitly active strategy loss control; Copilot answers in English
 through one unified chat whose General/Portfolio/Position scope and ticker resolution
 are backend-owned. The visible context selector is removed, deterministic clarification
 and short-lived explicit ticker follow-up are implemented, and only the inner message
-history auto-scrolls. Sprint 21 is not started.
+history auto-scrolls. Sprint 21 is complete locally as a read-only orchestration layer
+over existing portfolio, monitoring, readiness, plan, sync-status, and Copilot
+authorities. Sprint 22 has not started.
+
+Sprint 21 performance hardening is also complete locally. The Dashboard core and
+opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,
+company, universe, and candle paths eliminate the measured N+1/repeated-universe work.
+The real local core rendered in 0.942 seconds and the separate opportunity response in
+5.470 seconds, with 10 of 89 ordered research-only candidates shown by default.
 
 ## Project Goal
 

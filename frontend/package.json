@@ -12,6 +12,7 @@
     "smoke:sprint20": "node scripts/sprint20-copilot-smoke.mjs",
     "smoke:sprint20:real": "node scripts/sprint20-copilot-real-smoke.mjs",
     "smoke:sprint20:unified": "node scripts/sprint20-unified-copilot-real-smoke.mjs",
+    "smoke:sprint21": "node scripts/sprint21-daily-manager-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

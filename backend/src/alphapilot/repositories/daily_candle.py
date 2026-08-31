@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -46,6 +47,30 @@ class DailyCandleRepository(BaseRepository[DailyCandle]):
 
         return list(result.scalars().all())
 
+    async def get_histories(
+        self,
+        company_ids: list[UUID],
+        start: date,
+        end: date,
+    ) -> dict[UUID, list[DailyCandle]]:
+        """Load one completed-session history window for many companies."""
+        if not company_ids:
+            return {}
+        result = await self.session.execute(
+            select(DailyCandle)
+            .where(
+                DailyCandle.company_id.in_(company_ids),
+                DailyCandle.trading_day >= start,
+                DailyCandle.trading_day <= end,
+                DailyCandle.trading_day <= self.session_policy.completed_through(),
+            )
+            .order_by(DailyCandle.company_id, DailyCandle.trading_day)
+        )
+        histories: defaultdict[UUID, list[DailyCandle]] = defaultdict(list)
+        for candle in result.scalars().all():
+            histories[candle.company_id].append(candle)
+        return dict(histories)
+
     async def get_latest(self, company_id: UUID) -> DailyCandle | None:
         result = await self.session.execute(
             select(DailyCandle)
@@ -57,6 +82,32 @@ class DailyCandleRepository(BaseRepository[DailyCandle]):
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def get_latest_many(self, company_ids: list[UUID]) -> dict[UUID, DailyCandle]:
+        if not company_ids:
+            return {}
+        ranked = (
+            select(
+                DailyCandle.id.label("candle_id"),
+                func.row_number()
+                .over(
+                    partition_by=DailyCandle.company_id,
+                    order_by=DailyCandle.trading_day.desc(),
+                )
+                .label("row_number"),
+            )
+            .where(
+                DailyCandle.company_id.in_(company_ids),
+                DailyCandle.trading_day <= self.session_policy.completed_through(),
+            )
+            .subquery()
+        )
+        result = await self.session.execute(
+            select(DailyCandle)
+            .join(ranked, ranked.c.candle_id == DailyCandle.id)
+            .where(ranked.c.row_number == 1)
+        )
+        return {item.company_id: item for item in result.scalars().all()}
 
     async def get_for_day(self, company_id: UUID, trading_day: date) -> DailyCandle | None:
         result = await self.session.execute(

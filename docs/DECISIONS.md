@@ -1,5 +1,37 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 21 Daily Portfolio Manager Protocol
+
+- Dashboard becomes the Daily Portfolio Manager, powered by one typed read-only Daily
+  Portfolio Brief projection. It does not persist duplicate portfolio state.
+- The brief uses the latest completed U.S. daily session and displays expected,
+  synchronized, brief, and position-guidance dates. Stale data cannot be labeled current.
+- Sticky SELL/required exits have highest workflow priority, followed by ATTENTION,
+  actionable opportunities, research-only/deferred opportunities, HOLD, and UNAVAILABLE.
+- Existing portfolio state is never hypothetically mutated and unexecuted SELL proceeds
+  are never treated as cash. Existing revision/fingerprint revalidation remains binding.
+- Existing Portfolio Plan/decision orchestration and ExecutionReadiness exclusively own
+  opportunity signals, ranking, sizing, constraints, and actionability.
+- Micho's numeric SMA150 completed-close policy may satisfy loss-control readiness and is
+  not a broker stop. EMA remains research-only without an approved loss-control policy.
+- Paper Validation remains observational and separate from research-portfolio mutation.
+  Daily Brief refresh triggers no market sync, broker action, or portfolio mutation.
+- Sprint 21 adds no strategy/research change, Alpaca API, auto-trading, news, TASE,
+  multi-universe support, LangChain, or LangGraph.
+- Daily Manager uses a two-stage read: the core Daily Brief renders valuation and
+  position management independently from full-universe opportunity discovery.
+- Opportunity discovery bulk-loads one reusable company/universe/candle snapshot for
+  both frozen profiles. This is a performance path only; strategy, RS20, sizing,
+  readiness, provenance, and ordering semantics are unchanged.
+- The backend returns all actionable opportunities but only the first 10 candidates in
+  authoritative research-only order by default, plus the authoritative total and a
+  bounded `View all` path. React does not rank or financially filter candidates.
+- Current-session readiness compares stored SPY with the conservative latest possible
+  completed U.S. weekday from `CompletedDailySessionPolicy`. A missing weekday is
+  `BLOCKED` even after a process restart; `NEVER_RUN` alone does not block demonstrably
+  current stored data. Holidays may conservatively remain blocked until a later stored
+  SPY session establishes freshness.
+
 ## Sprint 20 Product Constitution and Frozen Protocol
 
 - No ACTIONABLE new trade exists without a deterministic numeric loss-control

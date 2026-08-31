@@ -18,7 +18,7 @@ test('sidebar uses the real AlphaPilot image and removes placeholder branding', 
   expect(logo).toHaveAttribute('src', expect.stringContaining('alphapilot-logo.png'))
   expect(logo).toHaveClass('brand__logo')
   expect(document.querySelector('.brand__mark')).not.toBeInTheDocument()
-  expect(screen.getByText('Research Decision Dashboard', { selector: '.brand__subtitle' })).toBeInTheDocument()
+  expect(screen.getByText('Daily Portfolio Manager', { selector: '.brand__subtitle' })).toBeInTheDocument()
   expect(await screen.findByText('Backend connected')).toBeInTheDocument()
 })
 

@@ -193,10 +193,13 @@ class ResearchPortfolioService:
         if portfolio is None:
             raise ValueError("Research portfolio not found")
         positions = await self.portfolios.list_open_positions(portfolio_id)
+        company_ids = [position.company_id for position in positions]
+        latest_candles = await self.candles.get_latest_many(company_ids)
+        companies = {item.id: item for item in await self.companies.get_many(company_ids)}
         valued: list[PositionValuation] = []
         for position in positions:
-            candle = await self.candles.get_latest(position.company_id)
-            company = await self.companies.get(position.company_id)
+            candle = latest_candles.get(position.company_id)
+            company = companies.get(position.company_id)
             close = Decimal(candle.close) if candle is not None else None
             market_value = Decimal(position.quantity) * close if close is not None else None
             unrealized = (

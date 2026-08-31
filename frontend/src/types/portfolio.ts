@@ -521,6 +521,115 @@ export interface UnifiedCopilotQuestion {
   pending_intent: string | null
 }
 
+export interface DailyBriefReference {
+  reference_type: string
+  value: string
+  condition: string
+  qualifier: string
+  distance_dollars: string | null
+  distance_pct: string | null
+}
+
+export interface DailyBriefPosition {
+  position_id: string
+  ticker: string
+  company_name: string | null
+  strategy: string | null
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  status: 'SELL' | 'ATTENTION' | 'HOLD' | 'UNAVAILABLE'
+  reason: string
+  explanation: string
+  quantity: number
+  latest_completed_close: string | null
+  unrealized_pnl: string | null
+  unrealized_pnl_pct: string | null
+  as_of_session: string | null
+  sticky_sell: boolean
+  exit_triggered_on: string | null
+  loss_control_policy: string
+  loss_control_boundary: string | null
+  loss_control_trigger: string | null
+  broker_stop_order: boolean
+  references: DailyBriefReference[]
+}
+
+export interface DailyBriefOpportunity {
+  ticker: string
+  strategy: StrategyName
+  strategy_profile_id: string
+  strategy_profile_version: number
+  source_plan_id: string
+  portfolio_revision: number
+  selection_policy: SelectionPolicy
+  sizing_policy: SizingPolicy
+  decision: 'BUY' | 'SKIP'
+  decision_reason: string
+  ranking_score: string | null
+  reference_price: string
+  proposed_shares: number
+  target_allocation_dollars: string
+  target_weight_pct: string
+  sector: string
+  execution_readiness: 'ACTIONABLE' | 'PAPER_FORWARD_ONLY' | 'RESEARCH_ONLY' | 'UNAVAILABLE'
+  execution_readiness_reason: string
+  loss_control_policy: string
+  loss_control_boundary: string | null
+  loss_control_trigger: string | null
+  loss_control_distance_dollars: string | null
+  loss_control_distance_pct: string | null
+  broker_stop_order: boolean
+  strategy_references: DailyBriefReference[]
+  analysis_as_of_date: string
+  action_id: string | null
+  workflow_status: string
+}
+
+export interface DailyPortfolioBrief {
+  portfolio_id: string
+  portfolio_revision: number
+  generated_at: string
+  data_status: {
+    readiness: 'READY' | 'DEGRADED' | 'BLOCKED'
+    expected_completed_session: string | null
+    latest_synchronized_session: string | null
+    brief_session: string | null
+    sync_status: string
+    explanation: string
+  }
+  workflow_status: 'READY_FOR_REVIEW' | 'WAITING_FOR_REQUIRED_EXITS' | 'NEW_ENTRIES_BLOCKED'
+  summary: {
+    portfolio_value: string | null
+    cash: string
+    invested_market_value: string | null
+    cash_pct: string | null
+    open_positions: number
+    max_positions: number
+    valuation_readiness: string
+    modeled_risk_dollars: string | null
+  }
+  required_actions: DailyBriefPosition[]
+  attention_positions: DailyBriefPosition[]
+  hold_positions: DailyBriefPosition[]
+  unavailable_positions: DailyBriefPosition[]
+  blockers: string[]
+}
+
+export interface DailyBriefOpportunities {
+  portfolio_id: string
+  portfolio_revision: number
+  generated_at: string
+  analysis_as_of_date: string | null
+  workflow_status: string
+  actionable_opportunities: DailyBriefOpportunity[]
+  research_only_opportunities: DailyBriefOpportunity[]
+  deferred_opportunities: DailyBriefOpportunity[]
+  actionable_total_count: number
+  research_only_total_count: number
+  deferred_total_count: number
+  research_only_limit: number | null
+}
+
 export interface PaperValidation {
   id: string
   portfolio_id: string

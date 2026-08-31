@@ -20,7 +20,7 @@ export function AppLayout() {
       <aside className="sidebar">
         <div className="brand">
           <img className="brand__logo" src={alphaPilotLogo} alt="AlphaPilot" />
-          <span className="brand__subtitle">Research Decision Dashboard</span>
+          <span className="brand__subtitle">Daily Portfolio Manager</span>
         </div>
         <nav aria-label="Primary navigation">
           <NavLink to="/" end>Dashboard</NavLink>

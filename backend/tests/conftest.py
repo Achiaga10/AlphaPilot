@@ -48,6 +48,17 @@ TestSessionLocal = async_sessionmaker(
 )
 
 
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def serialize_shared_test_database() -> AsyncGenerator[None, None]:
+    """Prevent concurrent pytest processes from truncating the shared test database."""
+    async with test_engine.connect() as connection:
+        await connection.execute(text("SELECT pg_advisory_lock(1095520328, 1413829460)"))
+        try:
+            yield
+        finally:
+            await connection.execute(text("SELECT pg_advisory_unlock(1095520328, 1413829460)"))
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:

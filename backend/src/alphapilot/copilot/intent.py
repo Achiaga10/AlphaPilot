@@ -6,6 +6,7 @@ from enum import StrEnum
 
 class CopilotIntent(StrEnum):
     GLOSSARY = "GLOSSARY"
+    DAILY_BRIEF = "DAILY_BRIEF"
     AVERAGE_COST = "AVERAGE_COST"
     QUANTITY = "QUANTITY"
     ENTRY_PRICE = "ENTRY_PRICE"
@@ -30,6 +31,19 @@ def classify_question(question: str, *, general_scope: bool = False) -> CopilotI
     normalized = question.casefold()
     if glossary_concept(question) is not None:
         return CopilotIntent.GLOSSARY
+    if any(
+        phrase in normalized
+        for phrase in (
+            "requires action today",
+            "need action today",
+            "look at today",
+            "should i sell",
+            "new opportunities",
+            "opportunity actionable",
+            "candidate actionable",
+        )
+    ):
+        return CopilotIntent.DAILY_BRIEF
     if general_scope:
         return CopilotIntent.NAVIGATION
     if any(
