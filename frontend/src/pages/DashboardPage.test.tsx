@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { API_BASE_URL } from '../api/client'
-import { dailyBriefFixture, dailyOpportunitiesFixture, server } from '../test/server'
+import { dailyBriefFixture, dailyOpportunitiesFixture, liveBriefFixture, server } from '../test/server'
 import { renderApp } from '../test/renderApp'
 
 test('dashboard renders the daily portfolio manager in priority order', async () => {
@@ -51,9 +51,10 @@ test('dashboard distinguishes research-only and deferred actionable opportunitie
   expect(screen.getByText(/Resolve required exits before relying/)).toBeInTheDocument()
 })
 
-test('refresh refetches only the daily brief endpoint', async () => {
+test('refresh loads open-position live intelligence and refetches the daily brief without syncing', async () => {
   const user = userEvent.setup()
   let briefRequests = 0
+  let liveRequests = 0
   let syncRequests = 0
   server.use(
     http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/daily-brief`, () => {
@@ -64,11 +65,24 @@ test('refresh refetches only the daily brief endpoint', async () => {
       syncRequests += 1
       return HttpResponse.json({})
     }),
+    http.post(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/live-refresh`, () => {
+      liveRequests += 1
+      return HttpResponse.json(liveBriefFixture)
+    }),
   )
   renderApp('/')
-  await user.click(await screen.findByRole('button', { name: 'Refresh Daily Brief' }))
+  await user.click(await screen.findByRole('button', { name: 'Refresh Market & Brief' }))
   expect(briefRequests).toBeGreaterThanOrEqual(2)
+  expect(liveRequests).toBe(1)
   expect(syncRequests).toBe(0)
+  expect(await screen.findByRole('heading', { name: 'Live Market Monitor' })).toBeInTheDocument()
+  expect(screen.getByText('CRITICAL ATTENTION')).toBeInTheDocument()
+  expect(screen.getByText('Completed EMA20')).toBeInTheDocument()
+  expect(screen.getByText('$41.25')).toBeInTheDocument()
+  expect(screen.getByText('Provisional EMA20')).toBeInTheDocument()
+  expect(screen.getByText('$41.11')).toBeInTheDocument()
+  expect(screen.getByText((_, element) => element?.textContent?.includes('If session closed now: SELL') ?? false, { selector: 'p' })).toBeInTheDocument()
+  expect(screen.getByText((_, element) => element?.textContent?.includes('Confirmed completed-session SELL: NO') ?? false, { selector: 'p' })).toBeInTheDocument()
 })
 
 test('core positions render while opportunity discovery loads and shortlist is bounded', async () => {

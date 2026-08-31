@@ -33,6 +33,30 @@ export const dailyBriefFixture = {
   unavailable_positions: [], blockers: ['REQUIRED_EXITS_MUST_BE_RESOLVED_FIRST'],
 }
 
+export const liveBriefFixture = {
+  portfolio_id: planFixture.portfolio_id, portfolio_revision: 0,
+  completed_session: '2026-08-28', live_refresh_timestamp: '2026-08-31T14:43:21Z',
+  provider: 'alpaca', feed: 'iex', overall_readiness: 'LIVE',
+  requested_tickers: 1, successful_tickers: 1, partial_failures: [],
+  positions: [{
+    position_id: 'attention-position', ticker: 'APA', company_name: 'APA Corp',
+    strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1,
+    quantity: 25, average_cost: '42.38', completed_session: '2026-08-28',
+    latest_completed_close: '42.53',
+    live: { ticker: 'APA', company_id: '31111111-1111-4111-8111-111111111110', session_date: '2026-08-31', last_price: '39.80', session_open: '42.40', session_high: '42.75', session_low: '39.70', volume: 123456, previous_completed_close: '42.53', quote_timestamp: '2026-08-31T14:42:50Z', received_at: '2026-08-31T14:43:21Z', provider: 'alpaca', feed: 'iex', freshness: 'LIVE', age_seconds: 31, coverage_note: 'IEX is a real-time single-exchange feed with limited market-wide coverage.' },
+    today_change_dollars: '-2.73', today_change_pct: '-6.42',
+    completed_ema20: '41.25', provisional_ema20: '41.11', completed_ema50: '40.05', provisional_ema50: '40.04',
+    completed_sma150: '38.50', provisional_sma150: '38.49', completed_atr14: '1.15', provisional_atr14: '1.27',
+    distance_to_ema20_dollars: '-1.31', distance_to_ema20_pct: '-3.19', distance_to_ema50_dollars: '-0.24', distance_to_ema50_pct: '-0.60',
+    distance_to_sma150_dollars: '1.31', distance_to_sma150_pct: '3.40',
+    confirmed_status: 'ATTENTION', confirmed_reason: 'EMA20_LOST_STRONG_TREND_HOLD',
+    live_status: 'CRITICAL_ATTENTION', live_reason: 'LIVE_PRICE_BELOW_EMA50',
+    projected_signal_if_closed_now: 'SELL', projected_reason: 'EMA50_EXIT', projection_is_official: false,
+    confirmed_sell_required: false, loss_control_policy: 'HYBRID_COMPLETED_CLOSE_EXIT', loss_control_boundary: '40.05',
+    loss_control_trigger: 'COMPLETED_DAILY_CLOSE_BELOW', broker_stop_order: false,
+  }],
+}
+
 function summarize(portfolio: { cash: string; positions: TestPosition[] }) {
   const cash = Number(portfolio.cash) || 0
   const values = portfolio.positions.map((position) => Number(position.reference_price) * position.shares)
@@ -72,6 +96,7 @@ export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/portfolio/strategy-profiles`, () => HttpResponse.json(strategyProfilesFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/current`, () => HttpResponse.json(researchPortfolioFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/daily-brief`, () => HttpResponse.json(dailyBriefFixture)),
+  http.post(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/live-refresh`, () => HttpResponse.json(liveBriefFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/daily-brief/opportunities`, () => HttpResponse.json(dailyOpportunitiesFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/monitoring`, () => HttpResponse.json([])),
   http.get(`${API_BASE_URL}/api/v1/portfolio/:portfolioId/positions/:positionId/intelligence`, ({ params }) => HttpResponse.json({ portfolio_id: String(params.portfolioId), portfolio_revision: 0, position_id: String(params.positionId), company_id: '31111111-1111-4111-8111-111111111110', ticker: 'MSFT', company_name: 'Microsoft', position_status: 'OPEN', provenance_status: 'PLAN_PROFILE', quantity: 100, entry_trading_day: '2026-01-02', entry_price: '400', average_cost: '400', cost_basis: '40000', strategy_guidance_available: true, guidance_unavailable_reason: null, strategy: 'ema20-pullback', strategy_profile_id: 'ema20-pullback-v1', strategy_profile_version: 1, strategy_profile_snapshot: {}, selection_policy: 'relative-strength-20', entry_decision: 'BUY', entry_reason: 'BUY_APPROVED', latest_completed_trading_day: '2026-08-20', latest_completed_close: '400', market_value: '40000', unrealized_pnl: '0', unrealized_pnl_pct: '0', realized_pnl: '0', monitoring_readiness: 'READY', monitoring_status: 'HOLD', monitoring_reason: 'EMA20_HELD', monitoring_completed_trading_day: '2026-08-20', indicator_facts: { ema20: '390' }, previous_monitoring_status: null, latest_monitoring_transition: null, exit_triggered: false, exit_triggered_on: null, exit_trigger_reason: null, active_exit_policy: 'HYBRID exit with frozen 2% threshold', protective_stop_policy: 'NONE', trailing_stop_policy: 'NONE', profit_target_policy: 'NONE', research_only_stop_candidate: 'Static 3 × ATR14', research_only_stop_status: 'NOT_ACTIVE', price_change_since_entry: '0', explanation: 'EMA20 is still held.', trade_event_count: 1, reconciliation_event_count: 0 })),

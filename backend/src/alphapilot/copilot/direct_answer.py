@@ -61,6 +61,14 @@ def render_direct_answer(intent: CopilotIntent, facts: dict[str, dict[str, Any]]
         return DirectAnswer(answer, ("portfolio.monitoring",))
     ticker = _value(facts, "position.ticker")
     symbol = str(ticker) if ticker else "this position"
+    if intent == CopilotIntent.INDICATOR_VALUE:
+        return _indicator_answer(facts, symbol)
+    if intent == CopilotIntent.LIVE_PRICE:
+        return _live_price_answer(facts, symbol)
+    if intent == CopilotIntent.LIVE_POSITION_STATUS:
+        return _live_status_answer(facts, symbol)
+    if intent == CopilotIntent.LIVE_STRATEGY_PROJECTION:
+        return _live_projection_answer(facts, symbol)
     if intent == CopilotIntent.AVERAGE_COST:
         return _money_fact(
             facts,
@@ -349,6 +357,148 @@ def _decimal(value: Any) -> Decimal | None:
 def _money(value: Any) -> str:
     number = _decimal(value)
     return f"${number:,.2f}" if number is not None else "unavailable"
+
+
+def _indicator_answer(facts: dict[str, dict[str, Any]], symbol: str) -> DirectAnswer:
+    question = str(_value(facts, "query.question") or "").casefold()
+    live = any(phrase in question for phrase in ("right now", "live", "current session"))
+    if "ema" in question and "20" in question:
+        name = "EMA20"
+        field = "live.provisional_ema20" if live else "live.completed_ema20"
+    elif "ema" in question and "50" in question:
+        name = "EMA50"
+        field = "live.provisional_ema50" if live else "live.completed_ema50"
+    elif ("sma" in question or "moving average" in question) and "150" in question:
+        name = "SMA150"
+        field = "live.provisional_sma150" if live else "live.completed_sma150"
+    else:
+        name = "ATR14"
+        field = "live.provisional_atr14" if live else "live.completed_atr14"
+    value = _decimal(_value(facts, field))
+    if value is None:
+        return _unavailable(
+            f"{name} is unavailable for {symbol}; refresh live market data first.", facts
+        )
+    qualifier = "provisional live" if live else "latest completed-session"
+    return DirectAnswer(
+        f"{symbol}'s {qualifier} {name} is {_money(value)}.",
+        tuple(item for item in ("position.ticker", field) if item in facts),
+    )
+
+
+def _live_price_answer(facts: dict[str, dict[str, Any]], symbol: str) -> DirectAnswer:
+    question = str(_value(facts, "query.question") or "").casefold()
+    field = "live.high" if "high" in question else "live.low" if "low" in question else "live.price"
+    label = (
+        "current-session high"
+        if field.endswith("high")
+        else "current-session low"
+        if field.endswith("low")
+        else "live price"
+    )
+    value = _decimal(_value(facts, field))
+    timestamp = _value(facts, "live.timestamp")
+    freshness = _value(facts, "live.freshness")
+    if value is None:
+        return _unavailable(
+            f"{label.title()} is unavailable for {symbol}; refresh live market data first.", facts
+        )
+    return DirectAnswer(
+        f"{symbol}'s {label} is {_money(value)} as of {timestamp} ({freshness}).",
+        tuple(
+            item
+            for item in ("position.ticker", field, "live.timestamp", "live.freshness")
+            if item in facts
+        ),
+    )
+
+
+def _live_status_answer(facts: dict[str, dict[str, Any]], symbol: str) -> DirectAnswer:
+    question = str(_value(facts, "query.question") or "").casefold()
+    price = _decimal(_value(facts, "live.price"))
+    if "ema" in question and "20" in question:
+        reference_field, distance_field, pct_field, label = (
+            "live.provisional_ema20",
+            "live.distance_to_ema20_dollars",
+            "live.distance_to_ema20_pct",
+            "provisional EMA20",
+        )
+    elif "ema" in question and "50" in question:
+        reference_field, distance_field, pct_field, label = (
+            "live.provisional_ema50",
+            "live.distance_to_ema50_dollars",
+            "live.distance_to_ema50_pct",
+            "provisional EMA50",
+        )
+    else:
+        status = _value(facts, "live.live_status")
+        reason = _value(facts, "live.live_reason")
+        if status is None:
+            return _unavailable(f"Live status is unavailable for {symbol}; refresh first.", facts)
+        return DirectAnswer(
+            f"{symbol} is in {status}: {reason}. This is live monitoring, "
+            "not a confirmed completed-session SELL.",
+            tuple(
+                item
+                for item in ("position.ticker", "live.live_status", "live.live_reason")
+                if item in facts
+            ),
+        )
+    reference = _decimal(_value(facts, reference_field))
+    distance = _decimal(_value(facts, distance_field))
+    pct = _decimal(_value(facts, pct_field))
+    if price is None or reference is None:
+        return _unavailable(
+            f"Live indicator status is unavailable for {symbol}; refresh first.", facts
+        )
+    relation = "below" if price < reference else "above or equal to"
+    distance_text = (
+        f" by {_money(abs(distance))} ({abs(pct):.2f}%)"
+        if distance is not None and pct is not None
+        else ""
+    )
+    return DirectAnswer(
+        f"{symbol} is trading at {_money(price)}, {relation} its {label} of "
+        f"{_money(reference)}{distance_text}. The frozen strategy has not confirmed "
+        "a SELL from this incomplete session.",
+        tuple(
+            item
+            for item in (
+                "position.ticker",
+                "live.price",
+                reference_field,
+                distance_field,
+                pct_field,
+            )
+            if item in facts
+        ),
+    )
+
+
+def _live_projection_answer(facts: dict[str, dict[str, Any]], symbol: str) -> DirectAnswer:
+    signal = _value(facts, "live.projected_signal")
+    reason = _value(facts, "live.projected_reason")
+    confirmed = bool(_value(facts, "live.confirmed_sell_required"))
+    if signal is None:
+        return _unavailable(
+            f"A live strategy projection is unavailable for {symbol}; refresh first.", facts
+        )
+    return DirectAnswer(
+        f"If the current session closed now, {symbol}'s frozen strategy would project "
+        f"{signal} ({reason}). This projection is provisional and non-official. "
+        f"Confirmed completed-session SELL: {'YES' if confirmed else 'NO'}.",
+        tuple(
+            item
+            for item in (
+                "position.ticker",
+                "live.projected_signal",
+                "live.projected_reason",
+                "live.confirmed_sell_required",
+                "live.projection_is_official",
+            )
+            if item in facts
+        ),
+    )
 
 
 def _signed(value: Decimal) -> str:

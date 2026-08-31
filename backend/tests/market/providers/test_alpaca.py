@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -142,6 +142,52 @@ async def test_alpaca_get_history(
     )
 
     assert second.close == Decimal("229.4")
+
+
+@pytest.mark.asyncio
+async def test_alpaca_live_snapshots_use_one_batch_and_preserve_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "snapshots": {
+                    "AAPL": {
+                        "latestTrade": {"p": 201.25, "t": "2026-08-31T14:30:01Z"},
+                        "dailyBar": {
+                            "o": 200,
+                            "h": 202,
+                            "l": 199,
+                            "c": 201.25,
+                            "v": 1234,
+                            "t": "2026-08-31T04:00:00Z",
+                        },
+                        "prevDailyBar": {"c": 198.5},
+                    }
+                }
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    def client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    snapshots = await AlpacaProvider("iex").get_live_snapshots(["aapl", "AAPL"])
+
+    assert len(requests) == 1
+    assert requests[0].url.path == "/v2/stocks/snapshots"
+    assert requests[0].url.params["symbols"] == "AAPL"
+    assert snapshots["AAPL"].quote_timestamp == datetime.fromisoformat("2026-08-31T14:30:01+00:00")
+    assert snapshots["AAPL"].session_high == Decimal("202")
+    assert snapshots["AAPL"].previous_completed_close == Decimal("198.5")
 
 
 @pytest.mark.asyncio

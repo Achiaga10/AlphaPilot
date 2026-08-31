@@ -510,7 +510,7 @@ export interface CopilotAnswer {
   limitations: string[]
   provider: string
   model: string
-  result_status?: 'ANSWERED' | 'FACT_UNAVAILABLE' | 'CLARIFICATION_REQUIRED' | 'ENTITY_ESTABLISHED' | 'MULTIPLE_TICKERS' | 'UNKNOWN_TICKER' | 'POSITION_NOT_HELD'
+  result_status?: 'ANSWERED' | 'FACT_UNAVAILABLE' | 'CLARIFICATION_REQUIRED' | 'ENTITY_ESTABLISHED' | 'MULTIPLE_TICKERS' | 'UNKNOWN_TICKER' | 'POSITION_NOT_HELD' | 'GENERATIVE_EXPLANATION_UNAVAILABLE'
   intent?: string | null
   resolution_status?: 'RESOLVED' | 'CLARIFICATION_REQUIRED' | 'ENTITY_ESTABLISHED' | 'MULTIPLE_TICKERS' | 'UNKNOWN_TICKER' | 'POSITION_NOT_HELD'
 }
@@ -628,6 +628,83 @@ export interface DailyBriefOpportunities {
   research_only_total_count: number
   deferred_total_count: number
   research_only_limit: number | null
+}
+
+export type LiveQuoteFreshness = 'LIVE' | 'DELAYED' | 'STALE' | 'OUTSIDE_REGULAR_SESSION' | 'UNKNOWN'
+export type LiveMonitoringStatus = 'NO_ACTION' | 'ATTENTION' | 'CRITICAL_ATTENTION' | 'SELL_REQUIRED' | 'UNAVAILABLE'
+
+export interface LiveMarketSnapshot {
+  ticker: string
+  company_id: string
+  session_date: string
+  last_price: string
+  session_open: string | null
+  session_high: string | null
+  session_low: string | null
+  volume: number | null
+  previous_completed_close: string | null
+  quote_timestamp: string
+  received_at: string
+  provider: string
+  feed: string
+  freshness: LiveQuoteFreshness
+  age_seconds: number
+  coverage_note: string
+}
+
+export interface LivePositionIntelligence {
+  position_id: string
+  ticker: string
+  company_name: string | null
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  quantity: number
+  average_cost: string
+  completed_session: string | null
+  latest_completed_close: string | null
+  live: LiveMarketSnapshot | null
+  today_change_dollars: string | null
+  today_change_pct: string | null
+  completed_ema20: string | null
+  provisional_ema20: string | null
+  completed_ema50: string | null
+  provisional_ema50: string | null
+  completed_sma150: string | null
+  provisional_sma150: string | null
+  completed_atr14: string | null
+  provisional_atr14: string | null
+  distance_to_ema20_dollars: string | null
+  distance_to_ema20_pct: string | null
+  distance_to_ema50_dollars: string | null
+  distance_to_ema50_pct: string | null
+  distance_to_sma150_dollars: string | null
+  distance_to_sma150_pct: string | null
+  confirmed_status: string | null
+  confirmed_reason: string
+  live_status: LiveMonitoringStatus
+  live_reason: string
+  projected_signal_if_closed_now: string | null
+  projected_reason: string | null
+  projection_is_official: false
+  confirmed_sell_required: boolean
+  loss_control_policy: string
+  loss_control_boundary: string | null
+  loss_control_trigger: string | null
+  broker_stop_order: boolean
+}
+
+export interface PortfolioLiveBrief {
+  portfolio_id: string
+  portfolio_revision: number
+  completed_session: string | null
+  live_refresh_timestamp: string
+  provider: string
+  feed: string
+  overall_readiness: 'LIVE' | 'DELAYED' | 'STALE' | 'PARTIAL' | 'UNAVAILABLE' | 'OUTSIDE_REGULAR_SESSION'
+  positions: LivePositionIntelligence[]
+  partial_failures: string[]
+  requested_tickers: number
+  successful_tickers: number
 }
 
 export interface PaperValidation {

@@ -871,3 +871,14 @@ Long-term AlphaPilot should eventually create an actionable portfolio report inc
 - rationale
 
 This comes after strategy and portfolio validation.
+# Sprint 22 decisions
+
+- Completed `DailyCandle` facts and ephemeral live/current-session facts are separate.
+- Live strategy projections are provisional; frozen completed-session decisions remain
+  authoritative. EMA and Micho intraday breaches do not become confirmed SELL signals.
+- Alpaca batched snapshots are the explicit live source. IEX is labeled limited coverage;
+  feed entitlement and freshness are never overstated.
+- Live refresh targets open positions only, performs no financial persistence, sync, Paper
+  Validation, or broker action, and creates no migration.
+- Exact Copilot financial facts are deterministic. Generative AI is optional and outside
+  the operational critical path.

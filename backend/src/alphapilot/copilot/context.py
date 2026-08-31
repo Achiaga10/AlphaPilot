@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.copilot.navigation import navigation_facts
 from alphapilot.portfolio.stop_exit_guidance import StopExitGuidanceService
+from alphapilot.services.live_portfolio import live_market_cache
 from alphapilot.services.paper_validation import PaperValidationService
 from alphapilot.services.position_intelligence import PositionIntelligenceService
 from alphapilot.services.research_portfolio import ResearchPortfolioService
@@ -113,6 +114,43 @@ class CopilotContextAssembler:
             item.monitoring_reason,
             "Monitoring reason",
         )
+        live = live_market_cache.position(portfolio_id, position_id)
+        if live is not None:
+            live_facts = {
+                "price": live.live.last_price if live.live else None,
+                "high": live.live.session_high if live.live else None,
+                "low": live.live.session_low if live.live else None,
+                "timestamp": live.live.quote_timestamp if live.live else None,
+                "freshness": live.live.freshness if live.live else "UNAVAILABLE",
+                "coverage": live.live.coverage_note if live.live else None,
+                "completed_ema20": live.completed_ema20,
+                "provisional_ema20": live.provisional_ema20,
+                "completed_ema50": live.completed_ema50,
+                "provisional_ema50": live.provisional_ema50,
+                "completed_sma150": live.completed_sma150,
+                "provisional_sma150": live.provisional_sma150,
+                "completed_atr14": live.completed_atr14,
+                "provisional_atr14": live.provisional_atr14,
+                "distance_to_ema20_dollars": live.distance_to_ema20_dollars,
+                "distance_to_ema20_pct": live.distance_to_ema20_pct,
+                "distance_to_ema50_dollars": live.distance_to_ema50_dollars,
+                "distance_to_ema50_pct": live.distance_to_ema50_pct,
+                "live_status": live.live_status,
+                "live_reason": live.live_reason,
+                "projected_signal": live.projected_signal_if_closed_now,
+                "projected_reason": live.projected_reason,
+                "projection_is_official": live.projection_is_official,
+                "confirmed_sell_required": live.confirmed_sell_required,
+                "completed_session": live.completed_session,
+            }
+            for field, value in live_facts.items():
+                add(
+                    f"live.{field}",
+                    "live_market_cache",
+                    field,
+                    value,
+                    field.replace("_", " ").title(),
+                )
         add(
             "guidance.protective_stop",
             "stop_exit_guidance",

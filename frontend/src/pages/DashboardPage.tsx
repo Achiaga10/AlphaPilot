@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { EmptyState, ErrorState, LoadingState } from '../components/AsyncState'
 import { DailyPortfolioManager } from '../features/dashboard/DailyPortfolioManager'
 import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
-import { useDailyBriefOpportunitiesQuery, useDailyPortfolioBriefQuery } from '../hooks/usePortfolioApi'
+import { useDailyBriefOpportunitiesQuery, useDailyPortfolioBriefQuery, useLivePortfolioRefreshMutation } from '../hooks/usePortfolioApi'
 
 export function DashboardPage() {
   const { portfolio, portfolioPending } = usePortfolioWorkspace()
@@ -12,6 +12,7 @@ export function DashboardPage() {
     portfolio?.portfolio_id ?? null,
     researchLimit,
   )
+  const live = useLivePortfolioRefreshMutation(portfolio?.portfolio_id ?? null)
   return (
     <div className="page">
       <header className="page-header">
@@ -26,7 +27,7 @@ export function DashboardPage() {
       {!portfolioPending && !portfolio ? <EmptyState title="Research portfolio unavailable">Initialize the persistent research portfolio before generating a Daily Brief.</EmptyState> : null}
       {brief.isPending && portfolio ? <LoadingState label="Building Daily Portfolio Brief…" /> : null}
       {brief.isError ? <ErrorState error={brief.error} onRetry={() => void brief.refetch()} /> : null}
-      {brief.data ? <DailyPortfolioManager brief={brief.data} opportunities={opportunities.data} opportunitiesLoading={opportunities.isPending} opportunitiesError={opportunities.isError} refreshing={brief.isFetching || opportunities.isFetching} onRefresh={() => { void brief.refetch(); void opportunities.refetch() }} onViewAllResearch={() => setResearchLimit(100)} /> : null}
+      {brief.data ? <DailyPortfolioManager brief={brief.data} live={live.data} liveError={live.isError} opportunities={opportunities.data} opportunitiesLoading={opportunities.isPending} opportunitiesError={opportunities.isError} refreshing={brief.isFetching || live.isPending} onRefresh={() => { void live.mutateAsync().then(() => brief.refetch()) }} onViewAllResearch={() => setResearchLimit(100)} /> : null}
     </div>
   )
 }

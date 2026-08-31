@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.core.lifespan import daily_market_scheduler
 from alphapilot.database.session import get_db
+from alphapilot.market.providers.alpaca import AlpacaProvider
 from alphapilot.portfolio.actions import (
     ManualPortfolioSellService,
     PortfolioPlanActionService,
@@ -31,6 +32,7 @@ from alphapilot.schemas.daily_brief import (
     DailyBriefOpportunitiesSchema,
     DailyPortfolioBriefCoreSchema,
 )
+from alphapilot.schemas.live_portfolio import PortfolioLiveBriefSchema
 from alphapilot.schemas.portfolio import (
     CandidateOrchestrationStatusSchema,
     CashAdjustmentRequestSchema,
@@ -68,6 +70,7 @@ from alphapilot.services.admin_data import ResearchDataSummaryService
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
 from alphapilot.services.daily_portfolio_brief import DailyPortfolioBriefService
+from alphapilot.services.live_portfolio import LivePortfolioService
 from alphapilot.services.paper_validation import PaperValidationService
 from alphapilot.services.position_intelligence import PositionIntelligenceService
 from alphapilot.services.position_monitoring import PositionMonitoringService
@@ -245,6 +248,12 @@ def get_paper_validation_service(
     return PaperValidationService(session)
 
 
+def get_live_portfolio_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> LivePortfolioService:
+    return LivePortfolioService(session, AlpacaProvider())
+
+
 async def _persistent_state(
     service: ResearchPortfolioService, portfolio_id: UUID
 ) -> tuple[CurrentPortfolioState, ResearchPortfolioSchema]:
@@ -318,6 +327,19 @@ async def get_daily_brief_opportunities(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return DailyBriefOpportunitiesSchema.model_validate(opportunities, from_attributes=True)
+
+
+@router.post("/{portfolio_id}/live-refresh", response_model=PortfolioLiveBriefSchema)
+async def refresh_live_portfolio(
+    portfolio_id: UUID,
+    service: Annotated[LivePortfolioService, Depends(get_live_portfolio_service)],
+) -> PortfolioLiveBriefSchema:
+    try:
+        return PortfolioLiveBriefSchema.model_validate(
+            await service.refresh(portfolio_id), from_attributes=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/initialize", response_model=ResearchPortfolioSchema)

@@ -9,6 +9,7 @@ import httpx
 
 from alphapilot.core.config import settings
 from alphapilot.market.dto import MarketCandle
+from alphapilot.market.live import ProviderLiveSnapshot
 from alphapilot.market.providers.base import MarketProvider
 from alphapilot.market.providers.errors import (
     MarketDataFeedNotAuthorizedError,
@@ -40,6 +41,62 @@ class AlpacaProvider(MarketProvider):
         ticker: str,
     ) -> dict[str, Any]:
         raise NotImplementedError("Alpaca quote support is not implemented yet")
+
+    async def get_live_snapshots(self, tickers: list[str]) -> dict[str, ProviderLiveSnapshot]:
+        normalized = sorted({self._normalize_ticker(ticker) for ticker in tickers})
+        if not normalized:
+            return {}
+        headers = {
+            "APCA-API-KEY-ID": settings.ALPACA_API_KEY,
+            "APCA-API-SECRET-KEY": settings.ALPACA_SECRET_KEY,
+        }
+        async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+            response = await client.get(
+                f"{self.BASE_URL}/v2/stocks/snapshots",
+                params={"symbols": ",".join(normalized), "feed": self.feed.value},
+            )
+            response.raise_for_status()
+            payload = cast(dict[str, Any], response.json())
+        raw_snapshots = payload.get("snapshots", payload)
+        if not isinstance(raw_snapshots, dict):
+            raise RuntimeError("Invalid Alpaca snapshots response")
+        output: dict[str, ProviderLiveSnapshot] = {}
+        for raw_ticker, raw in raw_snapshots.items():
+            ticker = str(raw_ticker).strip().upper()
+            if ticker not in normalized or not isinstance(raw, dict):
+                continue
+            trade = raw.get("latestTrade")
+            daily = raw.get("dailyBar")
+            previous = raw.get("prevDailyBar")
+            if not isinstance(trade, dict) or trade.get("p") is None or trade.get("t") is None:
+                continue
+            timestamp = datetime.fromisoformat(str(trade["t"]).replace("Z", "+00:00"))
+            daily = daily if isinstance(daily, dict) else {}
+            previous = previous if isinstance(previous, dict) else {}
+            bar_timestamp = daily.get("t")
+            session_date = (
+                datetime.fromisoformat(str(bar_timestamp).replace("Z", "+00:00")).date()
+                if bar_timestamp
+                else timestamp.date()
+            )
+            output[ticker] = ProviderLiveSnapshot(
+                ticker=ticker,
+                session_date=session_date,
+                last_price=Decimal(str(trade["p"])),
+                session_open=self._optional_decimal(daily.get("o")),
+                session_high=self._optional_decimal(daily.get("h")),
+                session_low=self._optional_decimal(daily.get("l")),
+                volume=int(daily["v"]) if daily.get("v") is not None else None,
+                previous_completed_close=self._optional_decimal(previous.get("c")),
+                quote_timestamp=timestamp,
+                provider=self.provider_name,
+                feed=self.feed.value,
+            )
+        return output
+
+    @staticmethod
+    def _optional_decimal(value: object) -> Decimal | None:
+        return Decimal(str(value)) if value is not None else None
 
     async def get_history(
         self,

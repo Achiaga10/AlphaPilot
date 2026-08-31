@@ -1,12 +1,20 @@
 from abc import ABC, abstractmethod
 from datetime import date
-from typing import Any
+from typing import Any, Protocol
 
 from alphapilot.market.dto import (
     CompanyMetadata,
     IndexConstituentData,
     MarketCandle,
 )
+from alphapilot.market.live import ProviderLiveSnapshot
+
+
+class LiveQuoteProvider(Protocol):
+    provider_name: str
+    feed: Any
+
+    async def get_live_snapshots(self, tickers: list[str]) -> dict[str, ProviderLiveSnapshot]: ...
 
 
 class MarketProvider(ABC):
