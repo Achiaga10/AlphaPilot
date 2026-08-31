@@ -24,6 +24,8 @@ import type {
   StrategyProfile,
   CopilotAnswer,
   UnifiedCopilotQuestion,
+  DailyPortfolioBrief,
+  DailyBriefOpportunities,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -129,6 +131,25 @@ const isResearchPortfolio = (value: unknown): value is ResearchPortfolio =>
 const isNullableResearchPortfolio = (value: unknown): value is ResearchPortfolio | null =>
   value === null || isResearchPortfolio(value)
 
+const isDailyPortfolioBrief = (value: unknown): value is DailyPortfolioBrief =>
+  isObject(value) && typeof value.portfolio_id === 'string' &&
+  typeof value.portfolio_revision === 'number' && isObject(value.data_status) &&
+  (value.data_status.readiness === 'READY' || value.data_status.readiness === 'DEGRADED' || value.data_status.readiness === 'BLOCKED') &&
+  isObject(value.summary) && Array.isArray(value.required_actions) &&
+  Array.isArray(value.attention_positions) &&
+  Array.isArray(value.hold_positions) && Array.isArray(value.unavailable_positions) &&
+  Array.isArray(value.blockers)
+
+const isDailyBriefOpportunities = (value: unknown): value is DailyBriefOpportunities =>
+  isObject(value) && typeof value.portfolio_id === 'string' &&
+  typeof value.portfolio_revision === 'number' &&
+  Array.isArray(value.actionable_opportunities) &&
+  Array.isArray(value.research_only_opportunities) &&
+  Array.isArray(value.deferred_opportunities) &&
+  typeof value.actionable_total_count === 'number' &&
+  typeof value.research_only_total_count === 'number' &&
+  typeof value.deferred_total_count === 'number'
+
 const isMonitoring = (value: unknown): value is PositionMonitoring[] =>
   Array.isArray(value) && value.every((item) => isObject(item) &&
     typeof item.position_id === 'string' && typeof item.ticker === 'string' &&
@@ -186,6 +207,29 @@ export function getStrategyProfiles(signal?: AbortSignal): Promise<StrategyProfi
 
 export function getCurrentResearchPortfolio(signal?: AbortSignal): Promise<ResearchPortfolio | null> {
   return requestJson('/api/v1/portfolio/current', { signal }, isNullableResearchPortfolio)
+}
+
+export function getDailyPortfolioBrief(
+  portfolioId: string,
+  signal?: AbortSignal,
+): Promise<DailyPortfolioBrief> {
+  return requestJson(
+    `/api/v1/portfolio/${portfolioId}/daily-brief`,
+    { signal },
+    isDailyPortfolioBrief,
+  )
+}
+
+export function getDailyBriefOpportunities(
+  portfolioId: string,
+  researchOnlyLimit = 10,
+  signal?: AbortSignal,
+): Promise<DailyBriefOpportunities> {
+  return requestJson(
+    `/api/v1/portfolio/${portfolioId}/daily-brief/opportunities?research_only_limit=${researchOnlyLimit}`,
+    { signal },
+    isDailyBriefOpportunities,
+  )
 }
 
 export function initializeResearchPortfolio(

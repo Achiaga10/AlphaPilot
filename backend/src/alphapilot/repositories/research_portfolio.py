@@ -106,6 +106,19 @@ class ResearchPortfolioRepository:
             latest.setdefault(item.position_id, item)
         return list(latest.values())
 
+    async def portfolio_monitoring_history(
+        self, portfolio_id: UUID
+    ) -> list[PositionMonitoringSnapshot]:
+        result = await self.session.execute(
+            select(PositionMonitoringSnapshot)
+            .where(PositionMonitoringSnapshot.portfolio_id == portfolio_id)
+            .order_by(
+                PositionMonitoringSnapshot.position_id,
+                PositionMonitoringSnapshot.completed_trading_day.desc(),
+            )
+        )
+        return list(result.scalars().all())
+
     async def monitoring_history(self, position_id: UUID) -> list[PositionMonitoringSnapshot]:
         result = await self.session.execute(
             select(PositionMonitoringSnapshot)

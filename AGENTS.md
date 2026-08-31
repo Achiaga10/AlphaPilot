@@ -24,14 +24,15 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 20 — Conversational Copilot UX & Governed Exit/Stop Research (COMPLETE LOCALLY)
+Sprint 21 — Daily Portfolio Manager / Trading Command Center (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
 complete, reviewed, and merged. Sprint 17 is complete, reviewed, and merged.
-Sprint 18 and Sprint 19 are complete and merged. Sprint 20 is complete locally on
-`feature/conversational-copilot-risk-policy`; it found no approved protective-stop
-winner. Do not begin Sprint 21.
+Sprint 18 and Sprint 19 are complete and merged. Sprint 20 is complete and merged; it
+found no approved protective-stop winner. Sprint 21 is complete locally on
+`feature/daily-portfolio-manager`; it added product orchestration only, with no new
+research, strategy, broker integration, or autonomous trading.
 
 ## Development Environment
 
@@ -251,14 +252,14 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 20 Task
+## Sprint 21 Task
 
-Add an English-answer Copilot UX that accepts English/Hebrew questions and governed
-reproducible loss-control research. No actionable new trade may exist without an
-approved deterministic numeric loss-control boundary. No arbitrary, AI-generated,
-or React-generated boundary.
+Build a read-only Daily Portfolio Brief and Dashboard workflow from existing valuation,
+monitoring, decision, readiness, completed-session, Paper Validation, and Copilot
+authorities. Required exits have first workflow priority. No actionable BUY may lack
+existing deterministic numeric loss-control evidence.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT20_COMPLETION_REPORT.md`, stop. Do not begin
-Sprint 21.
+After creating `docs/sprints/SPRINT21_COMPLETION_REPORT.md`, stop. Do not begin
+Sprint 22.

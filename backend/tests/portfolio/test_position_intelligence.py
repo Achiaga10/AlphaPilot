@@ -80,9 +80,11 @@ async def _managed_position(db_session):
 async def test_position_intelligence_composes_stored_facts_without_mutation(db_session) -> None:
     portfolio, position = await _managed_position(db_session)
     before_revision = portfolio.revision
-    result = await PositionIntelligenceService(db_session).get_position_intelligence(
-        portfolio.id, position.id
-    )
+    intelligence = PositionIntelligenceService(db_session)
+    result = await intelligence.get_position_intelligence(portfolio.id, position.id)
+    valuation = await ResearchPortfolioService(db_session).value(portfolio.id)
+    bulk = await intelligence.get_portfolio_intelligence(portfolio.id, valuation=valuation)
+    assert bulk == (result,)
     assert result.strategy_profile_id == "ema20-pullback-v1"
     assert result.strategy_profile_version == 1
     assert result.entry_price == Decimal("100")

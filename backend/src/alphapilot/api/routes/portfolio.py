@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import date
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -7,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from alphapilot.core.lifespan import daily_market_scheduler
 from alphapilot.database.session import get_db
 from alphapilot.portfolio.actions import (
     ManualPortfolioSellService,
@@ -24,6 +26,11 @@ from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
+from alphapilot.repositories.research_data import ResearchDataRepository
+from alphapilot.schemas.daily_brief import (
+    DailyBriefOpportunitiesSchema,
+    DailyPortfolioBriefCoreSchema,
+)
 from alphapilot.schemas.portfolio import (
     CandidateOrchestrationStatusSchema,
     CashAdjustmentRequestSchema,
@@ -57,8 +64,10 @@ from alphapilot.schemas.portfolio import (
     ResearchTradeEventSchema,
     StrategyProfileSchema,
 )
+from alphapilot.services.admin_data import ResearchDataSummaryService
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
+from alphapilot.services.daily_portfolio_brief import DailyPortfolioBriefService
 from alphapilot.services.paper_validation import PaperValidationService
 from alphapilot.services.position_intelligence import PositionIntelligenceService
 from alphapilot.services.position_monitoring import PositionMonitoringService
@@ -218,6 +227,18 @@ def get_position_intelligence_service(
     return PositionIntelligenceService(session)
 
 
+def get_daily_portfolio_brief_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> DailyPortfolioBriefService:
+    return DailyPortfolioBriefService(
+        ResearchPortfolioService(session),
+        PositionIntelligenceService(session),
+        get_portfolio_decision_orchestrator(session),
+        ResearchDataSummaryService(ResearchDataRepository(session)),
+        daily_market_scheduler.status,
+    )
+
+
 def get_paper_validation_service(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> PaperValidationService:
@@ -261,6 +282,42 @@ async def get_current_research_portfolio(
     return ResearchPortfolioSchema.model_validate(
         await service.value(portfolio.id), from_attributes=True
     )
+
+
+@router.get("/{portfolio_id}/daily-brief", response_model=DailyPortfolioBriefCoreSchema)
+async def get_daily_portfolio_brief(
+    portfolio_id: UUID,
+    service: Annotated[DailyPortfolioBriefService, Depends(get_daily_portfolio_brief_service)],
+    as_of_date: date | None = None,
+) -> DailyPortfolioBriefCoreSchema:
+    try:
+        brief = await service.build_core(portfolio_id, requested_as_of_date=as_of_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return DailyPortfolioBriefCoreSchema.model_validate(brief, from_attributes=True)
+
+
+@router.get(
+    "/{portfolio_id}/daily-brief/opportunities",
+    response_model=DailyBriefOpportunitiesSchema,
+)
+async def get_daily_brief_opportunities(
+    portfolio_id: UUID,
+    service: Annotated[DailyPortfolioBriefService, Depends(get_daily_portfolio_brief_service)],
+    as_of_date: date | None = None,
+    research_only_limit: int = 10,
+) -> DailyBriefOpportunitiesSchema:
+    if not 1 <= research_only_limit <= 100:
+        raise HTTPException(status_code=422, detail="research_only_limit must be 1 through 100")
+    try:
+        opportunities = await service.build_opportunities(
+            portfolio_id,
+            requested_as_of_date=as_of_date,
+            research_only_limit=research_only_limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return DailyBriefOpportunitiesSchema.model_validate(opportunities, from_attributes=True)
 
 
 @router.post("/initialize", response_model=ResearchPortfolioSchema)

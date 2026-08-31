@@ -59,26 +59,104 @@ class FakeCompanyService:
     def __init__(self, companies: dict[str, Company]) -> None:
         self.companies = companies
         self.calls: list[str] = []
+        self.list_calls = 0
 
     async def get_company(self, ticker: str) -> Company | None:
         self.calls.append(ticker)
         return self.companies.get(ticker)
+
+    async def list_companies(self) -> list[Company]:
+        self.list_calls += 1
+        return list(self.companies.values())
 
 
 class FakeCandleService:
     def __init__(self, histories: dict[UUID, list[DailyCandle]]) -> None:
         self.histories = histories
         self.calls: list[tuple[UUID, date, date]] = []
+        self.bulk_calls: list[tuple[list[UUID], date, date]] = []
 
     async def get_history(self, company_id: UUID, start: date, end: date) -> list[DailyCandle]:
         self.calls.append((company_id, start, end))
         return list(self.histories.get(company_id, []))
 
+    async def get_histories(
+        self, company_ids: list[UUID], start: date, end: date
+    ) -> dict[UUID, list[DailyCandle]]:
+        self.bulk_calls.append((company_ids, start, end))
+        return {company_id: list(self.histories.get(company_id, [])) for company_id in company_ids}
+
 
 class FakeUniverse:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def list_active(self, index_symbol: str) -> list[SimpleNamespace]:
+        self.calls += 1
         assert index_symbol == "^GSPC"
         return [SimpleNamespace(ticker="AAA")]
+
+
+@pytest.mark.asyncio
+async def test_bulk_market_snapshot_is_loaded_once_and_reused_without_semantic_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    as_of = date(2026, 8, 20)
+    spy = company("SPY", "ETF")
+    stock = company("AAA", "Industrials")
+    histories = {
+        spy.id: candles(spy.id, as_of, close_step=Decimal("0.1")),
+        stock.id: candles(stock.id, as_of, close_step=Decimal("0.2")),
+    }
+    monkeypatch.setattr(
+        "alphapilot.portfolio.orchestration.create_strategy",
+        lambda *args, **kwargs: AlwaysBuyStrategy(),
+    )
+    state = CurrentPortfolioState(cash=Decimal("100000"))
+    company_service = FakeCompanyService({"SPY": spy, "AAA": stock})
+    candle_service = FakeCandleService(histories)
+    universe = FakeUniverse()
+    orchestrator = PortfolioDecisionOrchestrator(company_service, candle_service, universe)
+    snapshot = await orchestrator.load_market_snapshot(state=state, requested_as_of_date=as_of)
+    first = await orchestrator.build_plan(
+        state=state,
+        strategy_name=StrategyName.EMA20_PULLBACK,
+        selection_policy=SelectionPolicyName.RELATIVE_STRENGTH_20,
+        sizing_policy=SizingPolicyName.ATR_VOLATILITY_NORMALIZED,
+        risk_config=PortfolioRiskConfig(),
+        requested_as_of_date=as_of,
+        market_snapshot=snapshot,
+    )
+    second = await orchestrator.build_plan(
+        state=state,
+        strategy_name=StrategyName.EMA20_PULLBACK,
+        selection_policy=SelectionPolicyName.RELATIVE_STRENGTH_20,
+        sizing_policy=SizingPolicyName.ATR_VOLATILITY_NORMALIZED,
+        risk_config=PortfolioRiskConfig(),
+        requested_as_of_date=as_of,
+        market_snapshot=snapshot,
+    )
+    direct = await PortfolioDecisionOrchestrator(
+        FakeCompanyService({"SPY": spy, "AAA": stock}),
+        FakeCandleService(histories),
+        FakeUniverse(),
+    ).build_plan(
+        state=state,
+        strategy_name=StrategyName.EMA20_PULLBACK,
+        selection_policy=SelectionPolicyName.RELATIVE_STRENGTH_20,
+        sizing_policy=SizingPolicyName.ATR_VOLATILITY_NORMALIZED,
+        risk_config=PortfolioRiskConfig(),
+        requested_as_of_date=as_of,
+    )
+    assert first.plan == second.plan
+    assert first.statuses == second.statuses
+    assert first.plan == direct.plan
+    assert first.statuses == direct.statuses
+    assert company_service.list_calls == 1
+    assert company_service.calls == []
+    assert len(candle_service.bulk_calls) == 1
+    assert candle_service.calls == []
+    assert universe.calls == 1
 
 
 class AlwaysBuyStrategy:

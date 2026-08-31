@@ -16,6 +16,8 @@ import {
   recordPaperValidationExit,
   askPositionCopilot,
   previewManualSell,
+  getDailyPortfolioBrief,
+  getDailyBriefOpportunities,
 } from '../api/portfolio'
 import {
   addCustomTicker,
@@ -71,6 +73,27 @@ export function useStrategyProfilesQuery() {
 export function usePortfolioPlanMutation() {
   return useMutation({
     mutationFn: (request: PortfolioPlanRequest) => createPortfolioPlan(request),
+  })
+}
+
+export function useDailyPortfolioBriefQuery(portfolioId: string | null) {
+  return useQuery({
+    queryKey: ['daily-portfolio-brief', portfolioId],
+    queryFn: ({ signal }) => getDailyPortfolioBrief(portfolioId ?? '', signal),
+    enabled: Boolean(portfolioId),
+  })
+}
+
+export function useDailyBriefOpportunitiesQuery(
+  portfolioId: string | null,
+  researchOnlyLimit: number,
+) {
+  return useQuery({
+    queryKey: ['daily-brief-opportunities', portfolioId, researchOnlyLimit],
+    queryFn: ({ signal }) => getDailyBriefOpportunities(
+      portfolioId ?? '', researchOnlyLimit, signal,
+    ),
+    enabled: Boolean(portfolioId),
   })
 }
 

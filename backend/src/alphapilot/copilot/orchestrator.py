@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from alphapilot.copilot.context import CopilotContext, CopilotContextAssembler
@@ -18,6 +18,9 @@ from alphapilot.copilot.resolution import (
     CopilotQueryResolver,
     CopilotResolutionStatus,
 )
+
+if TYPE_CHECKING:
+    from alphapilot.services.daily_portfolio_brief import DailyPortfolioBriefService
 
 SYSTEM_GROUNDING_POLICY = """You are AlphaPilot's concise financial-product assistant.
 Facts are authoritative. Never invent values, indicators, thresholds, stops, targets,
@@ -58,10 +61,12 @@ class CopilotOrchestrator:
         assembler: CopilotContextAssembler,
         provider: LLMProvider,
         resolver: CopilotQueryResolver | None = None,
+        daily_brief: DailyPortfolioBriefService | None = None,
     ) -> None:
         self.assembler = assembler
         self.provider = provider
         self.resolver = resolver
+        self.daily_brief = daily_brief
 
     async def ask_unified(
         self,
@@ -96,6 +101,8 @@ class CopilotOrchestrator:
                 resolved.intent.value,
                 resolved.status.value,
             )
+        if resolved.intent == CopilotIntent.DAILY_BRIEF:
+            return await self._daily_brief_answer(portfolio_id, question)
         if resolved.scope == "POSITION" and resolved.position_id is not None:
             context = await self.assembler.position(portfolio_id, resolved.position_id)
         elif resolved.scope == "PORTFOLIO":
@@ -103,6 +110,62 @@ class CopilotOrchestrator:
         else:
             context = self.assembler.general()
         return await self._answer(context, question, intent=resolved.intent)
+
+    async def _daily_brief_answer(self, portfolio_id: UUID, question: str) -> CopilotAnswer:
+        if self.daily_brief is None:
+            raise RuntimeError("daily brief Copilot context is unavailable")
+        brief = await self.daily_brief.build(portfolio_id)
+        normalized = question.casefold()
+        facts: list[dict[str, Any]] = [
+            {
+                "fact_id": "daily_brief.readiness",
+                "source": "daily_portfolio_brief",
+                "field": "data_status.readiness",
+                "label": "Daily Brief readiness",
+                "value": brief.data_status.readiness.value,
+            },
+            {
+                "fact_id": "daily_brief.required_actions",
+                "source": "daily_portfolio_brief",
+                "field": "required_actions",
+                "label": "Required actions",
+                "value": [item.ticker for item in brief.required_actions],
+            },
+            {
+                "fact_id": "daily_brief.attention",
+                "source": "daily_portfolio_brief",
+                "field": "attention_positions",
+                "label": "Attention positions",
+                "value": [item.ticker for item in brief.attention_positions],
+            },
+        ]
+        if "ema" in normalized and "actionable" in normalized:
+            answer = (
+                "EMA opportunities are research-only because ema20-pullback-v1 has no "
+                "approved numeric pre-entry loss-control policy."
+            )
+        elif brief.required_actions:
+            tickers = ", ".join(item.ticker for item in brief.required_actions)
+            answer = f"Required exits come first today: {tickers}."
+        elif brief.attention_positions:
+            tickers = ", ".join(item.ticker for item in brief.attention_positions)
+            answer = f"No exits are required; review the ATTENTION positions: {tickers}."
+        else:
+            answer = "No open positions require action or attention in the current Daily Brief."
+        return CopilotAnswer(
+            answer,
+            "PORTFOLIO",
+            portfolio_id,
+            None,
+            None,
+            brief.data_status.brief_session,
+            "GROUNDED",
+            tuple(facts),
+            ("Read-only Daily Brief explanation; no action or broker order was created.",),
+            "alphapilot",
+            "deterministic-daily-brief-v1",
+            intent=CopilotIntent.DAILY_BRIEF.value,
+        )
 
     async def ask_position(
         self, portfolio_id: UUID, position_id: UUID, question: str
