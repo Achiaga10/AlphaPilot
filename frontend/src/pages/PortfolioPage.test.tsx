@@ -19,6 +19,14 @@ test('financial portfolio controls are backend-owned and absent from the plan fo
   expect(screen.queryByRole('button', { name: 'Add position' })).not.toBeInTheDocument()
 })
 
+test('forward paper evidence is visibly separate from historical research', async () => {
+  await renderReadyPortfolio()
+  expect(await screen.findByRole('heading', { name: 'Forward Paper Analytics' })).toBeInTheDocument()
+  expect(screen.getByText(/separate from Historical Research/i)).toBeInTheDocument()
+  expect(screen.getAllByText(/125.50/)).toHaveLength(2)
+  expect(screen.getAllByText(/very low sample/i)).toHaveLength(2)
+})
+
 test('position intelligence renders backend facts and inactive research policy', async () => {
   const user = userEvent.setup()
   await renderReadyPortfolio()

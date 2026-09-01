@@ -21,6 +21,7 @@ import type {
   PaperValidation,
   PaperValidationEntryRequest,
   PaperValidationExitRequest,
+  ForwardPaperAnalytics,
   StrategyProfile,
   CopilotAnswer,
   UnifiedCopilotQuestion,
@@ -190,6 +191,13 @@ const isPaperValidation = (value: unknown): value is PaperValidation =>
 const isPaperValidations = (value: unknown): value is PaperValidation[] =>
   Array.isArray(value) && value.every(isPaperValidation)
 
+const isForwardPaperAnalytics = (value: unknown): value is ForwardPaperAnalytics =>
+  isObject(value) && value.evidence_domain === 'FORWARD_PAPER_EVIDENCE' &&
+  typeof value.total_trade_count === 'number' && typeof value.open_trade_count === 'number' &&
+  typeof value.closed_trade_count === 'number' && typeof value.gross_realized_pnl === 'string' &&
+  typeof value.evidence_maturity === 'string' && Array.isArray(value.strategy_breakdown) &&
+  Array.isArray(value.open_trades) && Array.isArray(value.closed_trades)
+
 const isCopilotAnswer = (value: unknown): value is CopilotAnswer =>
   isObject(value) && typeof value.answer === 'string' && value.answer.length > 0 &&
   (value.scope === 'GENERAL' || value.scope === 'POSITION' || value.scope === 'PORTFOLIO') &&
@@ -283,6 +291,10 @@ export function getPositionIntelligence(portfolioId: string, positionId: string,
 
 export function getPositionPaperValidations(portfolioId: string, positionId: string, signal?: AbortSignal): Promise<PaperValidation[]> {
   return requestJson(`/api/v1/portfolio/${portfolioId}/positions/${positionId}/paper-validations`, { signal }, isPaperValidations)
+}
+
+export function getForwardPaperAnalytics(portfolioId: string, signal?: AbortSignal): Promise<ForwardPaperAnalytics> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/paper-analytics`, { signal }, isForwardPaperAnalytics)
 }
 
 export function recordPaperValidationEntry(portfolioId: string, positionId: string, request: PaperValidationEntryRequest): Promise<PaperValidation> {

@@ -882,3 +882,17 @@ This comes after strategy and portfolio validation.
   Validation, or broker action, and creates no migration.
 - Exact Copilot financial facts are deterministic. Generative AI is optional and outside
   the operational critical path.
+
+# Sprint 23 decisions
+
+- Forward Paper Evidence is observed manual execution evidence and never blends with
+  Historical Research or automatically changes a Strategy Profile.
+- Paper Validation remains separate from ResearchPortfolio; Paper entry/exit cannot alter
+  cash, positions, revision, trade events, or broker state.
+- Future entry/exit context uses immutable schema-versioned evidence. Unknown legacy facts
+  remain unavailable and are never reconstructed from current live data.
+- Exact Paper analytics, execution metrics, and evidence maturity are backend-owned;
+  profile versions aggregate separately and OPEN trades never enter realized statistics.
+- MFE/MAE exclude ambiguous entry-day OHLC. Fixed post-exit horizons are 5/10/20 completed
+  sessions and remain descriptive only.
+- Generative AI remains optional; deterministic Paper facts work without Ollama.

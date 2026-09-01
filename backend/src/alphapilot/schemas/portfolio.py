@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -584,3 +585,16 @@ class PaperValidationSchema(BaseModel):
     alphapilot_exit_triggered_on: date | None
     alphapilot_exit_reason: str | None
     alphapilot_trigger_close: Decimal | None
+    evidence_completeness: str
+    entry_evidence_schema_version: int | None
+    entry_evidence: dict[str, Any] | None
+    exit_evidence_schema_version: int | None
+    exit_evidence: dict[str, Any] | None
+    entry_slippage_percent: Decimal | None
+    entry_adverse_slippage_dollars_per_share: Decimal | None
+    quantity_adherence_percent: Decimal | None
+    planned_notional: Decimal | None
+    actual_entry_notional: Decimal
+    fees_available: bool
+    net_paper_pnl: Decimal | None
+    calendar_days_held: int | None

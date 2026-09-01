@@ -59,6 +59,33 @@ def render_direct_answer(intent: CopilotIntent, facts: dict[str, dict[str, Any]]
         else:
             answer = f"No open positions are currently marked {requested}."
         return DirectAnswer(answer, ("portfolio.monitoring",))
+    if intent == CopilotIntent.PAPER_ANALYTICS:
+        summary = _value(facts, "paper_analytics.summary")
+        if isinstance(summary, dict):
+            paper_pnl = _decimal(summary.get("gross_realized_pnl")) or Decimal("0")
+            win_rate = _decimal(summary.get("win_rate_percent"))
+            rate = f"{win_rate}%" if win_rate is not None else "unavailable (no closed trades)"
+            return DirectAnswer(
+                f"Forward Paper Evidence has {summary.get('open_trade_count', 0)} open and "
+                f"{summary.get('closed_trade_count', 0)} closed trades. Gross realized Paper "
+                f"P&L is {_signed_money(paper_pnl)}; closed-trade win rate is {rate}. Evidence "
+                f"maturity is {summary.get('evidence_maturity', 'NO_DATA')}.",
+                ("paper_analytics.summary",),
+            )
+        paper_id = next((key for key in facts if key.startswith("paper.")), None)
+        paper = _value(facts, paper_id) if paper_id else None
+        if isinstance(paper, dict):
+            paper_symbol = str(_value(facts, "position.ticker") or "this position")
+            return DirectAnswer(
+                f"The {paper_symbol} Forward Paper record is {paper.get('status')}. Planned entry "
+                f"was {paper.get('reference_entry_price')}; actual fill was "
+                f"{paper.get('actual_entry_price')}; entry slippage was "
+                f"{paper.get('entry_slippage_percent')}%; quantity adherence was "
+                f"{paper.get('quantity_adherence_percent')}%. Gross Paper P&L is "
+                f"{paper.get('paper_gross_pnl')}.",
+                tuple(item for item in ("position.ticker", paper_id) if item),
+            )
+        return DirectAnswer("Forward Paper evidence is unavailable.", (), False)
     ticker = _value(facts, "position.ticker")
     symbol = str(ticker) if ticker else "this position"
     if intent == CopilotIntent.INDICATOR_VALUE:
