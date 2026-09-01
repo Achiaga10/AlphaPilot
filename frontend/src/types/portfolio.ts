@@ -733,6 +733,69 @@ export interface PaperValidation {
   paper_gross_return_pct: string | null
   alphapilot_exit_triggered_on: string | null
   alphapilot_exit_reason: string | null
+  evidence_completeness: 'FULL' | 'PARTIAL' | 'LEGACY'
+  entry_evidence_schema_version: number | null
+  entry_evidence: Record<string, unknown> | null
+  exit_evidence_schema_version: number | null
+  exit_evidence: Record<string, unknown> | null
+  entry_slippage_percent: string | null
+  entry_adverse_slippage_dollars_per_share: string | null
+  quantity_adherence_percent: string | null
+  planned_notional: string | null
+  actual_entry_notional: string
+  fees_available: boolean
+  net_paper_pnl: string | null
+  calendar_days_held: number | null
+}
+
+export interface PaperTradeAnalytics {
+  record: PaperValidation
+  evidence_domain: 'FORWARD_PAPER_EVIDENCE'
+  completed_sessions_held: number | null
+  calendar_days_held: number
+  mfe_percent: string | null
+  mae_percent: string | null
+  excursion_session_count: number
+  post_exit_observations: Record<string, Record<string, unknown>>
+  current_completed_session: string | null
+  current_completed_close: string | null
+  current_unrealized_pnl: string | null
+}
+
+export interface PaperStrategyAnalytics {
+  strategy_profile_id: string | null
+  strategy_profile_version: number | null
+  open_trade_count: number
+  closed_trade_count: number
+  wins: number
+  losses: number
+  breakeven: number
+  win_rate_percent: string | null
+  average_return_percent: string | null
+  gross_total_pnl: string
+  evidence_maturity: string
+}
+
+export interface ForwardPaperAnalytics {
+  portfolio_id: string
+  evidence_domain: 'FORWARD_PAPER_EVIDENCE'
+  generated_at: string
+  total_trade_count: number
+  open_trade_count: number
+  closed_trade_count: number
+  wins: number
+  losses: number
+  breakeven: number
+  gross_realized_pnl: string
+  win_rate_percent: string | null
+  average_return_percent: string | null
+  evidence_maturity: string
+  complete_evidence_count: number
+  partial_evidence_count: number
+  legacy_evidence_count: number
+  strategy_breakdown: PaperStrategyAnalytics[]
+  open_trades: PaperTradeAnalytics[]
+  closed_trades: PaperTradeAnalytics[]
 }
 
 export interface PaperValidationEntryRequest {

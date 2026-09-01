@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from alphapilot.copilot.navigation import navigation_facts
 from alphapilot.portfolio.stop_exit_guidance import StopExitGuidanceService
 from alphapilot.services.live_portfolio import live_market_cache
+from alphapilot.services.paper_analytics import ForwardPaperAnalyticsService
 from alphapilot.services.paper_validation import PaperValidationService
 from alphapilot.services.position_intelligence import PositionIntelligenceService
 from alphapilot.services.research_portfolio import ResearchPortfolioService
@@ -32,6 +33,7 @@ class CopilotContextAssembler:
     def __init__(self, session: AsyncSession) -> None:
         self.intelligence = PositionIntelligenceService(session)
         self.papers = PaperValidationService(session)
+        self.paper_analytics = ForwardPaperAnalyticsService(session)
         self.portfolios = ResearchPortfolioService(session)
         self.guidance = StopExitGuidanceService()
 
@@ -224,6 +226,11 @@ class CopilotContextAssembler:
                     "actual_exit_price": paper.actual_exit_price,
                     "paper_gross_pnl": paper.paper_gross_pnl,
                     "paper_gross_return_pct": paper.paper_gross_return_pct,
+                    "entry_slippage_percent": paper.entry_slippage_percent,
+                    "quantity_adherence_percent": paper.quantity_adherence_percent,
+                    "planned_notional": paper.planned_notional,
+                    "actual_entry_notional": paper.actual_entry_notional,
+                    "evidence_completeness": paper.evidence_completeness,
                 },
                 "Alpaca Paper validation",
             )
@@ -254,6 +261,7 @@ class CopilotContextAssembler:
 
     async def portfolio(self, portfolio_id: UUID) -> CopilotContext:
         valuation = await self.portfolios.value(portfolio_id)
+        paper = await self.paper_analytics.summary(portfolio_id)
         facts: dict[str, dict[str, Any]] = {
             "portfolio.value": {
                 "source": "portfolio_context",
@@ -286,6 +294,18 @@ class CopilotContextAssembler:
             "field": "position_monitoring",
             "label": "Position monitoring",
             "value": statuses,
+        }
+        facts["paper_analytics.summary"] = {
+            "source": "forward_paper_analytics",
+            "field": "summary",
+            "label": "Forward Paper Evidence summary",
+            "value": {
+                "open_trade_count": paper.open_trade_count,
+                "closed_trade_count": paper.closed_trade_count,
+                "gross_realized_pnl": paper.gross_realized_pnl,
+                "win_rate_percent": paper.win_rate_percent,
+                "evidence_maturity": paper.evidence_maturity,
+            },
         }
         return CopilotContext(
             "PORTFOLIO",

@@ -33,6 +33,10 @@ from alphapilot.schemas.daily_brief import (
     DailyPortfolioBriefCoreSchema,
 )
 from alphapilot.schemas.live_portfolio import PortfolioLiveBriefSchema
+from alphapilot.schemas.paper_analytics import (
+    ForwardPaperAnalyticsSchema,
+    PaperTradeAnalyticsSchema,
+)
 from alphapilot.schemas.portfolio import (
     CandidateOrchestrationStatusSchema,
     CashAdjustmentRequestSchema,
@@ -71,6 +75,7 @@ from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService, LatestStoredPriceService
 from alphapilot.services.daily_portfolio_brief import DailyPortfolioBriefService
 from alphapilot.services.live_portfolio import LivePortfolioService
+from alphapilot.services.paper_analytics import ForwardPaperAnalyticsService
 from alphapilot.services.paper_validation import PaperValidationService
 from alphapilot.services.position_intelligence import PositionIntelligenceService
 from alphapilot.services.position_monitoring import PositionMonitoringService
@@ -246,6 +251,12 @@ def get_paper_validation_service(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> PaperValidationService:
     return PaperValidationService(session)
+
+
+def get_forward_paper_analytics_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> ForwardPaperAnalyticsService:
+    return ForwardPaperAnalyticsService(session)
 
 
 def get_live_portfolio_service(
@@ -479,6 +490,47 @@ async def list_paper_validations(
         PaperValidationSchema.model_validate(item, from_attributes=True)
         for item in await service.list(portfolio_id)
     ]
+
+
+@router.get(
+    "/{portfolio_id}/paper-analytics",
+    response_model=ForwardPaperAnalyticsSchema,
+)
+async def get_forward_paper_analytics(
+    portfolio_id: UUID,
+    service: Annotated[ForwardPaperAnalyticsService, Depends(get_forward_paper_analytics_service)],
+    strategy_profile_id: str | None = None,
+    ticker: str | None = None,
+    status: str | None = None,
+) -> ForwardPaperAnalyticsSchema:
+    if status is not None and status not in {"OPEN", "CLOSED"}:
+        raise HTTPException(status_code=422, detail="status must be OPEN or CLOSED")
+    return ForwardPaperAnalyticsSchema.model_validate(
+        await service.summary(
+            portfolio_id,
+            strategy_profile_id=strategy_profile_id,
+            ticker=ticker,
+            status=status,
+        ),
+        from_attributes=True,
+    )
+
+
+@router.get(
+    "/{portfolio_id}/paper-analytics/{validation_id}",
+    response_model=PaperTradeAnalyticsSchema,
+)
+async def get_forward_paper_trade_analytics(
+    portfolio_id: UUID,
+    validation_id: UUID,
+    service: Annotated[ForwardPaperAnalyticsService, Depends(get_forward_paper_analytics_service)],
+) -> PaperTradeAnalyticsSchema:
+    try:
+        return PaperTradeAnalyticsSchema.model_validate(
+            await service.detail(portfolio_id, validation_id), from_attributes=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get(

@@ -256,3 +256,7 @@ class PaperValidationRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     alphapilot_exit_triggered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     alphapilot_exit_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
     alphapilot_trigger_close: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    entry_evidence_schema_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entry_evidence: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    exit_evidence_schema_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exit_evidence: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

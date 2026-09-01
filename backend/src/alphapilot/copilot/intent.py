@@ -22,6 +22,7 @@ class CopilotIntent(StrEnum):
     PORTFOLIO_POSITIONS = "PORTFOLIO_POSITIONS"
     PORTFOLIO_MONITORING = "PORTFOLIO_MONITORING"
     PAPER_VALIDATION = "PAPER_VALIDATION"
+    PAPER_ANALYTICS = "PAPER_ANALYTICS"
     NAVIGATION = "NAVIGATION"
     GENERAL = "GENERAL"
     EXPLANATION = "EXPLANATION"
@@ -33,6 +34,23 @@ class CopilotIntent(StrEnum):
 
 def classify_question(question: str, *, general_scope: bool = False) -> CopilotIntent:
     normalized = question.casefold()
+    if any(
+        phrase in normalized
+        for phrase in (
+            "paper p&l",
+            "paper pnl",
+            "paper win rate",
+            "closed paper trades",
+            "open paper trades",
+            "actual entry fill",
+            "planned price",
+            "entry slippage",
+            "quantity adherence",
+            "paper sample size",
+            "forward paper",
+        )
+    ):
+        return CopilotIntent.PAPER_ANALYTICS
     if ("should i sell" in normalized and "now" in normalized) or (
         "require action" in normalized and "right now" in normalized
     ):
@@ -230,6 +248,7 @@ FACT_PREFIXES: dict[CopilotIntent, tuple[str, ...]] = {
     CopilotIntent.PORTFOLIO_POSITIONS: ("portfolio.monitoring",),
     CopilotIntent.PORTFOLIO_MONITORING: ("portfolio.monitoring", "query.question"),
     CopilotIntent.PAPER_VALIDATION: ("position.ticker", "paper."),
+    CopilotIntent.PAPER_ANALYTICS: ("position.ticker", "paper.", "paper_analytics."),
     CopilotIntent.GENERAL: (
         "position.ticker",
         "position.profile",
@@ -275,6 +294,7 @@ DETERMINISTIC_INTENTS = frozenset(
         CopilotIntent.PORTFOLIO_CASH,
         CopilotIntent.PORTFOLIO_POSITIONS,
         CopilotIntent.PORTFOLIO_MONITORING,
+        CopilotIntent.PAPER_ANALYTICS,
         CopilotIntent.INDICATOR_VALUE,
         CopilotIntent.LIVE_PRICE,
         CopilotIntent.LIVE_POSITION_STATUS,
@@ -296,6 +316,7 @@ POSITION_INTENTS = frozenset(
         CopilotIntent.TRAILING_STOP,
         CopilotIntent.PROFIT_TARGET,
         CopilotIntent.PAPER_VALIDATION,
+        CopilotIntent.PAPER_ANALYTICS,
         CopilotIntent.EXPLANATION,
         CopilotIntent.INDICATOR_VALUE,
         CopilotIntent.LIVE_PRICE,
@@ -310,6 +331,7 @@ PORTFOLIO_INTENTS = frozenset(
         CopilotIntent.PORTFOLIO_CASH,
         CopilotIntent.PORTFOLIO_POSITIONS,
         CopilotIntent.PORTFOLIO_MONITORING,
+        CopilotIntent.PAPER_ANALYTICS,
     }
 )
 

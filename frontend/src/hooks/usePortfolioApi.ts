@@ -12,6 +12,7 @@ import {
   reconcileResearchPosition,
   getPositionIntelligence,
   getPositionPaperValidations,
+  getForwardPaperAnalytics,
   recordPaperValidationEntry,
   recordPaperValidationExit,
   askPositionCopilot,
@@ -135,6 +136,14 @@ export function usePositionPaperValidationsQuery(portfolioId: string, positionId
     queryKey: ['paper-validations', portfolioId, positionId],
     queryFn: ({ signal }) => getPositionPaperValidations(portfolioId, positionId ?? '', signal),
     enabled: Boolean(positionId),
+  })
+}
+
+export function useForwardPaperAnalyticsQuery(portfolioId: string | null) {
+  return useQuery({
+    queryKey: ['forward-paper-analytics', portfolioId],
+    queryFn: ({ signal }) => getForwardPaperAnalytics(portfolioId ?? '', signal),
+    enabled: Boolean(portfolioId),
   })
 }
 

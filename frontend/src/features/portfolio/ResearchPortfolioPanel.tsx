@@ -7,6 +7,7 @@ import { formatDate, formatMoney, formatPercent } from '../../utils/format'
 import { usePositionMonitoringQuery } from '../../hooks/usePortfolioApi'
 import { ManageResearchPortfolio } from './ManageResearchPortfolio'
 import { PositionIntelligencePanel } from './PositionIntelligencePanel'
+import { ForwardPaperAnalyticsPanel } from './ForwardPaperAnalyticsPanel'
 
 export function ResearchPortfolioPanel() {
   const { draftSummary, portfolio, portfolioPending, portfolioError, refreshPortfolio } = usePortfolioWorkspace()
@@ -22,6 +23,7 @@ export function ResearchPortfolioPanel() {
       <section className="panel"><div className="section-heading"><div><p className="eyebrow">Persistent research portfolio · revision {portfolio.revision}</p><h2>{portfolio.name}</h2></div><span className="badge badge--positive">{portfolio.valuation_status}</span></div><dl className="config-grid"><div><dt>Realized P&amp;L</dt><dd>{formatMoney(portfolio.realized_pnl)}</dd></div><div><dt>Unrealized P&amp;L</dt><dd>{formatMoney(portfolio.total_unrealized_pnl)}</dd></div><div><dt>Valued through</dt><dd>{formatDate(portfolio.latest_completed_trading_day)}</dd></div><div><dt>Portfolio revision</dt><dd>{portfolio.revision}</dd></div></dl></section>
       <PortfolioAllocationDonut summary={draftSummary} />
       <ManageResearchPortfolio portfolio={portfolio} onChanged={() => { void refreshPortfolio(); void monitoring.refetch() }} />
+      <ForwardPaperAnalyticsPanel portfolioId={portfolio.portfolio_id} />
       {intelligencePositionId ? <PositionIntelligencePanel portfolioId={portfolio.portfolio_id} positionId={intelligencePositionId} onClose={() => setIntelligencePositionId(null)} /> : null}
       <section className="panel" aria-labelledby="monitoring-title">
         <div className="section-heading"><div><p className="eyebrow">Backend exit guidance</p><h2 id="monitoring-title">Position Monitoring</h2></div><span className="muted">Completed sessions only</span></div>
