@@ -28,6 +28,10 @@ import type {
   DailyPortfolioBrief,
   DailyBriefOpportunities,
   PortfolioLiveBrief,
+  NewsArticle,
+  NewsRefreshResult,
+  NewsRefreshRequest,
+  ExternalNewsSentiment,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -162,6 +166,34 @@ const isPortfolioLiveBrief = (value: unknown): value is PortfolioLiveBrief =>
     typeof item.ticker === 'string' && typeof item.live_status === 'string') &&
   Array.isArray(value.partial_failures)
 
+const isNewsArticle = (value: unknown): value is NewsArticle =>
+  isObject(value) && typeof value.id === 'string' && typeof value.ticker === 'string' &&
+  typeof value.provider === 'string' && typeof value.headline === 'string' &&
+  typeof value.published_at === 'string' &&
+  (value.classification === null || (isObject(value.classification) &&
+    typeof value.classification.classification_status === 'string'))
+
+const isNewsArticles = (value: unknown): value is NewsArticle[] =>
+  Array.isArray(value) && value.every(isNewsArticle)
+
+const isNewsRefresh = (value: unknown): value is NewsRefreshResult =>
+  isObject(value) && typeof value.portfolio_id === 'string' &&
+  Array.isArray(value.tickers) && typeof value.fetched === 'number' &&
+  typeof value.inserted === 'number' && typeof value.duplicates === 'number' &&
+  typeof value.classified === 'number' && typeof value.classification_failures === 'number' &&
+  Array.isArray(value.provider_failures) && typeof value.refreshed_at === 'string' &&
+  typeof value.scope === 'string' && Array.isArray(value.coverage) &&
+  Array.isArray(value.aggregate_requested) && Array.isArray(value.aggregate_returned) &&
+  Array.isArray(value.aggregate_missing) && typeof value.aggregate_api_calls === 'number' &&
+  typeof value.aggregate_observations_persisted === 'number' &&
+  typeof value.targeted_classification_attempts === 'number'
+
+const isExternalNewsSentiments = (value: unknown): value is ExternalNewsSentiment[] =>
+  Array.isArray(value) && value.every((item) => isObject(item) &&
+    typeof item.ticker === 'string' && item.provider === 'ADANOS' &&
+    typeof item.observed_at === 'string' && typeof item.sentiment_score === 'string' &&
+    typeof item.evidence_strength === 'string' && typeof item.aggregate_effect === 'string')
+
 const isMonitoring = (value: unknown): value is PositionMonitoring[] =>
   Array.isArray(value) && value.every((item) => isObject(item) &&
     typeof item.position_id === 'string' && typeof item.ticker === 'string' &&
@@ -256,6 +288,35 @@ export function refreshLivePortfolio(portfolioId: string): Promise<PortfolioLive
     `/api/v1/portfolio/${portfolioId}/live-refresh`,
     { method: 'POST' },
     isPortfolioLiveBrief,
+  )
+}
+
+export function getPortfolioNews(
+  portfolioId: string,
+  signal?: AbortSignal,
+): Promise<NewsArticle[]> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/news`, { signal }, isNewsArticles)
+}
+
+export function getPortfolioNewsSentiment(
+  portfolioId: string,
+  signal?: AbortSignal,
+): Promise<ExternalNewsSentiment[]> {
+  return requestJson(
+    `/api/v1/portfolio/${portfolioId}/news-sentiment`,
+    { signal },
+    isExternalNewsSentiments,
+  )
+}
+
+export function refreshPortfolioNews(
+  portfolioId: string,
+  request?: NewsRefreshRequest,
+): Promise<NewsRefreshResult> {
+  return requestJson(
+    `/api/v1/portfolio/${portfolioId}/news-refresh`,
+    { method: 'POST', body: request ? JSON.stringify(request) : undefined },
+    isNewsRefresh,
   )
 }
 

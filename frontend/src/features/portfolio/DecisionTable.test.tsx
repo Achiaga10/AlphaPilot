@@ -20,3 +20,25 @@ test('candidate rank tooltip explains that recommendation priority is optional',
   await user.click(screen.getByLabelText('About candidate rank'))
   expect(screen.getByRole('tooltip')).toHaveTextContent('not required to add positions in this order')
 })
+
+test('shows the preserved technical, news, and final decision stack', async () => {
+  const user = userEvent.setup()
+  const decision = {
+    ...planFixture.decisions[0]!,
+    base_decision: 'BUY' as const,
+    decision: 'SKIP' as const,
+    news_effect: 'BUY_BLOCKED',
+    final_action: 'DO_NOT_BUY',
+    news_reason: 'Fresh high-severity adverse guidance',
+    news_policy_version: 'news-decision-overlay-v1',
+    supporting_news_article_ids: ['article-1'],
+  }
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" />)
+
+  await user.click(screen.getByText('Decision details'))
+
+  expect(screen.getByText('Base technical decision')).toBeInTheDocument()
+  expect(screen.getByText('BUY_BLOCKED')).toBeInTheDocument()
+  expect(screen.getByText('DO_NOT_BUY')).toBeInTheDocument()
+  expect(screen.getByText('article-1')).toBeInTheDocument()
+})

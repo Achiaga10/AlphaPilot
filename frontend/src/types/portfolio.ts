@@ -149,13 +149,20 @@ export interface PortfolioDecision {
   depends_on_action_ids: string[]
   exit_context: StrategyExitContext | null
   execution_readiness?: 'ACTIONABLE' | 'RESEARCH_ONLY' | 'UNAVAILABLE'
-  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY'
+  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY' | 'NEWS_RISK_BLOCK' | 'NEWS_ASSESSMENT_UNAVAILABLE'
   loss_control_policy?: string
   loss_control_boundary_price?: string | null
   loss_control_trigger?: string | null
   loss_control_active?: boolean
   loss_control_broker_stop_order?: boolean
   approved_protective_stop_price?: string | null
+  base_decision?: PortfolioDecisionType | null
+  news_effect?: string
+  news_coverage?: 'CURRENT' | 'STALE' | 'PARTIAL' | 'RATE_LIMITED' | 'UNAVAILABLE' | 'NEVER_REFRESHED'
+  final_action?: string | null
+  news_reason?: string | null
+  news_policy_version?: string | null
+  supporting_news_article_ids?: string[]
 }
 
 export interface StrategyExitContext {
@@ -521,6 +528,82 @@ export interface UnifiedCopilotQuestion {
   pending_intent: string | null
 }
 
+export interface NewsClassification {
+  classification_status: 'CLASSIFIED' | 'UNAVAILABLE' | 'RATE_LIMITED' | 'INVALID'
+  classification_provider: string
+  classification_model: string
+  classification_version: string
+  classified_at: string
+  event_type: string | null
+  impact: 'POSITIVE' | 'NEGATIVE' | 'MIXED' | 'NEUTRAL' | 'UNKNOWN' | null
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'SEVERE' | 'UNKNOWN' | null
+  confidence: string | null
+  reason: string | null
+  failure_code: string | null
+}
+
+export interface NewsArticle {
+  id: string
+  ticker: string
+  provider: string
+  provider_article_id: string | null
+  canonical_url: string | null
+  headline: string
+  summary: string | null
+  source: string | null
+  image_url: string | null
+  provider_category: string | null
+  published_at: string
+  received_at: string
+  classification: NewsClassification | null
+}
+
+export interface NewsRefreshResult {
+  portfolio_id: string
+  tickers: string[]
+  fetched: number
+  inserted: number
+  duplicates: number
+  classified: number
+  classification_failures: number
+  provider_failures: string[]
+  refreshed_at: string
+  scope: 'OPEN_POSITIONS' | 'CANDIDATES' | 'EXPLICIT_TICKERS'
+  coverage: [string, 'CURRENT' | 'STALE' | 'PARTIAL' | 'RATE_LIMITED' | 'UNAVAILABLE' | 'NEVER_REFRESHED'][]
+  aggregate_requested: string[]
+  aggregate_returned: string[]
+  aggregate_missing: string[]
+  aggregate_api_calls: number
+  aggregate_observations_persisted: number
+  targeted_classification_attempts: number
+}
+
+export interface ExternalNewsSentiment {
+  ticker: string
+  provider: 'ADANOS'
+  observed_at: string
+  provider_timestamp: string | null
+  period_start: string
+  period_end: string
+  sentiment_score: string
+  bullish_pct: string | null
+  bearish_pct: string | null
+  mentions: number | null
+  source_count: number | null
+  buzz_score: string | null
+  trend: string | null
+  request_scope: string
+  evidence_strength: 'SUFFICIENT' | 'WEAK_EVIDENCE' | 'UNAVAILABLE' | 'STALE'
+  aggregate_effect: 'POSITIVE_CONTEXT' | 'TARGETED_NEWS_REVIEW' | 'MIXED_OR_NEUTRAL' | 'UNAVAILABLE'
+  limitation: string | null
+}
+
+export interface NewsRefreshRequest {
+  scope: 'OPEN_POSITIONS' | 'CANDIDATES' | 'EXPLICIT_TICKERS'
+  tickers: string[]
+  force_aggregate?: boolean
+}
+
 export interface DailyBriefReference {
   reference_type: string
   value: string
@@ -552,6 +635,13 @@ export interface DailyBriefPosition {
   loss_control_trigger: string | null
   broker_stop_order: boolean
   references: DailyBriefReference[]
+  base_status?: string | null
+  news_effect?: string
+  news_coverage?: string
+  final_status?: string | null
+  news_reason?: string | null
+  news_policy_version?: string | null
+  supporting_news_article_ids?: string[]
 }
 
 export interface DailyBriefOpportunity {
@@ -583,6 +673,13 @@ export interface DailyBriefOpportunity {
   analysis_as_of_date: string
   action_id: string | null
   workflow_status: string
+  base_decision?: string | null
+  news_coverage?: string
+  news_effect?: string
+  final_decision?: string | null
+  news_reason?: string | null
+  news_policy_version?: string | null
+  supporting_news_article_ids?: string[]
 }
 
 export interface DailyPortfolioBrief {

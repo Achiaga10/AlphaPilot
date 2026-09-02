@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, cast
 
@@ -13,6 +13,7 @@ from alphapilot.market.providers.base import (
     IndexConstituentsProvider,
     MarketProvider,
 )
+from alphapilot.news.models import NormalizedNewsArticle
 
 
 class FinnhubProvider(
@@ -23,6 +24,52 @@ class FinnhubProvider(
     """Finnhub market and index data provider."""
 
     BASE_URL = "https://finnhub.io/api/v1"
+
+    async def get_company_news(
+        self, ticker: str, start: date, end: date
+    ) -> list[NormalizedNewsArticle]:
+        normalized = ticker.strip().upper()
+        if not normalized:
+            raise ValueError("ticker must not be empty")
+        received_at = datetime.now(UTC)
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(
+                f"{self.BASE_URL}/company-news",
+                params={
+                    "symbol": normalized,
+                    "from": start.isoformat(),
+                    "to": end.isoformat(),
+                    "token": settings.FINNHUB_API_KEY,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+        if not isinstance(data, list):
+            return []
+        output: list[NormalizedNewsArticle] = []
+        for raw in data:
+            if not isinstance(raw, dict) or not str(raw.get("headline", "")).strip():
+                continue
+            timestamp = raw.get("datetime")
+            if not isinstance(timestamp, (int, float)):
+                continue
+            output.append(
+                NormalizedNewsArticle(
+                    ticker=normalized,
+                    company_name=None,
+                    provider="FINNHUB",
+                    provider_article_id=(str(raw["id"]) if raw.get("id") is not None else None),
+                    canonical_url=str(raw.get("url", "")).strip() or None,
+                    headline=str(raw["headline"]).strip(),
+                    summary=str(raw.get("summary", "")).strip() or None,
+                    source=str(raw.get("source", "")).strip() or None,
+                    published_at=datetime.fromtimestamp(timestamp, tz=UTC),
+                    received_at=received_at,
+                    image_url=str(raw.get("image", "")).strip() or None,
+                    provider_category=str(raw.get("category", "")).strip() or None,
+                )
+            )
+        return output
 
     async def get_quote(
         self,

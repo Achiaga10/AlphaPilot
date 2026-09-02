@@ -1,6 +1,7 @@
 import hashlib
 import json
-from datetime import date
+from dataclasses import replace
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -8,9 +9,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from alphapilot.api.routes.news import get_news_service
 from alphapilot.core.lifespan import daily_market_scheduler
 from alphapilot.database.session import get_db
 from alphapilot.market.providers.alpaca import AlpacaProvider
+from alphapilot.news.policy import NewsEffect
+from alphapilot.news.service import NewsService
 from alphapilot.portfolio.actions import (
     ManualPortfolioSellService,
     PortfolioPlanActionService,
@@ -22,8 +26,13 @@ from alphapilot.portfolio.decisions import (
     PortfolioDecisionEngine,
     PortfolioStatePosition,
 )
+from alphapilot.portfolio.execution_readiness import (
+    ExecutionReadiness,
+    ExecutionReadinessReason,
+)
 from alphapilot.portfolio.orchestration import PortfolioDecisionOrchestrator
 from alphapilot.portfolio.risk import PortfolioRiskConfig
+from alphapilot.portfolio.sizing import PortfolioDecisionReason, PortfolioDecisionType
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
@@ -244,6 +253,7 @@ def get_daily_portfolio_brief_service(
         get_portfolio_decision_orchestrator(session),
         ResearchDataSummaryService(ResearchDataRepository(session)),
         daily_market_scheduler.status,
+        get_news_service(session),
     )
 
 
@@ -715,6 +725,7 @@ async def build_portfolio_plan(
         ResearchPortfolioService,
         Depends(get_research_portfolio_service),
     ],
+    news: Annotated[NewsService, Depends(get_news_service)],
 ) -> PortfolioPlanSchema:
     profile = resolve_strategy_profile(request.strategy)
     if request.selection_policy not in profile.allowed_selection_policies:
@@ -745,6 +756,67 @@ async def build_portfolio_plan(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     plan = result.plan
+    if request.portfolio_id is not None:
+        # Technical facts remain frozen through the completed analysis session, while
+        # News evidence is evaluated at the current plan-decision instant.
+        as_of = datetime.now(UTC)
+        news_decisions = []
+        held = {item.ticker.upper(): item for item in state.positions}
+        for decision in plan.decisions:
+            assessment = await news.assess(request.portfolio_id, decision.ticker, as_of=as_of)
+            original = decision.decision
+            updated = decision
+            final_action = original.value
+            reason = decision.reason
+            if original is PortfolioDecisionType.BUY and assessment.effect in {
+                NewsEffect.BUY_BLOCKED,
+                NewsEffect.EXIT_REQUIRED,
+            }:
+                updated = replace(
+                    updated,
+                    decision=PortfolioDecisionType.SKIP,
+                    execution_readiness=ExecutionReadiness.RESEARCH_ONLY,
+                    execution_readiness_reason=ExecutionReadinessReason.NEWS_RISK_BLOCK,
+                )
+                final_action = "DO_NOT_BUY"
+                reason = PortfolioDecisionReason.NEWS_RISK_BLOCK
+            elif original is PortfolioDecisionType.BUY and assessment.effect in {
+                NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+                NewsEffect.NEWS_ASSESSMENT_PARTIAL,
+            }:
+                updated = replace(
+                    updated,
+                    decision=PortfolioDecisionType.SKIP,
+                    execution_readiness=ExecutionReadiness.UNAVAILABLE,
+                    execution_readiness_reason=(
+                        ExecutionReadinessReason.NEWS_ASSESSMENT_UNAVAILABLE
+                    ),
+                )
+                final_action = "DO_NOT_BUY"
+                reason = PortfolioDecisionReason.NEWS_ASSESSMENT_UNAVAILABLE
+            elif assessment.effect is NewsEffect.EXIT_REQUIRED and decision.ticker.upper() in held:
+                position = held[decision.ticker.upper()]
+                updated = replace(
+                    updated,
+                    decision=PortfolioDecisionType.SELL,
+                    current_shares=position.shares,
+                    estimated_proceeds=position.market_value,
+                )
+                final_action = "EXIT_REQUIRED"
+                reason = PortfolioDecisionReason.NEWS_RISK_EXIT
+            updated = replace(
+                updated,
+                reason=reason,
+                base_decision=original,
+                news_effect=assessment.effect.value,
+                news_coverage=assessment.coverage.value,
+                final_action=final_action,
+                news_reason=assessment.reason,
+                news_policy_version=assessment.policy_version,
+                supporting_news_article_ids=assessment.supporting_article_ids,
+            )
+            news_decisions.append(updated)
+        plan = replace(plan, decisions=tuple(news_decisions))
     return PortfolioPlanSchema(
         plan_id=strategy_profile_plan_id(request, profile, portfolio_revision),
         strategy_profile=StrategyProfileSchema.model_validate(profile, from_attributes=True),
@@ -860,6 +932,20 @@ async def _plan_action_result(
                     reason=decision.reason.value,
                     modeled_risk_dollars=result.modeled_position_risk_dollars or Decimal("0"),
                     action_id=result.action_id or request.plan_id,
+                    decision_evidence={
+                        "schema_version": 1,
+                        "base_decision": decision.base_decision.value
+                        if decision.base_decision
+                        else decision.decision.value,
+                        "news_effect": decision.news_effect,
+                        "news_coverage": decision.news_coverage,
+                        "final_action": decision.final_action or decision.decision.value,
+                        "news_reason": decision.news_reason,
+                        "news_policy_version": decision.news_policy_version,
+                        "supporting_news_article_ids": [
+                            str(item) for item in decision.supporting_news_article_ids
+                        ],
+                    },
                 )
             else:
                 await persistent.sell(

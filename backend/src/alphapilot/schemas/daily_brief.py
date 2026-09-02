@@ -60,6 +60,24 @@ class DailyBriefPositionSchema(BaseModel):
     loss_control_trigger: str | None
     broker_stop_order: bool
     references: list[DailyBriefReferenceSchema]
+    base_status: str | None = None
+    news_effect: str = "NO_EFFECT"
+    news_coverage: str = "NEVER_REFRESHED"
+    final_status: str | None = None
+    news_reason: str | None = None
+    news_policy_version: str | None = None
+    supporting_news_article_ids: list[UUID] = []
+    aggregate_sentiment_score: Decimal | None = None
+    aggregate_bullish_pct: Decimal | None = None
+    aggregate_bearish_pct: Decimal | None = None
+    aggregate_mentions: int | None = None
+    aggregate_source_count: int | None = None
+    aggregate_buzz_score: Decimal | None = None
+    aggregate_trend: str | None = None
+    aggregate_observed_at: datetime | None = None
+    aggregate_evidence_strength: str = "UNAVAILABLE"
+    aggregate_effect: str = "UNAVAILABLE"
+    aggregate_limitation: str | None = None
 
 
 class DailyBriefOpportunitySchema(BaseModel):
@@ -92,6 +110,13 @@ class DailyBriefOpportunitySchema(BaseModel):
     analysis_as_of_date: date
     action_id: str | None
     workflow_status: str
+    base_decision: str | None = None
+    news_coverage: str = "NEVER_REFRESHED"
+    news_effect: str = "NO_EFFECT"
+    final_decision: str | None = None
+    news_reason: str | None = None
+    news_policy_version: str | None = None
+    supporting_news_article_ids: list[UUID] = []
 
 
 class DailyPortfolioBriefSchema(BaseModel):

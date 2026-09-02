@@ -24,7 +24,7 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 23 — Forward Paper Analytics (COMPLETE LOCALLY)
+Sprint 24 — News Intelligence and Decision Overlay (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
@@ -34,10 +34,17 @@ found no approved protective-stop winner. Sprint 21 is complete locally on
 `feature/daily-portfolio-manager`; it added product orchestration only, with no new
 research, strategy, broker integration, or autonomous trading.
 
-Sprint 21 is now merged. Sprint 22 adds read-only ephemeral live monitoring and
-deterministic indicator facts without changing completed-session strategy semantics.
-Sprint 22 is merged. Sprint 23 adds immutable forward Paper evidence and backend-owned
-execution/outcome analytics without changing research or portfolio authority.
+Sprint 21 through Sprint 23 are merged. Sprint 22 added read-only ephemeral live
+monitoring and deterministic indicator facts without changing completed-session strategy
+semantics. Sprint 23 added immutable forward Paper evidence and backend-owned
+execution/outcome analytics. Sprint 24 is complete locally: Adanos is the persisted
+primary aggregate News sentiment source, Finnhub remains attributable/hard-event evidence,
+Gemini is targeted deep interpretation only, Ollama is disabled, and the deterministic
+backend remains the sole financial decision authority. Sprint 25 has not started.
+Final Sprint 24 hardening makes AI-only SEVERE insufficient for exit, requires
+PRIMARY-source deterministic hard-event confirmation, and requires current persisted
+provider/classifier coverage before a new BUY can be actionable. Candidate refresh is
+explicit and capped at 25 tickers; Ollama remains disabled by default.
 
 ## Development Environment
 
@@ -257,14 +264,15 @@ Survivorship Bias
 
 Every final interpretation must mention this.
 
-## Sprint 21 Task
+## Sprint 24 Task
 
-Build a read-only Daily Portfolio Brief and Dashboard workflow from existing valuation,
-monitoring, decision, readiness, completed-session, Paper Validation, and Copilot
-authorities. Required exits have first workflow priority. No actionable BUY may lack
-existing deterministic numeric loss-control evidence.
+Build durable News Intelligence and a versioned deterministic News Decision Overlay.
+Preserve base strategy decisions separately. AI may classify financial/business impact
+through strict typed evidence but may never issue BUY/SELL/HOLD or portfolio instructions.
+Positive news cannot create a BUY or cancel a technical SELL. Only narrow, fresh, direct,
+strong-source severe evidence may produce a backend-owned News risk exit.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT23_COMPLETION_REPORT.md`, stop. Do not begin
-Sprint 24.
+After creating `docs/sprints/SPRINT24_COMPLETION_REPORT.md`, stop. Do not begin
+Sprint 25.

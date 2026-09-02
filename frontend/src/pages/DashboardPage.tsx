@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { EmptyState, ErrorState, LoadingState } from '../components/AsyncState'
 import { DailyPortfolioManager } from '../features/dashboard/DailyPortfolioManager'
+import { NewsIntelligencePanel } from '../features/dashboard/NewsIntelligencePanel'
 import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
-import { useDailyBriefOpportunitiesQuery, useDailyPortfolioBriefQuery, useLivePortfolioRefreshMutation } from '../hooks/usePortfolioApi'
+import { useDailyBriefOpportunitiesQuery, useDailyPortfolioBriefQuery, useLivePortfolioRefreshMutation, usePortfolioNewsQuery, usePortfolioNewsRefreshMutation, usePortfolioNewsSentimentQuery } from '../hooks/usePortfolioApi'
 
 export function DashboardPage() {
   const { portfolio, portfolioPending } = usePortfolioWorkspace()
@@ -13,6 +14,9 @@ export function DashboardPage() {
     researchLimit,
   )
   const live = useLivePortfolioRefreshMutation(portfolio?.portfolio_id ?? null)
+  const news = usePortfolioNewsQuery(portfolio?.portfolio_id ?? null)
+  const newsSentiment = usePortfolioNewsSentimentQuery(portfolio?.portfolio_id ?? null)
+  const newsRefresh = usePortfolioNewsRefreshMutation(portfolio?.portfolio_id ?? null)
   return (
     <div className="page">
       <header className="page-header">
@@ -28,6 +32,7 @@ export function DashboardPage() {
       {brief.isPending && portfolio ? <LoadingState label="Building Daily Portfolio Brief…" /> : null}
       {brief.isError ? <ErrorState error={brief.error} onRetry={() => void brief.refetch()} /> : null}
       {brief.data ? <DailyPortfolioManager brief={brief.data} live={live.data} liveError={live.isError} opportunities={opportunities.data} opportunitiesLoading={opportunities.isPending} opportunitiesError={opportunities.isError} refreshing={brief.isFetching || live.isPending} onRefresh={() => { void live.mutateAsync().then(() => brief.refetch()) }} onViewAllResearch={() => setResearchLimit(100)} /> : null}
+      {portfolio ? <NewsIntelligencePanel sentiments={newsSentiment.data ?? []} articles={news.data ?? []} loading={news.isPending || newsSentiment.isPending} error={news.isError || newsSentiment.isError} refreshing={newsRefresh.isPending} refreshResult={newsRefresh.data} onRefresh={() => { void newsRefresh.mutateAsync().then(() => Promise.all([news.refetch(), newsSentiment.refetch()])) }} /> : null}
     </div>
   )
 }
