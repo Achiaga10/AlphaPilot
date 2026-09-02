@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 
 import httpx
@@ -107,3 +108,42 @@ async def test_get_company_metadata_normalizes_provider_identity(
     assert result.ticker == "SBET"
     assert result.exchange == "NASDAQ"
     assert result.sector == "Media"
+
+
+@pytest.mark.asyncio
+async def test_get_company_news_normalizes_provenance_and_aware_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/company-news"
+        assert request.url.params["symbol"] == "APA"
+        assert request.url.params["from"] == "2026-08-25"
+        assert request.url.params["to"] == "2026-09-01"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 123,
+                    "headline": "APA updates guidance",
+                    "summary": "Management changed its expected revenue range.",
+                    "source": "Reuters",
+                    "url": "https://example.com/apa",
+                    "image": "https://example.com/image.png",
+                    "category": "company",
+                    "datetime": 1788256800,
+                }
+            ],
+        )
+
+    original = httpx.AsyncClient
+
+    def create_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", create_client)
+    result = await FinnhubProvider().get_company_news(" apa ", date(2026, 8, 25), date(2026, 9, 1))
+    assert len(result) == 1
+    assert result[0].provider == "FINNHUB"
+    assert result[0].provider_article_id == "123"
+    assert result[0].published_at.tzinfo is not None

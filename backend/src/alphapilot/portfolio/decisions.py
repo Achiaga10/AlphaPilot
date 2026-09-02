@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from uuid import UUID
 
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
@@ -102,6 +103,13 @@ class PortfolioDecision:
     loss_control_trigger: str | None = None
     loss_control_active: bool = False
     loss_control_broker_stop_order: bool = False
+    base_decision: PortfolioDecisionType | None = None
+    news_effect: str = "NO_EFFECT"
+    news_coverage: str = "NEVER_REFRESHED"
+    final_action: str | None = None
+    news_reason: str | None = None
+    news_policy_version: str | None = None
+    supporting_news_article_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)

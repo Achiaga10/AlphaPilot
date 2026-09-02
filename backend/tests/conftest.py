@@ -64,7 +64,9 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
         await session.execute(
             text(
-                "TRUNCATE TABLE research_dataset_candle_members, "
+                "TRUNCATE TABLE external_news_sentiment_observations, news_refresh_coverage, "
+                "news_classifications, news_articles, "
+                "research_dataset_candle_members, "
                 "research_dataset_universe_members, research_dataset_snapshots, "
                 "research_trade_events, research_positions, research_portfolios, "
                 "daily_candle_versions, market_data_ingestion_batches, "
@@ -78,7 +80,9 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
         await session.execute(
             text(
-                "TRUNCATE TABLE research_dataset_candle_members, "
+                "TRUNCATE TABLE external_news_sentiment_observations, news_refresh_coverage, "
+                "news_classifications, news_articles, "
+                "research_dataset_candle_members, "
                 "research_dataset_universe_members, research_dataset_snapshots, "
                 "research_trade_events, research_positions, research_portfolios, "
                 "daily_candle_versions, market_data_ingestion_batches, "

@@ -323,6 +323,7 @@ class ResearchPortfolioService:
         reason: str,
         modeled_risk_dollars: Decimal,
         action_id: str,
+        decision_evidence: dict[str, Any] | None = None,
     ) -> ResearchPortfolio:
         portfolio = await self._locked(portfolio_id, expected_revision)
         if quantity <= 0 or execution_price <= 0:
@@ -352,6 +353,7 @@ class ResearchPortfolioService:
             selection_policy=selection_policy,
             entry_decision=decision,
             entry_reason=reason,
+            entry_decision_evidence=decision_evidence,
             provenance_status=ResearchPositionProvenance.PLAN_PROFILE.value,
             modeled_risk_dollars=modeled_risk_dollars,
         )

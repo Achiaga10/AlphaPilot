@@ -30,6 +30,31 @@ test('backend unavailable is distinguished from a domain empty state', async () 
   expect(await screen.findByRole('heading', { name: 'Daily Portfolio Manager' })).toBeInTheDocument()
 })
 
+test('News Intelligence renders persisted classification provenance and refreshes holdings only', async () => {
+  const user = userEvent.setup()
+  let refreshRequests = 0
+  server.use(http.post(
+    `${API_BASE_URL}/api/v1/portfolio/:portfolioId/news-refresh`,
+    ({ params }) => {
+      refreshRequests += 1
+      return HttpResponse.json({ portfolio_id: String(params.portfolioId), tickers: ['APA'], fetched: 1, inserted: 0, duplicates: 1, classified: 0, classification_failures: 0, provider_failures: [], refreshed_at: '2026-09-01T10:00:00Z', scope: 'OPEN_POSITIONS', coverage: [['APA', 'CURRENT']], aggregate_requested: ['APA'], aggregate_returned: ['APA'], aggregate_missing: [], aggregate_api_calls: 1, aggregate_observations_persisted: 1, targeted_classification_attempts: 0 })
+    },
+  ))
+  renderApp('/')
+  expect(await screen.findByRole('heading', { name: 'News Intelligence' })).toBeInTheDocument()
+  expect(await screen.findByText('APA updates full-year guidance')).toBeInTheDocument()
+  expect(screen.getByText('NEGATIVE')).toBeInTheDocument()
+  expect(screen.getByText('HIGH severity')).toBeInTheDocument()
+  expect(screen.getByText(/Classified by GOOGLE_GEMINI/)).toBeInTheDocument()
+  expect(screen.getByText(/cannot issue BUY or SELL/i)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'External News Sentiment — Adanos' })).toBeInTheDocument()
+  expect(screen.getByText('SUFFICIENT')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Refresh open holdings' }))
+  expect(refreshRequests).toBe(1)
+  expect(await screen.findByText(/APA CURRENT/)).toBeInTheDocument()
+  expect(screen.getByText(/Stored articles do not imply current or complete coverage/)).toBeInTheDocument()
+})
+
 test('navigation reaches every required route', async () => {
   const user = userEvent.setup()
   renderApp('/')

@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-Sprint 23 — Forward Paper Analytics
-COMPLETE LOCALLY / awaiting user review and Git operations
+Sprint 24 — News Intelligence and Decision Overlay
+COMPLETE LOCALLY
 
 Current development branch:
-feature/forward-paper-analytics
+feature/news-intelligence-foundation
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -32,7 +32,16 @@ complete and merged with read-only, open-position-only Alpaca live snapshots, pr
 indicator/strategy projection, explicit freshness, deterministic live Copilot facts, and a
 Dashboard Live Market Monitor. Sprint 23 is complete locally with immutable versioned
 Paper evidence, backend-owned forward analytics, typed APIs, deterministic Copilot facts,
-and a Portfolio analytics UI. Sprint 24 has not started.
+and a Portfolio analytics UI. Sprint 23 is reviewed and merged. Sprint 24 is complete
+locally: it preserves base technical decisions, persists Adanos as the primary aggregate
+sentiment/context layer, retains Finnhub for attributable and hard-event evidence, uses
+Gemini only for deterministically targeted deep interpretation, keeps Ollama disabled,
+and leaves all financial authority in the versioned backend decision overlay. Sprint 25
+is not started.
+Final safety hardening is also complete locally: AI classification alone cannot produce a
+News exit; a narrow PRIMARY-source hard-event confirmation gate is mandatory. Per-ticker
+provider/classifier refresh coverage is durable and typed, actionable BUYs require current
+complete coverage, and explicit candidate refresh never expands beyond 25 supplied tickers.
 
 Sprint 21 performance hardening is also complete locally. The Dashboard core and
 opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,

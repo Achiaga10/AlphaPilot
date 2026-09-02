@@ -14,6 +14,7 @@ from alphapilot.api.routes.health import (
 from alphapilot.api.routes.market import (
     router as market_router,
 )
+from alphapilot.api.routes.news import router as news_router
 from alphapilot.api.routes.portfolio import router as portfolio_router
 from alphapilot.api.routes.research_datasets import router as research_datasets_router
 from alphapilot.api.routes.scanner import (
@@ -55,6 +56,8 @@ router.include_router(
 )
 
 router.include_router(portfolio_router)
+
+router.include_router(news_router)
 
 router.include_router(copilot_router)
 

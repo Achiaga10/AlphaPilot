@@ -212,6 +212,9 @@ class PaperValidationService:
         return value.astimezone(UTC)
 
     async def _capture_evidence(self, portfolio_id: UUID, position_id: UUID) -> dict[str, Any]:
+        position = await self.portfolios.get_position(portfolio_id, position_id)
+        if position is None:
+            raise ValueError("Research position not found")
         facts = await self.intelligence.get_position_intelligence(portfolio_id, position_id)
         events = await self.portfolios.position_events(position_id)
         opening = next((item for item in events if item.event_type == "OPEN"), None)
@@ -243,6 +246,7 @@ class PaperValidationService:
                 "entry_reason": facts.entry_reason,
                 "selection_policy": facts.selection_policy,
                 "recommendation_day": self._iso(facts.entry_trading_day),
+                "news_overlay": position.entry_decision_evidence,
             },
             "planned_execution": {
                 "planned_quantity": opening.quantity if opening else facts.quantity,

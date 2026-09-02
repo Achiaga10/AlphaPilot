@@ -20,6 +20,9 @@ import {
   getDailyPortfolioBrief,
   getDailyBriefOpportunities,
   refreshLivePortfolio,
+  getPortfolioNews,
+  refreshPortfolioNews,
+  getPortfolioNewsSentiment,
 } from '../api/portfolio'
 import {
   addCustomTicker,
@@ -101,6 +104,26 @@ export function useDailyBriefOpportunitiesQuery(
 
 export function useLivePortfolioRefreshMutation(portfolioId: string | null) {
   return useMutation({ mutationFn: () => refreshLivePortfolio(portfolioId ?? '') })
+}
+
+export function usePortfolioNewsQuery(portfolioId: string | null) {
+  return useQuery({
+    queryKey: ['portfolio-news', portfolioId],
+    queryFn: ({ signal }) => getPortfolioNews(portfolioId ?? '', signal),
+    enabled: Boolean(portfolioId),
+  })
+}
+
+export function usePortfolioNewsSentimentQuery(portfolioId: string | null) {
+  return useQuery({
+    queryKey: ['portfolio-news-sentiment', portfolioId],
+    queryFn: ({ signal }) => getPortfolioNewsSentiment(portfolioId ?? '', signal),
+    enabled: Boolean(portfolioId),
+  })
+}
+
+export function usePortfolioNewsRefreshMutation(portfolioId: string | null) {
+  return useMutation({ mutationFn: () => refreshPortfolioNews(portfolioId ?? '') })
 }
 
 export function usePositionMonitoringQuery(portfolioId: string | null) {

@@ -114,6 +114,7 @@ class ResearchPosition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     selection_policy: Mapped[str | None] = mapped_column(String(50), nullable=True)
     entry_decision: Mapped[str | None] = mapped_column(String(30), nullable=True)
     entry_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    entry_decision_evidence: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     provenance_status: Mapped[str] = mapped_column(String(30), nullable=False)
     modeled_risk_dollars: Mapped[Decimal] = mapped_column(
         Numeric(20, 4), nullable=False, default=Decimal("0"), server_default=text("0")

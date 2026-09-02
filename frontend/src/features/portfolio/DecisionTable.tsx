@@ -95,6 +95,13 @@ export function DecisionTable({
                 <details>
                   <summary>Decision details</summary>
                   <dl className="detail-grid">
+                    <Detail label="Base technical decision" help="The frozen strategy and portfolio-policy result before the separate News overlay."><StatusBadge value={decision.base_decision ?? decision.decision} /></Detail>
+                    <Detail label="News effect" help="The deterministic backend-owned effect of persisted, validated News evidence."><code>{decision.news_effect ?? 'NO_EFFECT'}</code></Detail>
+                    <Detail label="News coverage" help="Current provider and classifier readiness is separate from stored article history."><code>{decision.news_coverage ?? 'NEVER_REFRESHED'}</code></Detail>
+                    <Detail label="Final AlphaPilot action" help="The final advisory action after applying the versioned News policy to the preserved base decision."><StatusBadge value={decision.final_action ?? decision.decision} /></Detail>
+                    <Detail label="News reason" help="The stored assessment reason; the AI classifier never supplies a trade action.">{decision.news_reason ?? 'No News-driven change'}</Detail>
+                    <Detail label="News policy" help="The deterministic server policy version that produced the News effect."><code>{decision.news_policy_version ?? 'Not applicable'}</code></Detail>
+                    <Detail label="Supporting News" help="Persisted article identifiers supporting the News assessment.">{decision.supporting_news_article_ids?.length ? decision.supporting_news_article_ids.join(', ') : 'None'}</Detail>
                     <Detail label="Candidate rank" help={METRIC_GLOSSARY.candidateRank}>{rankByTicker[decision.ticker] ?? 'Not ranked'}</Detail>
                     <Detail label="Reference price" help={METRIC_GLOSSARY.referencePrice}>{formatMoney(decision.reference_price)}</Detail>
                     <Detail label="ATR14" help={METRIC_GLOSSARY.atr14}>{formatMoney(decision.atr)}</Detail>

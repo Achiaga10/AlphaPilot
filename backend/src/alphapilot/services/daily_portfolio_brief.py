@@ -9,6 +9,9 @@ from uuid import UUID
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.market.session import CompletedDailySessionPolicy
+from alphapilot.news.external_sentiment import assess_external_sentiment
+from alphapilot.news.policy import NewsEffect
+from alphapilot.news.service import NewsService
 from alphapilot.portfolio.daily_brief import (
     DailyBriefDataStatus,
     DailyBriefOpportunities,
@@ -45,12 +48,14 @@ class DailyPortfolioBriefService:
         orchestrator: PortfolioDecisionOrchestrator,
         freshness: ResearchDataSummaryService,
         scheduler_status: DailySchedulerStatus,
+        news: NewsService | None = None,
     ) -> None:
         self.portfolios = portfolios
         self.intelligence = intelligence
         self.orchestrator = orchestrator
         self.freshness = freshness
         self.scheduler_status = scheduler_status
+        self.news = news
         self.guidance = StopExitGuidanceService()
         self.session_policy = getattr(orchestrator, "session_policy", CompletedDailySessionPolicy())
 
@@ -73,6 +78,45 @@ class DailyPortfolioBriefService:
             intel = intelligence[valued.position_id]
             guide = self.guidance.build(intel)
             status = intel.monitoring_status or "UNAVAILABLE"
+            base_status = status
+            position_reason = intel.monitoring_reason
+            news_effect = NewsEffect.NO_EFFECT
+            news_coverage = "NEVER_REFRESHED"
+            news_reason: str | None = None
+            news_policy_version: str | None = None
+            supporting_news_article_ids: tuple[UUID, ...] = ()
+            aggregate = None
+            aggregate_assessment = None
+            explanation = intel.explanation
+            if self.news is not None and intel.monitoring_completed_trading_day is not None:
+                aggregate = await self.news.latest_sentiment_observation(
+                    portfolio_id, intel.ticker, as_of=datetime.now(UTC)
+                )
+                aggregate_assessment = assess_external_sentiment(
+                    self.news.observation_snapshot(aggregate) if aggregate else None,
+                    as_of=datetime.now(UTC),
+                )
+                assessment = await self.news.assess(
+                    portfolio_id,
+                    intel.ticker,
+                    as_of=datetime.now(UTC),
+                )
+                news_effect = assessment.effect
+                news_coverage = assessment.coverage.value
+                news_reason = assessment.reason
+                news_policy_version = assessment.policy_version
+                supporting_news_article_ids = assessment.supporting_article_ids
+                if base_status != "SELL" and news_effect is NewsEffect.EXIT_REQUIRED:
+                    status = "SELL"
+                    position_reason = "NEWS_RISK_EXIT"
+                    explanation = f"News risk exit: {assessment.reason}"
+                elif base_status == "HOLD" and news_effect in {
+                    NewsEffect.ATTENTION,
+                    NewsEffect.BUY_BLOCKED,
+                    NewsEffect.NEWS_ASSESSMENT_PARTIAL,
+                }:
+                    status = "ATTENTION"
+                    explanation = f"News attention: {assessment.reason}"
             positions.append(
                 DailyBriefPosition(
                     position_id=intel.position_id,
@@ -82,8 +126,8 @@ class DailyPortfolioBriefService:
                     strategy_profile_id=intel.strategy_profile_id,
                     strategy_profile_version=intel.strategy_profile_version,
                     status=status,
-                    reason=intel.monitoring_reason,
-                    explanation=intel.explanation,
+                    reason=position_reason,
+                    explanation=explanation,
                     quantity=intel.quantity,
                     latest_completed_close=intel.latest_completed_close,
                     unrealized_pnl=intel.unrealized_pnl,
@@ -105,6 +149,32 @@ class DailyPortfolioBriefService:
                             item.distance_pct,
                         )
                         for item in guide.references
+                    ),
+                    base_status=base_status,
+                    news_effect=news_effect.value,
+                    news_coverage=news_coverage,
+                    final_status=status,
+                    news_reason=news_reason,
+                    news_policy_version=news_policy_version,
+                    supporting_news_article_ids=supporting_news_article_ids,
+                    aggregate_sentiment_score=(aggregate.sentiment_score if aggregate else None),
+                    aggregate_bullish_pct=(aggregate.bullish_pct if aggregate else None),
+                    aggregate_bearish_pct=(aggregate.bearish_pct if aggregate else None),
+                    aggregate_mentions=(aggregate.mentions if aggregate else None),
+                    aggregate_source_count=(aggregate.source_count if aggregate else None),
+                    aggregate_buzz_score=(aggregate.buzz_score if aggregate else None),
+                    aggregate_trend=(aggregate.trend if aggregate else None),
+                    aggregate_observed_at=(aggregate.observed_at if aggregate else None),
+                    aggregate_evidence_strength=(
+                        aggregate_assessment.strength.value
+                        if aggregate_assessment
+                        else "UNAVAILABLE"
+                    ),
+                    aggregate_effect=(
+                        aggregate_assessment.effect.value if aggregate_assessment else "UNAVAILABLE"
+                    ),
+                    aggregate_limitation=(
+                        aggregate_assessment.limitation if aggregate_assessment else None
                     ),
                 )
             )
@@ -308,6 +378,44 @@ class DailyPortfolioBriefService:
                         valuation.revision,
                         result.analysis_as_of_date,
                     )
+                    news_blocked = False
+                    if self.news is not None:
+                        assessment = await self.news.assess(
+                            core.portfolio_id,
+                            decision.ticker,
+                            as_of=datetime.now(UTC),
+                        )
+                        opportunity = replace(
+                            opportunity,
+                            base_decision=decision.decision.value,
+                            news_coverage=assessment.coverage.value,
+                            news_effect=assessment.effect.value,
+                            final_decision=decision.decision.value,
+                            news_reason=assessment.reason,
+                            news_policy_version=assessment.policy_version,
+                            supporting_news_article_ids=assessment.supporting_article_ids,
+                        )
+                        if assessment.effect in {
+                            NewsEffect.BUY_BLOCKED,
+                            NewsEffect.EXIT_REQUIRED,
+                            NewsEffect.NEWS_ASSESSMENT_PARTIAL,
+                            NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+                        }:
+                            news_blocked = True
+                            opportunity = replace(
+                                opportunity,
+                                decision="SKIP",
+                                decision_reason=assessment.effect.value,
+                                execution_readiness="UNAVAILABLE",
+                                execution_readiness_reason=(
+                                    "NEWS_RISK_BLOCK"
+                                    if assessment.effect
+                                    in {NewsEffect.BUY_BLOCKED, NewsEffect.EXIT_REQUIRED}
+                                    else "NEWS_ASSESSMENT_UNAVAILABLE"
+                                ),
+                                final_decision="DO_NOT_BUY",
+                                workflow_status="NEWS_BLOCKED",
+                            )
                     if profile.profile_id == "ema20-pullback-v1":
                         readiness_value, readiness_reason = classify_new_buy(None)
                         opportunity = replace(
@@ -315,7 +423,9 @@ class DailyPortfolioBriefService:
                             execution_readiness=readiness_value.value,
                             execution_readiness_reason=readiness_reason.value,
                         )
-                    if opportunity.execution_readiness == "RESEARCH_ONLY":
+                    if news_blocked:
+                        deferred.append(opportunity)
+                    elif opportunity.execution_readiness == "RESEARCH_ONLY":
                         research_only.append(opportunity)
                     elif decision.decision.value != "BUY":
                         deferred.append(

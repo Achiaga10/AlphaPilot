@@ -39,7 +39,24 @@ class Settings(BaseSettings):
 
     FINNHUB_API_KEY: str = ""
 
+    ADANOS_API_KEY: str = ""
+    ADANOS_BASE_URL: str = "https://api.adanos.org"
+    ADANOS_TIMEOUT_SECONDS: float = 15.0
+
     OPENAI_API_KEY: str = ""
+
+    NEWS_AI_CLASSIFIER_ENABLED: bool = True
+    NEWS_AI_CLASSIFIER_PROVIDER: Literal["hosted"] = "hosted"
+    NEWS_AI_CLASSIFIER_API_KEY: str = ""
+    NEWS_AI_CLASSIFIER_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta"
+    NEWS_AI_CLASSIFIER_MODEL: str = "gemini-3.5-flash-lite"
+    NEWS_AI_CLASSIFIER_TIMEOUT_SECONDS: float = 20.0
+    NEWS_AI_CLASSIFIER_MIN_CONFIDENCE: float = 0.75
+    NEWS_AI_CLASSIFIER_VERSION: str = "news-financial-impact-v1"
+    NEWS_AI_CLASSIFIER_MAX_ATTEMPTS_PER_REFRESH: int = 10
+    NEWS_AI_CLASSIFIER_DELAY_SECONDS: float = 0.25
+    NEWS_COVERAGE_FRESH_HOURS: int = 24
+    OLLAMA_NEWS_FALLBACK_ENABLED: bool = False
 
     WIKIMEDIA_USER_AGENT: str = ""
 

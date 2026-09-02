@@ -1,5 +1,19 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 24 Final News Provider Architecture
+
+- Adanos is the primary persisted aggregate sentiment/context provider for current
+  research use; its observations never carry direct trade authority.
+- Finnhub remains the attributable article, drill-down, and hard-event evidence source.
+- Gemini is retained for deterministic targeted deep interpretation, not routine
+  classification of every article. Ollama remains disabled/future fallback only.
+- Aggregate sentiment, attributable article coverage, and AI classification coverage are
+  separate typed concepts and must not be described as equivalent completeness.
+- Weak aggregate evidence (fewer than five mentions or two sources), stale/missing data,
+  and unavailable provider timestamps remain explicit. Adanos alone can never BUY, SELL,
+  or create `EXIT_REQUIRED`; the backend remains the sole financial decision authority.
+- Adanos Free/Hobby is non-commercial; commercial use requires licensing review.
+
 ## Sprint 21 Daily Portfolio Manager Protocol
 
 - Dashboard becomes the Daily Portfolio Manager, powered by one typed read-only Daily
@@ -896,3 +910,44 @@ This comes after strategy and portfolio validation.
 - MFE/MAE exclude ambiguous entry-day OHLC. Fixed post-exit horizons are 5/10/20 completed
   sessions and remain descriptive only.
 - Generative AI remains optional; deterministic Paper facts work without Ollama.
+
+# Sprint 24 decisions
+
+- News is an explicit evidence input to final portfolio decisions; the frozen base
+  technical decision remains separately visible and unchanged.
+- The primary News classifier is external hosted AI behind a replaceable provider
+  protocol. Ollama is an optional fallback, disabled by default and never required at
+  startup.
+- AI output is limited to validated event type, financial impact, severity, confidence,
+  and reason. It has no authority to return BUY, SELL, HOLD, sizing, price, stop, or
+  allocation.
+- The backend-owned `news-decision-overlay-v1` may block a technically eligible BUY and
+  may create `EXIT_REQUIRED` only under the narrow predeclared severe-event rule in the
+  Sprint 24 plan. Positive News cannot create BUY or cancel a base SELL/loss-control exit.
+- News-driven effects require direct relevance, freshness, source provenance, acceptable
+  classifier confidence, deterministic policy evaluation, and supporting article IDs.
+  Published/received/classified timestamps enforce no lookahead.
+- Provider/classifier failure preserves ingested articles, never fabricates risk or a
+  SELL, and fails closed for new actionable BUY evidence readiness.
+- News refresh defaults to current open holdings, performs no portfolio/Paper/broker/
+  market-data mutation, and never scrapes publisher pages. User execution remains manual.
+- Sprint 24 completed locally with Google Gemini 3.5 Flash-Lite as the hosted-primary
+  classifier, Ollama disabled by default, all backend/frontend gates green, fresh-database
+  migration verification green, and read-only Edge acceptance green. The controlled
+  classifier evaluation recorded its two request failures and the real refresh recorded
+  hosted rate limiting; neither condition fabricated a financial action or made stored
+  articles unavailable.
+- Final Sprint 24 safety hardening supersedes source-tier-only exit eligibility. AI-only
+  SEVERE/high-confidence classification is evidence but cannot produce `EXIT_REQUIRED`.
+  V1 additionally requires PRIMARY provenance and deterministic explicit hard-event
+  confirmation from a closed filing/delisting/suspension/accounting-fraud/operations-
+  revocation phrase policy. Unsupported exits were zero on the frozen 30-case safety set.
+- Stored News does not establish current coverage. New BUY actionability requires a
+  successful complete seven-day provider/classifier refresh within 24 hours. Coverage is
+  typed as CURRENT, STALE, PARTIAL, RATE_LIMITED, UNAVAILABLE, or NEVER_REFRESHED.
+- OPEN_POSITIONS remains the default refresh scope. CANDIDATES and EXPLICIT_TICKERS are
+  explicit, deduplicated, and capped at 25 tickers; they never imply a full-universe fetch.
+- Hosted classification is newest-first, capped at 10 attempts per refresh, delayed by
+  250 ms, and stops on 429 without busy retry. Final real acceptance classified 9/10
+  attempts but left 9/10 holdings PARTIAL, so hosted throughput remains limiting and the
+  disabled-by-default Ollama fallback is a user decision, not an automatic switch.
