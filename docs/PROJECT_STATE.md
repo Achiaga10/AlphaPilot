@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-Sprint 24 — News Intelligence and Decision Overlay
+Post-Sprint-24 EMA20 Entry Safety Hotfix
 COMPLETE LOCALLY
 
 Current development branch:
-feature/news-intelligence-foundation
+fix/ema20-entry-safety
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -42,6 +42,13 @@ Final safety hardening is also complete locally: AI classification alone cannot 
 News exit; a narrow PRIMARY-source hard-event confirmation gate is mandatory. Per-ticker
 provider/classifier refresh coverage is durable and typed, actionable BUYs require current
 complete coverage, and explicit candidate refresh never expands beyond 25 supplied tickers.
+
+Sprint 24 is merged. A focused post-Sprint-24 safety hotfix is complete locally after the
+AXON/FAST manual Paper incident review. It preserves the frozen EMA20 strategy signal and
+adds a separate current-actionability invariant: every new EMA20 Pullback BUY must pass
+fresh entry-price revalidation against the existing completed signal-session EMA20 1%
+upper proximity boundary. Extended or unavailable evidence is non-actionable; News and
+RS20 cannot override the result. Sprint 25 remains not started.
 
 Sprint 21 performance hardening is also complete locally. The Dashboard core and
 opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,

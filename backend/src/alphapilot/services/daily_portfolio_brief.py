@@ -379,7 +379,11 @@ class DailyPortfolioBriefService:
                         result.analysis_as_of_date,
                     )
                     news_blocked = False
-                    if self.news is not None:
+                    entry_blocked = decision.reason.value in {
+                        "ENTRY_TOO_EXTENDED_ABOVE_EMA20",
+                        "EMA20_ENTRY_REVALIDATION_UNAVAILABLE",
+                    }
+                    if self.news is not None and not entry_blocked:
                         assessment = await self.news.assess(
                             core.portfolio_id,
                             decision.ticker,
@@ -395,7 +399,7 @@ class DailyPortfolioBriefService:
                             news_policy_version=assessment.policy_version,
                             supporting_news_article_ids=assessment.supporting_article_ids,
                         )
-                        if assessment.effect in {
+                        if not entry_blocked and assessment.effect in {
                             NewsEffect.BUY_BLOCKED,
                             NewsEffect.EXIT_REQUIRED,
                             NewsEffect.NEWS_ASSESSMENT_PARTIAL,
@@ -416,7 +420,7 @@ class DailyPortfolioBriefService:
                                 final_decision="DO_NOT_BUY",
                                 workflow_status="NEWS_BLOCKED",
                             )
-                    if profile.profile_id == "ema20-pullback-v1":
+                    if profile.profile_id == "ema20-pullback-v1" and not entry_blocked:
                         readiness_value, readiness_reason = classify_new_buy(None)
                         opportunity = replace(
                             opportunity,
@@ -565,6 +569,7 @@ class DailyPortfolioBriefService:
             analysis_day,
             decision.action_id,
             "READY_FOR_REVIEW",
+            entry_safety=decision.entry_safety,
         )
 
     @staticmethod

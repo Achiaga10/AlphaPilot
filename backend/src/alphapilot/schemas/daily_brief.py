@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from alphapilot.portfolio.entry_safety import Ema20EntrySafety
+
 
 class DailyBriefDataStatusSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -117,6 +119,7 @@ class DailyBriefOpportunitySchema(BaseModel):
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: list[UUID] = []
+    entry_safety: Ema20EntrySafety | None = None
 
 
 class DailyPortfolioBriefSchema(BaseModel):

@@ -8,6 +8,7 @@ import pytest
 
 from alphapilot.api.routes.portfolio import get_daily_portfolio_brief_service
 from alphapilot.market.session import CompletedDailySessionPolicy
+from alphapilot.news.policy import NewsEffect
 from alphapilot.portfolio.daily_brief import DailyBriefReadiness
 from alphapilot.portfolio.decisions import PortfolioDecision, PortfolioDecisionPlan
 from alphapilot.portfolio.execution_readiness import (
@@ -293,6 +294,56 @@ async def test_daily_brief_keeps_ema_research_only_and_micho_actionable() -> Non
         call["evaluate_existing_position_exits"] is False for call in orchestrator.call_arguments
     )
     assert orchestrator.snapshot_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_daily_brief_preserves_ema_entry_safety_block_before_news() -> None:
+    valuation = _valuation([])
+
+    class EntryBlockedOrchestrator(FakeOrchestrator):
+        async def build_plan(self, **kwargs):
+            result = await super().build_plan(**kwargs)
+            if kwargs["strategy_name"] == StrategyName.EMA20_PULLBACK:
+                decision = replace(
+                    result.plan.decisions[0],
+                    decision=PortfolioDecisionType.SKIP,
+                    reason=PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
+                    execution_readiness=ExecutionReadiness.UNAVAILABLE,
+                    execution_readiness_reason=(
+                        ExecutionReadinessReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20
+                    ),
+                )
+                return SimpleNamespace(
+                    plan=replace(result.plan, decisions=(decision,)),
+                    analysis_as_of_date=result.analysis_as_of_date,
+                )
+            return result
+
+    class NewsMustNotRun:
+        async def assess(self, _portfolio_id, ticker, **_kwargs):
+            assert ticker != "EMA", "News must not run after a hard EMA entry-safety block"
+            return SimpleNamespace(
+                coverage=SimpleNamespace(value="CURRENT"),
+                effect=NewsEffect.NO_EFFECT,
+                reason="NO_NEWS_EFFECT",
+                policy_version="news-decision-overlay-v1",
+                supporting_article_ids=(),
+            )
+
+    service = DailyPortfolioBriefService(
+        FakePortfolios(valuation),
+        FakeIntelligence({}),
+        EntryBlockedOrchestrator(),
+        FakeFreshness(),
+        DailySchedulerStatus(enabled=False),
+        NewsMustNotRun(),
+    )
+    opportunities = await service.build_opportunities(valuation.portfolio_id)
+    blocked = next(item for item in opportunities.deferred_opportunities if item.ticker == "EMA")
+    assert blocked.decision == "SKIP"
+    assert blocked.decision_reason == "ENTRY_TOO_EXTENDED_ABOVE_EMA20"
+    assert blocked.execution_readiness == "UNAVAILABLE"
+    assert blocked.execution_readiness_reason == "ENTRY_TOO_EXTENDED_ABOVE_EMA20"
 
 
 @pytest.mark.asyncio

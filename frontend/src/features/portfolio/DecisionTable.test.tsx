@@ -12,6 +12,32 @@ test('equal-slot uses not-applicable risk semantics and exposes frozen exit guid
   expect(screen.getByText('None in current strategy')).toBeInTheDocument()
   expect(screen.getByText('29.90%')).toBeInTheDocument()
   expect(screen.getByText(/not live monitoring/i)).toBeInTheDocument()
+  expect(screen.getByText('EMA20 entry safety')).toBeInTheDocument()
+  expect(screen.getByText('ENTRY_TOUCHING_OR_NEAR_EMA20')).toBeInTheDocument()
+  expect(screen.getByText((_, element) => element?.textContent === '$1.00 / 0.57%')).toBeInTheDocument()
+})
+
+test('renders an extended EMA entry as blocked using backend facts', async () => {
+  const user = userEvent.setup()
+  const decision = {
+    ...planFixture.decisions[0]!,
+    decision: 'SKIP' as const,
+    reason: 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' as const,
+    entry_safety: {
+      ...planFixture.decisions[0]!.entry_safety!,
+      entry_price: '180',
+      distance_to_ema20: '5',
+      distance_to_ema20_pct: '2.85714286',
+      relation: 'EXTENDED_ABOVE' as const,
+      status: 'BLOCKED' as const,
+      reason: 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' as const,
+    },
+  }
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" />)
+  await user.click(screen.getByText('Decision details'))
+  expect(screen.getByText('BLOCKED')).toBeInTheDocument()
+  expect(screen.getAllByText('ENTRY_TOO_EXTENDED_ABOVE_EMA20')).toHaveLength(2)
+  expect(screen.getByText('2.86%')).toBeInTheDocument()
 })
 
 test('candidate rank tooltip explains that recommendation priority is optional', async () => {

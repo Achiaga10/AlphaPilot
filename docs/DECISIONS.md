@@ -951,3 +951,21 @@ This comes after strategy and portfolio validation.
   250 ms, and stops on 429 without busy retry. Final real acceptance classified 9/10
   attempts but left 9/10 holdings PARTIAL, so hosted throughput remains limiting and the
   disabled-by-default Ollama fallback is a user decision, not an automatic switch.
+
+# Post-Sprint-24 EMA20 entry-safety decisions
+
+- The frozen historical EMA20 Pullback evaluator is unchanged. Its existing entry-zone
+  upper boundary is 1% above EMA20 (`1.01`) and is reused; no incident-fitted threshold
+  was introduced.
+- A historical technical BUY signal and a currently actionable entry are distinct facts.
+  Every new EMA20 Pullback BUY must pass `ema20-entry-safety-v1` after signal generation.
+- The authoritative anchor is the completed signal-session EMA20. Current price does not
+  mechanically update that anchor. During regular hours the price source is a fresh,
+  same-session Alpaca snapshot; outside regular hours it is the authoritative completed
+  session close. Missing, stale, delayed, or invalid facts fail closed.
+- `ENTRY_TOO_EXTENDED_ABOVE_EMA20` and
+  `EMA20_ENTRY_REVALIDATION_UNAVAILABLE` are stable backend reason codes. Entry safety
+  precedes News, ranking, allocation, and action application; positive evidence cannot
+  override it.
+- Prospective Paper entry evidence uses schema version 2 to preserve the entry-safety
+  snapshot. Existing immutable version-1 evidence is neither rewritten nor backfilled.

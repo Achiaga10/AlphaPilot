@@ -10,8 +10,10 @@ import pytest
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
+from alphapilot.market.live import ProviderLiveSnapshot
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.portfolio.decisions import CurrentPortfolioState, PortfolioStatePosition
+from alphapilot.portfolio.entry_safety import Ema20EntrySafetyStatus
 from alphapilot.portfolio.exit_guidance import StrategyExitState
 from alphapilot.portfolio.orchestration import (
     CandidateDataStatus,
@@ -19,7 +21,11 @@ from alphapilot.portfolio.orchestration import (
     PortfolioDecisionOrchestrator,
 )
 from alphapilot.portfolio.risk import PortfolioRiskConfig
-from alphapilot.portfolio.sizing import SizingPolicyName
+from alphapilot.portfolio.sizing import (
+    PortfolioDecisionReason,
+    PortfolioDecisionType,
+    SizingPolicyName,
+)
 from alphapilot.strategy.evaluation import SignalReason, StrategyEvaluation
 from alphapilot.strategy.name import StrategyName
 from alphapilot.strategy.signal import Signal
@@ -97,6 +103,19 @@ class FakeUniverse:
         return [SimpleNamespace(ticker="AAA")]
 
 
+class FakeLiveProvider:
+    provider_name = "fake-live"
+    feed = "iex"
+
+    def __init__(self, snapshot: ProviderLiveSnapshot | None) -> None:
+        self.snapshot = snapshot
+        self.calls: list[list[str]] = []
+
+    async def get_live_snapshots(self, tickers: list[str]):
+        self.calls.append(tickers)
+        return {"AAA": self.snapshot} if self.snapshot is not None else {}
+
+
 @pytest.mark.asyncio
 async def test_bulk_market_snapshot_is_loaded_once_and_reused_without_semantic_change(
     monkeypatch: pytest.MonkeyPatch,
@@ -165,7 +184,11 @@ class AlwaysBuyStrategy:
     ) -> StrategyEvaluation:
         assert candles
         assert context is not None
-        return StrategyEvaluation(Signal.BUY, SignalReason.EMA20_PULLBACK_RECLAIM)
+        return StrategyEvaluation(
+            Signal.BUY,
+            SignalReason.EMA20_PULLBACK_RECLAIM,
+            ema20=candles[-1].close,
+        )
 
 
 class AlwaysHoldStrategy:
@@ -175,6 +198,92 @@ class AlwaysHoldStrategy:
         assert candles
         assert context is not None
         return StrategyEvaluation(Signal.HOLD, SignalReason.NO_PULLBACK)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("price_multiple", "age_seconds", "expected_status", "expected_reason"),
+    [
+        (
+            Decimal("1.10"),
+            10,
+            Ema20EntrySafetyStatus.BLOCKED,
+            PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
+        ),
+        (
+            Decimal("1.005"),
+            10,
+            Ema20EntrySafetyStatus.ELIGIBLE,
+            PortfolioDecisionReason.BUY_APPROVED,
+        ),
+        (
+            Decimal("1.00"),
+            121,
+            Ema20EntrySafetyStatus.UNAVAILABLE,
+            PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
+        ),
+    ],
+)
+async def test_current_session_buy_uses_fresh_live_entry_revalidation(
+    monkeypatch: pytest.MonkeyPatch,
+    price_multiple: Decimal,
+    age_seconds: int,
+    expected_status: Ema20EntrySafetyStatus,
+    expected_reason: PortfolioDecisionReason,
+) -> None:
+    as_of = date(2026, 8, 20)
+    now = datetime(2026, 8, 20, 15, 0, tzinfo=UTC)
+    spy = company("SPY", "ETF")
+    stock = company("AAA", "Industrials")
+    history = candles(stock.id, as_of, close_step=Decimal("0.2"))
+    anchor = history[-1].close
+    provider = FakeLiveProvider(
+        ProviderLiveSnapshot(
+            "AAA",
+            as_of,
+            anchor * price_multiple,
+            None,
+            None,
+            None,
+            None,
+            anchor,
+            now - timedelta(seconds=age_seconds),
+            "ALPACA",
+            "iex",
+        )
+    )
+    monkeypatch.setattr(
+        "alphapilot.portfolio.orchestration.create_strategy",
+        lambda *args, **kwargs: AlwaysBuyStrategy(),
+    )
+    result = await PortfolioDecisionOrchestrator(
+        FakeCompanyService({"SPY": spy, "AAA": stock}),
+        FakeCandleService(
+            {
+                spy.id: candles(spy.id, as_of, close_step=Decimal("0.1")),
+                stock.id: history,
+            }
+        ),
+        FakeUniverse(),
+        live_quote_provider=provider,
+        now=now,
+    ).build_plan(
+        state=CurrentPortfolioState(cash=Decimal("100000")),
+        strategy_name=StrategyName.EMA20_PULLBACK,
+        selection_policy=SelectionPolicyName.RELATIVE_STRENGTH_20,
+        sizing_policy=SizingPolicyName.EQUAL_SLOT,
+        risk_config=PortfolioRiskConfig(),
+        requested_as_of_date=as_of,
+    )
+    assert provider.calls == [["AAA"]]
+    assert result.plan.decisions[0].entry_safety is not None
+    assert result.plan.decisions[0].entry_safety.status is expected_status
+    assert result.plan.decisions[0].reason is expected_reason
+    assert result.plan.decisions[0].decision is (
+        PortfolioDecisionType.BUY
+        if expected_status is Ema20EntrySafetyStatus.ELIGIBLE
+        else PortfolioDecisionType.SKIP
+    )
 
 
 @pytest.mark.asyncio

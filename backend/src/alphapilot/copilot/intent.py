@@ -30,10 +30,24 @@ class CopilotIntent(StrEnum):
     LIVE_PRICE = "LIVE_PRICE"
     LIVE_POSITION_STATUS = "LIVE_POSITION_STATUS"
     LIVE_STRATEGY_PROJECTION = "LIVE_STRATEGY_PROJECTION"
+    EMA20_ENTRY_SAFETY = "EMA20_ENTRY_SAFETY"
 
 
 def classify_question(question: str, *, general_scope: bool = False) -> CopilotIntent:
     normalized = question.casefold()
+    if any(
+        phrase in normalized
+        for phrase in (
+            "too extended to buy",
+            "near ema20",
+            "near ema 20",
+            "entry validation",
+            "entry safety",
+            "ema entry rule",
+            "actionable",
+        )
+    ) and any(term in normalized for term in ("ema", "buy", "actionable", "entry")):
+        return CopilotIntent.EMA20_ENTRY_SAFETY
     if any(
         phrase in normalized
         for phrase in (
@@ -274,6 +288,7 @@ FACT_PREFIXES: dict[CopilotIntent, tuple[str, ...]] = {
         "guidance.loss_control",
         "query.question",
     ),
+    CopilotIntent.EMA20_ENTRY_SAFETY: ("position.ticker", "entry_safety.", "query.question"),
 }
 
 
@@ -299,6 +314,7 @@ DETERMINISTIC_INTENTS = frozenset(
         CopilotIntent.LIVE_PRICE,
         CopilotIntent.LIVE_POSITION_STATUS,
         CopilotIntent.LIVE_STRATEGY_PROJECTION,
+        CopilotIntent.EMA20_ENTRY_SAFETY,
     }
 )
 
@@ -322,6 +338,7 @@ POSITION_INTENTS = frozenset(
         CopilotIntent.LIVE_PRICE,
         CopilotIntent.LIVE_POSITION_STATUS,
         CopilotIntent.LIVE_STRATEGY_PROJECTION,
+        CopilotIntent.EMA20_ENTRY_SAFETY,
     }
 )
 

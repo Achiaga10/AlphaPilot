@@ -6,6 +6,8 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
+from alphapilot.portfolio.entry_safety import Ema20EntrySafety
+
 
 class DailyBriefReadiness(StrEnum):
     READY = "READY"
@@ -131,6 +133,7 @@ class DailyBriefOpportunity:
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: tuple[UUID, ...] = ()
+    entry_safety: Ema20EntrySafety | None = None
 
 
 @dataclass(frozen=True, slots=True)

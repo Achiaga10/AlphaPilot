@@ -17,7 +17,8 @@ from alphapilot.repositories.research_portfolio import ResearchPortfolioReposito
 from alphapilot.services.live_portfolio import live_market_cache
 from alphapilot.services.position_intelligence import PositionIntelligenceService
 
-EVIDENCE_SCHEMA_VERSION = 1
+ENTRY_EVIDENCE_SCHEMA_VERSION = 2
+EXIT_EVIDENCE_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +134,7 @@ class PaperValidationService:
             actual_entry_price=actual_entry_price,
             actual_entry_at=actual_entry_at,
             entry_note=note,
-            entry_evidence_schema_version=EVIDENCE_SCHEMA_VERSION,
+            entry_evidence_schema_version=ENTRY_EVIDENCE_SCHEMA_VERSION,
             entry_evidence=evidence,
         )
         self.portfolios.add(record)
@@ -186,7 +187,7 @@ class PaperValidationService:
         record.actual_exit_price = actual_exit_price
         record.actual_exit_at = actual_exit_at
         record.exit_note = note
-        record.exit_evidence_schema_version = EVIDENCE_SCHEMA_VERSION
+        record.exit_evidence_schema_version = EXIT_EVIDENCE_SCHEMA_VERSION
         record.exit_evidence = exit_evidence
         if position is not None and position.exit_triggered:
             record.alphapilot_exit_triggered_on = position.exit_triggered_on
@@ -228,7 +229,7 @@ class PaperValidationService:
         )
         indicator = facts.indicator_facts
         return {
-            "schema_version": EVIDENCE_SCHEMA_VERSION,
+            "schema_version": ENTRY_EVIDENCE_SCHEMA_VERSION,
             "captured_at": datetime.now(UTC).isoformat(),
             "identity": {
                 "ticker": facts.ticker,
@@ -246,7 +247,20 @@ class PaperValidationService:
                 "entry_reason": facts.entry_reason,
                 "selection_policy": facts.selection_policy,
                 "recommendation_day": self._iso(facts.entry_trading_day),
-                "news_overlay": position.entry_decision_evidence,
+                "news_overlay": (
+                    {
+                        key: value
+                        for key, value in position.entry_decision_evidence.items()
+                        if key != "entry_safety"
+                    }
+                    if position.entry_decision_evidence
+                    else None
+                ),
+                "entry_safety": (
+                    position.entry_decision_evidence.get("entry_safety")
+                    if position.entry_decision_evidence
+                    else None
+                ),
             },
             "planned_execution": {
                 "planned_quantity": opening.quantity if opening else facts.quantity,

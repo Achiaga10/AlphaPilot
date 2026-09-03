@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from enum import StrEnum
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
+from alphapilot.core.config import settings
 from alphapilot.portfolio.decisions import (
     CurrentPortfolioState,
     PortfolioDecision,
     PortfolioStatePosition,
+)
+from alphapilot.portfolio.entry_safety import (
+    Ema20EntryPriceSource,
+    Ema20EntrySafety,
+    Ema20EntrySafetyStatus,
 )
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.portfolio.sizing import PortfolioDecisionType, SizingPolicyName
@@ -32,6 +39,8 @@ class PlanActionApplyReason(StrEnum):
     SECTOR_LIMIT = "SECTOR_LIMIT"
     PORTFOLIO_RISK_LIMIT = "PORTFOLIO_RISK_LIMIT"
     INVALID_RISK_DISTANCE = "INVALID_RISK_DISTANCE"
+    ENTRY_TOO_EXTENDED_ABOVE_EMA20 = "ENTRY_TOO_EXTENDED_ABOVE_EMA20"
+    EMA20_ENTRY_REVALIDATION_UNAVAILABLE = "EMA20_ENTRY_REVALIDATION_UNAVAILABLE"
 
 
 class PlanActionQuantitySemantics(StrEnum):
@@ -84,6 +93,8 @@ class PortfolioPlanActionService:
         config: PortfolioRiskConfig | None = None,
         sizing_policy: SizingPolicyName = SizingPolicyName.ATR_RISK,
         apply: bool = True,
+        require_ema20_entry_safety: bool = False,
+        now: datetime | None = None,
     ) -> PlanActionApplyResult:
         risk_config = config or PortfolioRiskConfig()
         action_id = decision.action_id
@@ -100,6 +111,26 @@ class PortfolioPlanActionService:
         ticker = decision.ticker.upper()
         held = positions.get(ticker)
         if decision.decision == PortfolioDecisionType.BUY:
+            if require_ema20_entry_safety:
+                assessment = decision.entry_safety
+                if assessment is None or assessment.status is Ema20EntrySafetyStatus.UNAVAILABLE:
+                    return self._rejected(
+                        state,
+                        decision,
+                        PlanActionApplyReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
+                    )
+                if assessment.status is Ema20EntrySafetyStatus.BLOCKED:
+                    return self._rejected(
+                        state,
+                        decision,
+                        PlanActionApplyReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
+                    )
+                if not self._entry_safety_is_current(assessment, now or datetime.now(UTC)):
+                    return self._rejected(
+                        state,
+                        decision,
+                        PlanActionApplyReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
+                    )
             if held is not None:
                 return self._rejected(
                     state, decision, PlanActionApplyReason.POSITION_ALREADY_HELD, held
@@ -284,6 +315,21 @@ class PortfolioPlanActionService:
             portfolio_risk_after_dollars=None,
             cash_reserve_requirement=None,
         )
+
+    @staticmethod
+    def _entry_safety_is_current(assessment: Ema20EntrySafety, now: datetime) -> bool:
+        now = now.astimezone(UTC)
+        now_et = now.astimezone(ZoneInfo("America/New_York"))
+        during_session = time(9, 30) <= now_et.time() <= time(16, 0)
+        if during_session:
+            if (
+                assessment.entry_price_source is not Ema20EntryPriceSource.ALPACA_LIVE_SNAPSHOT
+                or assessment.entry_price_timestamp is None
+            ):
+                return False
+            age = (now - assessment.entry_price_timestamp.astimezone(UTC)).total_seconds()
+            return 0 <= age <= settings.LIVE_QUOTE_MAX_AGE_SECONDS
+        return assessment.entry_price_source is Ema20EntryPriceSource.COMPLETED_SESSION_CLOSE
 
     @staticmethod
     def _current_recommended_shares(

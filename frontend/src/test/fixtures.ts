@@ -88,6 +88,14 @@ export const planFixture: PortfolioPlan = {
       estimated_proceeds: null, normalized_sizing_weight: null,
       estimated_cash_outlay: '9900', cash_after_decision: '50100', modeled_stop_reference_price: '171.6',
       action_id: '1:BUY:NVDA', application_order: 1, depends_on_action_ids: [],
+      entry_safety: {
+        ticker: 'NVDA', as_of: '2026-08-20T20:15:00Z', entry_price: '176',
+        entry_price_source: 'COMPLETED_SESSION_CLOSE', entry_price_timestamp: '2026-08-20T20:15:00Z',
+        ema20: '175', ema20_source: 'COMPLETED_SIGNAL_SESSION_EMA20', ema20_as_of: '2026-08-20',
+        distance_to_ema20: '1', distance_to_ema20_pct: '0.57142857', relation: 'TOUCHING_OR_NEAR',
+        status: 'ELIGIBLE', reason: 'ENTRY_TOUCHING_OR_NEAR_EMA20',
+        policy_version: 'ema20-entry-safety-v1', upper_bound_multiplier: '1.01',
+      },
       exit_context: {
         strategy: 'ema20-pullback', data_as_of_date: '2026-08-20', reference_close: '180',
         current_signal: 'BUY', signal_reason: 'EMA20_PULLBACK_RECLAIM', exit_mode: 'hybrid-2%',
@@ -129,7 +137,7 @@ export const planFixture: PortfolioPlan = {
     },
   ],
   candidate_statuses: [
-    { ticker: 'NVDA', status: 'READY', data_as_of_date: '2026-08-20', signal: 'BUY', reason: 'EMA20_PULLBACK_RECLAIM', company_name: 'NVIDIA Corporation', company_id: '11111111-1111-4111-8111-111111111111', sector: 'Information Technology', ranking_score: '0.08421', atr: '4.2', decision: 'BUY', decision_reason: 'BUY_APPROVED', candidate_rank: 1 },
+    { ticker: 'NVDA', status: 'READY', data_as_of_date: '2026-08-20', signal: 'BUY', reason: 'EMA20_PULLBACK_RECLAIM', company_name: 'NVIDIA Corporation', company_id: '11111111-1111-4111-8111-111111111111', sector: 'Information Technology', ranking_score: '0.08421', atr: '4.2', decision: 'BUY', decision_reason: 'BUY_APPROVED', candidate_rank: 1, entry_safety: { ticker: 'NVDA', as_of: '2026-08-20T20:15:00Z', entry_price: '176', entry_price_source: 'COMPLETED_SESSION_CLOSE', entry_price_timestamp: '2026-08-20T20:15:00Z', ema20: '175', ema20_source: 'COMPLETED_SIGNAL_SESSION_EMA20', ema20_as_of: '2026-08-20', distance_to_ema20: '1', distance_to_ema20_pct: '0.57142857', relation: 'TOUCHING_OR_NEAR', status: 'ELIGIBLE', reason: 'ENTRY_TOUCHING_OR_NEAR_EMA20', policy_version: 'ema20-entry-safety-v1', upper_bound_multiplier: '1.01' } },
     { ticker: 'OLD', status: 'STALE_DATA', data_as_of_date: '2026-08-19', signal: null, reason: 'STALE_DATA', company_name: 'Old Company', company_id: '22222222-2222-4222-8222-222222222222', sector: 'Industrials', ranking_score: null, atr: null, decision: null, decision_reason: null, candidate_rank: null },
     { ticker: 'NEW', status: 'INSUFFICIENT_HISTORY', data_as_of_date: '2026-08-20', signal: 'HOLD', reason: 'INSUFFICIENT_DATA', company_name: 'New Company', company_id: '33333333-3333-4333-8333-333333333333', sector: null, ranking_score: null, atr: null, decision: null, decision_reason: null, candidate_rank: null },
   ],

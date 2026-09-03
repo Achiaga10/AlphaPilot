@@ -16,6 +16,9 @@ from alphapilot.strategy.indicators import (
 )
 from alphapilot.strategy.signal import Signal
 
+EMA20_PULLBACK_LOWER_BOUND = Decimal("0.97")
+EMA20_PULLBACK_UPPER_BOUND = Decimal("1.01")
+
 
 class EMA20PullbackStrategy(TradingStrategy):
     """EMA20 trend-pullback strategy with market regime filter."""
@@ -27,8 +30,8 @@ class EMA20PullbackStrategy(TradingStrategy):
 
     SLOPE_LOOKBACK = 5
 
-    PULLBACK_LOWER_BOUND = Decimal("0.97")
-    PULLBACK_UPPER_BOUND = Decimal("1.01")
+    PULLBACK_LOWER_BOUND = EMA20_PULLBACK_LOWER_BOUND
+    PULLBACK_UPPER_BOUND = EMA20_PULLBACK_UPPER_BOUND
 
     MIN_CANDLES = EMA_SLOW_PERIOD + SLOPE_LOOKBACK
 
