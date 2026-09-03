@@ -26,6 +26,7 @@ from alphapilot.portfolio.decisions import (
     PortfolioDecisionEngine,
     PortfolioStatePosition,
 )
+from alphapilot.portfolio.entry_safety import Ema20EntrySafety
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
@@ -215,6 +216,7 @@ def get_portfolio_decision_orchestrator(
         CompanyService(CompanyRepository(session)),
         DailyCandleService(DailyCandleRepository(session)),
         IndexConstituentRepository(session),
+        live_quote_provider=AlpacaProvider(),
     )
 
 
@@ -763,6 +765,19 @@ async def build_portfolio_plan(
         news_decisions = []
         held = {item.ticker.upper(): item for item in state.positions}
         for decision in plan.decisions:
+            if decision.reason in {
+                PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
+                PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
+            }:
+                news_decisions.append(
+                    replace(
+                        decision,
+                        base_decision=decision.decision,
+                        final_action="DO_NOT_BUY",
+                        news_reason="News was not evaluated because EMA20 entry safety failed.",
+                    )
+                )
+                continue
             assessment = await news.assess(request.portfolio_id, decision.ticker, as_of=as_of)
             original = decision.decision
             updated = decision
@@ -878,6 +893,9 @@ async def _plan_action_result(
         from alphapilot.portfolio.exit_guidance import StrategyExitContext
 
         decision_data["exit_context"] = StrategyExitContext(**exit_context)
+    entry_safety = decision_data.get("entry_safety")
+    if entry_safety is not None:
+        decision_data["entry_safety"] = Ema20EntrySafety(**entry_safety)
     persistent_mode = request.portfolio_id is not None
     if persistent_mode:
         if request.portfolio_revision is None:
@@ -905,6 +923,7 @@ async def _plan_action_result(
         config=PortfolioRiskConfig(**request.risk_config.model_dump()),
         sizing_policy=request.sizing_policy,
         apply=apply,
+        require_ema20_entry_safety=profile.strategy.value == "ema20-pullback",
     )
     resulting_portfolio_id = request.portfolio_id
     resulting_revision = request.portfolio_revision
@@ -933,7 +952,7 @@ async def _plan_action_result(
                     modeled_risk_dollars=result.modeled_position_risk_dollars or Decimal("0"),
                     action_id=result.action_id or request.plan_id,
                     decision_evidence={
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "base_decision": decision.base_decision.value
                         if decision.base_decision
                         else decision.decision.value,
@@ -945,6 +964,36 @@ async def _plan_action_result(
                         "supporting_news_article_ids": [
                             str(item) for item in decision.supporting_news_article_ids
                         ],
+                        "entry_safety": (
+                            {
+                                "policy_version": decision.entry_safety.policy_version,
+                                "entry_price": str(decision.entry_safety.entry_price),
+                                "entry_price_source": (
+                                    decision.entry_safety.entry_price_source.value
+                                    if decision.entry_safety.entry_price_source
+                                    else None
+                                ),
+                                "entry_price_timestamp": (
+                                    decision.entry_safety.entry_price_timestamp.isoformat()
+                                    if decision.entry_safety.entry_price_timestamp
+                                    else None
+                                ),
+                                "ema20": str(decision.entry_safety.ema20),
+                                "ema20_as_of": (
+                                    decision.entry_safety.ema20_as_of.isoformat()
+                                    if decision.entry_safety.ema20_as_of
+                                    else None
+                                ),
+                                "distance_to_ema20_pct": str(
+                                    decision.entry_safety.distance_to_ema20_pct
+                                ),
+                                "entry_relation": decision.entry_safety.relation.value,
+                                "entry_safety_result": decision.entry_safety.status.value,
+                                "reason": decision.entry_safety.reason.value,
+                            }
+                            if decision.entry_safety is not None
+                            else None
+                        ),
                     },
                 )
             else:

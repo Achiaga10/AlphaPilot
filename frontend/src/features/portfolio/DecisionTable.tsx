@@ -104,6 +104,13 @@ export function DecisionTable({
                     <Detail label="Supporting News" help="Persisted article identifiers supporting the News assessment.">{decision.supporting_news_article_ids?.length ? decision.supporting_news_article_ids.join(', ') : 'None'}</Detail>
                     <Detail label="Candidate rank" help={METRIC_GLOSSARY.candidateRank}>{rankByTicker[decision.ticker] ?? 'Not ranked'}</Detail>
                     <Detail label="Reference price" help={METRIC_GLOSSARY.referencePrice}>{formatMoney(decision.reference_price)}</Detail>
+                    {decision.entry_safety ? <>
+                      <Detail label="EMA20 entry safety" help="Fresh backend-owned entry geometry; ranking and News cannot override a block."><StatusBadge value={decision.entry_safety.status} /> · <code>{decision.entry_safety.reason}</code></Detail>
+                      <Detail label="Entry validation price" help="Authoritative price selected by the backend for current entry revalidation.">{formatMoney(decision.entry_safety.entry_price)} · {decision.entry_safety.entry_price_source ?? 'Unavailable'}</Detail>
+                      <Detail label="EMA20 entry anchor" help="The fixed completed signal-session EMA20 anchor; the current price does not move this reference.">{formatMoney(decision.entry_safety.ema20)} · {decision.entry_safety.ema20_source}</Detail>
+                      <Detail label="Distance from EMA20" help="Calculated by the backend from the authoritative entry price and fixed EMA20 anchor.">{formatMoney(decision.entry_safety.distance_to_ema20)} / {formatPercent(decision.entry_safety.distance_to_ema20_pct)}</Detail>
+                      <Detail label="Entry evidence time" help="Price timestamp and completed EMA anchor date used by the safety policy.">{decision.entry_safety.entry_price_timestamp ? new Date(decision.entry_safety.entry_price_timestamp).toLocaleString() : 'Unavailable'} · EMA as of {decision.entry_safety.ema20_as_of ?? 'Unavailable'}</Detail>
+                    </> : null}
                     <Detail label="ATR14" help={METRIC_GLOSSARY.atr14}>{formatMoney(decision.atr)}</Detail>
                     <Detail label="Modeled stop distance" help={METRIC_GLOSSARY.stopDistance}>{riskValue(riskApplicable, decision.decision, formatMoney(decision.stop_distance))}</Detail>
                     <Detail label="Research stop reference" help={METRIC_GLOSSARY.stopReference}>{riskValue(riskApplicable, decision.decision, formatMoney(decision.modeled_stop_reference_price))}</Detail>

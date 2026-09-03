@@ -13,6 +13,7 @@ from alphapilot.portfolio.actions import (
     PlanActionQuantitySemantics,
     PlanActionValidationStatus,
 )
+from alphapilot.portfolio.entry_safety import Ema20EntrySafety
 from alphapilot.portfolio.execution_readiness import ExecutionReadiness, ExecutionReadinessReason
 from alphapilot.portfolio.exit_guidance import FixedTakeProfitPolicy, StrategyExitState
 from alphapilot.portfolio.orchestration import CandidateDataStatus, PlanReadinessStatus
@@ -165,6 +166,7 @@ class PortfolioDecisionSchema(BaseModel):
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: list[UUID] = []
+    entry_safety: Ema20EntrySafety | None = None
 
 
 class PortfolioPositionSummarySchema(BaseModel):
@@ -239,6 +241,7 @@ class CandidateOrchestrationStatusSchema(BaseModel):
     candidate_rank: int | None = None
     is_custom_tracked: bool = False
     company_id: UUID | None = None
+    entry_safety: Ema20EntrySafety | None = None
 
 
 class PortfolioPlanReadinessSchema(BaseModel):

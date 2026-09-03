@@ -96,6 +96,8 @@ def render_direct_answer(intent: CopilotIntent, facts: dict[str, dict[str, Any]]
         return _live_status_answer(facts, symbol)
     if intent == CopilotIntent.LIVE_STRATEGY_PROJECTION:
         return _live_projection_answer(facts, symbol)
+    if intent == CopilotIntent.EMA20_ENTRY_SAFETY:
+        return _ema20_entry_safety_answer(facts, symbol)
     if intent == CopilotIntent.AVERAGE_COST:
         return _money_fact(
             facts,
@@ -525,6 +527,33 @@ def _live_projection_answer(facts: dict[str, dict[str, Any]], symbol: str) -> Di
             )
             if item in facts
         ),
+    )
+
+
+def _ema20_entry_safety_answer(facts: dict[str, dict[str, Any]], symbol: str) -> DirectAnswer:
+    status = _value(facts, "entry_safety.status")
+    question = str(_value(facts, "query.question") or "").casefold()
+    if "news" in question and "override" in question:
+        return DirectAnswer(
+            "No. Positive News cannot override the EMA20 entry-safety rule.",
+            tuple(item for item in ("position.ticker", "entry_safety.status") if item in facts),
+            status is not None,
+        )
+    if status is None:
+        return _unavailable(f"EMA20 entry-safety facts are unavailable for {symbol}.", facts)
+    price = _money(_value(facts, "entry_safety.entry_price"))
+    ema20 = _money(_value(facts, "entry_safety.ema20"))
+    pct = _decimal(_value(facts, "entry_safety.distance_pct"))
+    relation = _value(facts, "entry_safety.relation")
+    reason = _value(facts, "entry_safety.reason")
+    price_source = _value(facts, "entry_safety.price_source")
+    timestamp = _value(facts, "entry_safety.price_timestamp")
+    distance = f"{pct:+.2f}%" if pct is not None else "unavailable"
+    return DirectAnswer(
+        f"{symbol} EMA20 entry safety is {status} ({reason}). The authoritative entry "
+        f"price is {price} from {price_source} as of {timestamp}; the fixed completed "
+        f"signal-session EMA20 anchor is {ema20}. Distance is {distance} ({relation}).",
+        tuple(key for key in facts if key == "position.ticker" or key.startswith("entry_safety.")),
     )
 
 

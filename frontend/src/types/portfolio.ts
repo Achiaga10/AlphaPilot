@@ -40,6 +40,10 @@ export type DecisionReason =
   | 'RANKING_NOT_SELECTED'
   | 'INSUFFICIENT_ALLOCATION'
   | 'STALE_DATA'
+  | 'ENTRY_TOO_EXTENDED_ABOVE_EMA20'
+  | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
+  | 'NEWS_RISK_BLOCK'
+  | 'NEWS_ASSESSMENT_UNAVAILABLE'
   | 'NO_ACTION'
 
 export type CandidateDataStatus =
@@ -149,7 +153,7 @@ export interface PortfolioDecision {
   depends_on_action_ids: string[]
   exit_context: StrategyExitContext | null
   execution_readiness?: 'ACTIONABLE' | 'RESEARCH_ONLY' | 'UNAVAILABLE'
-  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY' | 'NEWS_RISK_BLOCK' | 'NEWS_ASSESSMENT_UNAVAILABLE'
+  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY' | 'NEWS_RISK_BLOCK' | 'NEWS_ASSESSMENT_UNAVAILABLE' | 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
   loss_control_policy?: string
   loss_control_boundary_price?: string | null
   loss_control_trigger?: string | null
@@ -163,6 +167,25 @@ export interface PortfolioDecision {
   news_reason?: string | null
   news_policy_version?: string | null
   supporting_news_article_ids?: string[]
+  entry_safety?: Ema20EntrySafety | null
+}
+
+export interface Ema20EntrySafety {
+  ticker: string
+  as_of: string
+  entry_price: string | null
+  entry_price_source: 'COMPLETED_SESSION_CLOSE' | 'ALPACA_LIVE_SNAPSHOT' | null
+  entry_price_timestamp: string | null
+  ema20: string | null
+  ema20_source: 'COMPLETED_SIGNAL_SESSION_EMA20'
+  ema20_as_of: string | null
+  distance_to_ema20: string | null
+  distance_to_ema20_pct: string | null
+  relation: 'BELOW' | 'TOUCHING_OR_NEAR' | 'EXTENDED_ABOVE' | 'UNAVAILABLE'
+  status: 'ELIGIBLE' | 'BLOCKED' | 'UNAVAILABLE'
+  reason: 'ENTRY_BELOW_EMA20' | 'ENTRY_TOUCHING_OR_NEAR_EMA20' | 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
+  policy_version: string
+  upper_bound_multiplier: string
 }
 
 export interface StrategyExitContext {
@@ -206,6 +229,7 @@ export interface CandidateStatus {
   candidate_rank?: number | null
   is_custom_tracked?: boolean
   company_id?: string | null
+  entry_safety?: Ema20EntrySafety | null
 }
 
 export interface PortfolioPlan {
@@ -680,6 +704,7 @@ export interface DailyBriefOpportunity {
   news_reason?: string | null
   news_policy_version?: string | null
   supporting_news_article_ids?: string[]
+  entry_safety?: Ema20EntrySafety | null
 }
 
 export interface DailyPortfolioBrief {

@@ -24,7 +24,7 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Sprint 24 — News Intelligence and Decision Overlay (COMPLETE LOCALLY)
+Post-Sprint-24 EMA20 Entry Safety Hotfix (COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
@@ -41,6 +41,13 @@ execution/outcome analytics. Sprint 24 is complete locally: Adanos is the persis
 primary aggregate News sentiment source, Finnhub remains attributable/hard-event evidence,
 Gemini is targeted deep interpretation only, Ollama is disabled, and the deterministic
 backend remains the sole financial decision authority. Sprint 25 has not started.
+The focused `fix/ema20-entry-safety` hotfix is complete locally and adds fresh backend-owned EMA20 entry
+revalidation without changing the frozen historical strategy. A technical EMA BUY
+signal is not sufficient for actionability: current entry price must be at/below or
+within the existing 1% upper proximity boundary of the fixed completed signal-session
+EMA20. Extended or unavailable/stale geometry fails closed. Ranking and News cannot
+override this gate. Sprint 25 has not started.
+
 Final Sprint 24 hardening makes AI-only SEVERE insufficient for exit, requires
 PRIMARY-source deterministic hard-event confirmation, and requires current persisted
 provider/classifier coverage before a new BUY can be actionable. Candidate refresh is

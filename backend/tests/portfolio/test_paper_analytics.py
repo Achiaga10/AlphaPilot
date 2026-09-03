@@ -41,6 +41,19 @@ async def _managed_position(db_session):
         reason="BUY_APPROVED",
         modeled_risk_dollars=Decimal("50"),
         action_id="entry",
+        decision_evidence={
+            "entry_safety": {
+                "policy_version": "ema20-entry-safety-v1",
+                "entry_price": "100",
+                "entry_price_source": "COMPLETED_SESSION_CLOSE",
+                "entry_price_timestamp": "2025-01-02T21:15:00+00:00",
+                "ema20": "99.5",
+                "ema20_as_of": "2025-01-02",
+                "distance_to_ema20_pct": "0.5025125628",
+                "entry_relation": "TOUCHING_OR_NEAR",
+                "entry_safety_result": "ELIGIBLE",
+            }
+        },
     )
     position = (await service.portfolios.list_open_positions(portfolio.id))[0]
     db_session.add(
@@ -91,11 +104,14 @@ async def test_versioned_evidence_is_frozen_and_does_not_mutate_portfolio(db_ses
         actual_entry_at=datetime(2025, 1, 3, 15, tzinfo=UTC),
         note="controlled",
     )
-    assert opened.entry_evidence_schema_version == 1
+    assert opened.entry_evidence_schema_version == 2
     assert opened.evidence_completeness == "FULL"
     assert opened.entry_evidence is not None
     assert opened.entry_evidence["decision"]["strategy_profile_id"] == "ema20-pullback-v1"
     assert opened.entry_evidence["decision"]["source_action_id"] == "entry"
+    assert opened.entry_evidence["decision"]["entry_safety"]["policy_version"] == (
+        "ema20-entry-safety-v1"
+    )
     assert opened.entry_evidence["actual_execution"]["fill_price"] == "101"
     assert opened.entry_adverse_slippage_dollars_per_share == Decimal("1")
     assert opened.quantity_adherence_percent == Decimal("80")

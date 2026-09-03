@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from uuid import UUID
 
+from alphapilot.portfolio.entry_safety import Ema20EntrySafety, Ema20EntrySafetyStatus
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
@@ -63,6 +64,7 @@ class PortfolioCandidate:
     sector: str | None = None
     pre_decision_reason: PortfolioDecisionReason | None = None
     exit_context: StrategyExitContext | None = None
+    entry_safety: Ema20EntrySafety | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -110,6 +112,7 @@ class PortfolioDecision:
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: tuple[UUID, ...] = ()
+    entry_safety: Ema20EntrySafety | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -194,6 +197,19 @@ class PortfolioDecisionEngine:
                     )
                 )
                 continue
+            if (
+                candidate.entry_safety is not None
+                and candidate.entry_safety.status is not Ema20EntrySafetyStatus.ELIGIBLE
+            ):
+                reason = (
+                    PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20
+                    if candidate.entry_safety.status is Ema20EntrySafetyStatus.BLOCKED
+                    else PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
+                )
+                decisions.append(
+                    self._simple(candidate, PortfolioDecisionType.SKIP, reason, sector, held)
+                )
+                continue
             if held is not None:
                 decisions.append(
                     self._simple(
@@ -254,6 +270,7 @@ class PortfolioDecisionEngine:
                     estimated_proceeds=None,
                     normalized_sizing_weight=sizing.normalized_sizing_weight,
                     exit_context=candidate.exit_context,
+                    entry_safety=candidate.entry_safety,
                 )
             )
             if approved:
@@ -350,6 +367,18 @@ class PortfolioDecisionEngine:
                         held,
                     )
                 )
+            elif (
+                candidate.entry_safety is not None
+                and candidate.entry_safety.status is not Ema20EntrySafetyStatus.ELIGIBLE
+            ):
+                reason = (
+                    PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20
+                    if candidate.entry_safety.status is Ema20EntrySafetyStatus.BLOCKED
+                    else PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
+                )
+                decisions.append(
+                    self._simple(candidate, PortfolioDecisionType.SKIP, reason, sector, held)
+                )
             elif held is not None:
                 decisions.append(
                     self._simple(
@@ -433,6 +462,7 @@ class PortfolioDecisionEngine:
             estimated_proceeds=None,
             normalized_sizing_weight=sizing.normalized_sizing_weight,
             exit_context=candidate.exit_context,
+            entry_safety=candidate.entry_safety,
         )
 
     @staticmethod
@@ -490,11 +520,17 @@ class PortfolioDecisionEngine:
                 else None
             )
             evidence = PortfolioDecisionEngine._micho_loss_control(decision)
-            readiness, readiness_reason = (
-                classify_new_buy(evidence)
-                if decision.decision == PortfolioDecisionType.BUY
-                else (ExecutionReadiness.RESEARCH_ONLY, ExecutionReadinessReason.NOT_A_NEW_BUY)
-            )
+            if decision.reason == PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20:
+                readiness = ExecutionReadiness.UNAVAILABLE
+                readiness_reason = ExecutionReadinessReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20
+            elif decision.reason == PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE:
+                readiness = ExecutionReadiness.UNAVAILABLE
+                readiness_reason = ExecutionReadinessReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
+            elif decision.decision == PortfolioDecisionType.BUY:
+                readiness, readiness_reason = classify_new_buy(evidence)
+            else:
+                readiness = ExecutionReadiness.RESEARCH_ONLY
+                readiness_reason = ExecutionReadinessReason.NOT_A_NEW_BUY
             enriched.append(
                 replace(
                     decision,
@@ -592,4 +628,5 @@ class PortfolioDecisionEngine:
             estimated_proceeds=None,
             normalized_sizing_weight=None,
             exit_context=candidate.exit_context,
+            entry_safety=candidate.entry_safety,
         )

@@ -1,24 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Protocol, cast
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
 from alphapilot.backtesting.ranking_features import RelativeStrength20Calculator
 from alphapilot.backtesting.service import CandleHistoryService, CompanyLookupService
+from alphapilot.core.config import settings
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
 from alphapilot.database.models.index_constituent import IndexConstituent
+from alphapilot.market.providers.base import LiveQuoteProvider
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.portfolio.decisions import (
     CurrentPortfolioState,
     PortfolioCandidate,
     PortfolioDecisionEngine,
     PortfolioDecisionPlan,
+)
+from alphapilot.portfolio.entry_safety import (
+    Ema20EntryPriceSource,
+    Ema20EntrySafety,
+    assess_ema20_entry_safety,
 )
 from alphapilot.portfolio.exit_guidance import build_strategy_exit_context
 from alphapilot.portfolio.risk import AverageTrueRangeCalculator, PortfolioRiskConfig
@@ -81,6 +89,7 @@ class CandidateOrchestrationStatus:
     candidate_rank: int | None = None
     is_custom_tracked: bool = False
     company_id: UUID | None = None
+    entry_safety: Ema20EntrySafety | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -136,12 +145,16 @@ class PortfolioDecisionOrchestrator:
         universe_repository: ActiveUniverseRepository,
         decision_engine: PortfolioDecisionEngine | None = None,
         session_policy: CompletedDailySessionPolicy | None = None,
+        live_quote_provider: LiveQuoteProvider | None = None,
+        now: datetime | None = None,
     ) -> None:
         self.company_service = company_service
         self.candle_service = candle_service
         self.universe_repository = universe_repository
         self.decision_engine = decision_engine or PortfolioDecisionEngine()
         self.session_policy = session_policy or CompletedDailySessionPolicy()
+        self.live_quote_provider = live_quote_provider
+        self.now = now
 
     async def load_market_snapshot(
         self,
@@ -381,6 +394,24 @@ class PortfolioDecisionOrchestrator:
                 if portfolio_signal == Signal.BUY
                 else None
             )
+            completed_price_timestamp = datetime.combine(
+                latest.trading_day,
+                time(16, 15),
+                tzinfo=ZoneInfo("America/New_York"),
+            ).astimezone(UTC)
+            entry_safety = (
+                assess_ema20_entry_safety(
+                    ticker=ticker,
+                    as_of=completed_price_timestamp,
+                    entry_price=latest.close,
+                    entry_price_source=Ema20EntryPriceSource.COMPLETED_SESSION_CLOSE,
+                    entry_price_timestamp=completed_price_timestamp,
+                    ema20=evaluation.ema20,
+                    ema20_as_of=latest.trading_day,
+                )
+                if strategy_name == StrategyName.EMA20_PULLBACK and portfolio_signal == Signal.BUY
+                else None
+            )
             data_status = (
                 CandidateDataStatus.INSUFFICIENT_HISTORY
                 if evaluation.reason.value == "INSUFFICIENT_DATA"
@@ -403,6 +434,7 @@ class PortfolioDecisionOrchestrator:
                     atr_value,
                     is_custom_tracked=company.is_custom_tracked,
                     company_id=company.id,
+                    entry_safety=entry_safety,
                 )
             )
             if portfolio_signal != Signal.HOLD or held:
@@ -420,8 +452,16 @@ class PortfolioDecisionOrchestrator:
                             else None
                         ),
                         exit_context=exit_context,
+                        entry_safety=entry_safety,
                     )
                 )
+
+        candidates, statuses = await self._revalidate_live_ema_entries(
+            candidates=candidates,
+            statuses=statuses,
+            strategy_name=strategy_name,
+            requested_as_of_date=requested_as_of_date,
+        )
 
         plan = self.decision_engine.build_plan(
             state,
@@ -461,6 +501,81 @@ class PortfolioDecisionOrchestrator:
             statuses=tuple(statuses),
             readiness=readiness,
             evaluation_target_ticker=(requested_scope[0] if len(requested_scope) == 1 else None),
+        )
+
+    async def _revalidate_live_ema_entries(
+        self,
+        *,
+        candidates: list[PortfolioCandidate],
+        statuses: list[CandidateOrchestrationStatus],
+        strategy_name: StrategyName,
+        requested_as_of_date: date,
+    ) -> tuple[list[PortfolioCandidate], list[CandidateOrchestrationStatus]]:
+        now = (self.now or datetime.now(UTC)).astimezone(UTC)
+        now_et = now.astimezone(ZoneInfo("America/New_York"))
+        during_session = time(9, 30) <= now_et.time() <= time(16, 0)
+        buy_tickers = [
+            item.ticker.upper()
+            for item in candidates
+            if item.signal == Signal.BUY and item.entry_safety is not None
+        ]
+        if (
+            strategy_name != StrategyName.EMA20_PULLBACK
+            or requested_as_of_date != now_et.date()
+            or not during_session
+            or not buy_tickers
+        ):
+            return candidates, statuses
+        snapshots = {}
+        if self.live_quote_provider is not None:
+            try:
+                snapshots = await self.live_quote_provider.get_live_snapshots(buy_tickers)
+            except Exception:
+                snapshots = {}
+        updated: dict[str, Ema20EntrySafety] = {}
+        for candidate in candidates:
+            if candidate.ticker.upper() not in buy_tickers or candidate.entry_safety is None:
+                continue
+            raw = snapshots.get(candidate.ticker.upper())
+            timestamp = raw.quote_timestamp.astimezone(UTC) if raw is not None else None
+            age = (now - timestamp).total_seconds() if timestamp is not None else None
+            fresh = bool(
+                raw is not None
+                and timestamp is not None
+                and raw.session_date == now_et.date()
+                and age is not None
+                and 0 <= age <= settings.LIVE_QUOTE_MAX_AGE_SECONDS
+                and raw.feed != "delayed_sip"
+            )
+            updated[candidate.ticker.upper()] = assess_ema20_entry_safety(
+                ticker=candidate.ticker,
+                as_of=now,
+                entry_price=raw.last_price if raw is not None else None,
+                entry_price_source=(
+                    Ema20EntryPriceSource.ALPACA_LIVE_SNAPSHOT if raw is not None else None
+                ),
+                entry_price_timestamp=timestamp,
+                ema20=candidate.entry_safety.ema20,
+                ema20_as_of=candidate.entry_safety.ema20_as_of,
+                entry_price_is_fresh=fresh,
+            )
+        return (
+            [
+                replace(
+                    item,
+                    reference_price=(
+                        updated[item.ticker.upper()].entry_price or item.reference_price
+                        if item.ticker.upper() in updated
+                        else item.reference_price
+                    ),
+                    entry_safety=updated.get(item.ticker.upper(), item.entry_safety),
+                )
+                for item in candidates
+            ],
+            [
+                replace(item, entry_safety=updated.get(item.ticker.upper(), item.entry_safety))
+                for item in statuses
+            ],
         )
 
     @staticmethod

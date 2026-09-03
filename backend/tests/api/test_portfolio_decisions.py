@@ -1,6 +1,7 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
@@ -28,6 +29,34 @@ from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import LatestStoredPriceService
 from alphapilot.strategy.signal import Signal
+
+
+def _with_current_ema_entry_safety(decision: dict) -> dict:
+    now = datetime.now(UTC)
+    now_et = now.astimezone(ZoneInfo("America/New_York"))
+    source = (
+        "ALPACA_LIVE_SNAPSHOT"
+        if time(9, 30) <= now_et.time() <= time(16, 0)
+        else "COMPLETED_SESSION_CLOSE"
+    )
+    decision["entry_safety"] = {
+        "ticker": decision["ticker"],
+        "as_of": now.isoformat(),
+        "entry_price": decision["reference_price"],
+        "entry_price_source": source,
+        "entry_price_timestamp": now.isoformat(),
+        "ema20": decision["reference_price"],
+        "ema20_source": "COMPLETED_SIGNAL_SESSION_EMA20",
+        "ema20_as_of": now_et.date().isoformat(),
+        "distance_to_ema20": "0",
+        "distance_to_ema20_pct": "0",
+        "relation": "TOUCHING_OR_NEAR",
+        "status": "ELIGIBLE",
+        "reason": "ENTRY_TOUCHING_OR_NEAR_EMA20",
+        "policy_version": "ema20-entry-safety-v1",
+        "upper_bound_multiplier": "1.01",
+    }
+    return decision
 
 
 @pytest.mark.asyncio
@@ -316,7 +345,7 @@ async def test_state_summary_and_same_plan_apply_action_are_backend_owned(
             ],
         },
     )
-    decision = plan.json()["decisions"][0]
+    decision = _with_current_ema_entry_safety(plan.json()["decisions"][0])
     preview = await client.post(
         "/api/v1/portfolio/preview-action",
         json={
@@ -395,25 +424,27 @@ async def test_persistent_action_uses_id_revision_and_makes_old_revision_stale(
             json={"starting_cash": "100000", "imported_positions": []},
         )
     ).json()
-    decision = (
-        await client.post(
-            "/api/v1/portfolio/decisions",
-            json={
-                "strategy": "ema20-pullback",
-                "sizing_policy": "equal-slot",
-                "portfolio": {"cash": "100000", "positions": []},
-                "candidates": [
-                    {
-                        "ticker": "BUY",
-                        "signal": "BUY",
-                        "reference_price": "100",
-                        "atr": "5",
-                        "ranking_score": "1",
-                    }
-                ],
-            },
-        )
-    ).json()["decisions"][0]
+    decision = _with_current_ema_entry_safety(
+        (
+            await client.post(
+                "/api/v1/portfolio/decisions",
+                json={
+                    "strategy": "ema20-pullback",
+                    "sizing_policy": "equal-slot",
+                    "portfolio": {"cash": "100000", "positions": []},
+                    "candidates": [
+                        {
+                            "ticker": "BUY",
+                            "signal": "BUY",
+                            "reference_price": "100",
+                            "atr": "5",
+                            "ranking_score": "1",
+                        }
+                    ],
+                },
+            )
+        ).json()["decisions"][0]
+    )
     request = {
         "plan_id": "persistent-plan",
         "portfolio_id": portfolio["portfolio_id"],
@@ -476,6 +507,7 @@ async def test_same_plan_applies_two_candidates_with_fresh_persistent_revision(
             },
         )
     ).json()["decisions"]
+    decisions = [_with_current_ema_entry_safety(item) for item in decisions]
 
     def request(decision, revision: int, applied: list[str]) -> dict[str, object]:
         return {
