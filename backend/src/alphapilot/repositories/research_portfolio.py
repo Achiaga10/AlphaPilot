@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.database.models.research_portfolio import (
     PaperValidationRecord,
+    PortfolioRecommendationStatus,
+    PortfolioTickerPreference,
     PositionMonitoringSnapshot,
     ResearchPortfolio,
     ResearchPosition,
@@ -55,6 +57,32 @@ class ResearchPortfolioRepository:
                 ResearchPosition.status == ResearchPositionStatus.OPEN.value,
             )
         )
+        return result.scalar_one_or_none()
+
+    async def list_ticker_preferences(
+        self, portfolio_id: UUID, *, excluded_only: bool = False
+    ) -> list[PortfolioTickerPreference]:
+        statement = select(PortfolioTickerPreference).where(
+            PortfolioTickerPreference.portfolio_id == portfolio_id
+        )
+        if excluded_only:
+            statement = statement.where(
+                PortfolioTickerPreference.recommendation_status
+                == PortfolioRecommendationStatus.USER_EXCLUDED.value
+            )
+        result = await self.session.execute(statement.order_by(PortfolioTickerPreference.ticker))
+        return list(result.scalars().all())
+
+    async def get_ticker_preference(
+        self, portfolio_id: UUID, company_id: UUID, *, for_update: bool = False
+    ) -> PortfolioTickerPreference | None:
+        statement = select(PortfolioTickerPreference).where(
+            PortfolioTickerPreference.portfolio_id == portfolio_id,
+            PortfolioTickerPreference.company_id == company_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
     async def list_events(self, portfolio_id: UUID) -> list[ResearchTradeEvent]:
@@ -177,7 +205,8 @@ class ResearchPortfolioRepository:
         | ResearchTradeEvent
         | PositionMonitoringSnapshot
         | ResearchReconciliationEvent
-        | PaperValidationRecord,
+        | PaperValidationRecord
+        | PortfolioTickerPreference,
     ) -> None:
         self.session.add(value)
 

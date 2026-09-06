@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
+from alphapilot.database.models.research_portfolio import PortfolioRecommendationStatus
 from alphapilot.portfolio.actions import (
     ManualSellPriceSource,
     ManualSellReason,
@@ -13,10 +14,15 @@ from alphapilot.portfolio.actions import (
     PlanActionQuantitySemantics,
     PlanActionValidationStatus,
 )
+from alphapilot.portfolio.decisions import PortfolioFinalAction
 from alphapilot.portfolio.entry_safety import Ema20EntrySafety
 from alphapilot.portfolio.execution_readiness import ExecutionReadiness, ExecutionReadinessReason
 from alphapilot.portfolio.exit_guidance import FixedTakeProfitPolicy, StrategyExitState
-from alphapilot.portfolio.orchestration import CandidateDataStatus, PlanReadinessStatus
+from alphapilot.portfolio.orchestration import (
+    BuyFunnelStage,
+    CandidateDataStatus,
+    PlanReadinessStatus,
+)
 from alphapilot.portfolio.sizing import (
     PortfolioDecisionReason,
     PortfolioDecisionType,
@@ -160,13 +166,20 @@ class PortfolioDecisionSchema(BaseModel):
     loss_control_active: bool = False
     loss_control_broker_stop_order: bool = False
     base_decision: PortfolioDecisionType | None = None
+    allocation_reason: PortfolioDecisionReason | None = None
+    terminal_reason: PortfolioDecisionReason | None = None
     news_effect: str = "NO_EFFECT"
     news_coverage: str = "NEVER_REFRESHED"
-    final_action: str | None = None
+    news_assessment_reason: str | None = None
+    news_aggregate_strength: str | None = None
+    news_aggregate_effect: str | None = None
+    news_targeted_review_required: bool = False
+    final_action: PortfolioFinalAction | None = None
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: list[UUID] = []
     entry_safety: Ema20EntrySafety | None = None
+    is_final_actionable: bool = False
 
 
 class PortfolioPositionSummarySchema(BaseModel):
@@ -244,6 +257,21 @@ class CandidateOrchestrationStatusSchema(BaseModel):
     entry_safety: Ema20EntrySafety | None = None
 
 
+class BuyFunnelGroupSchema(BaseModel):
+    stage: BuyFunnelStage
+    count: int
+    tickers: list[str]
+
+
+class BuyFunnelSummarySchema(BaseModel):
+    evaluated_tickers: int = 0
+    technical_buy_signals: int = 0
+    rejected_before_news: int = 0
+    reached_news: int = 0
+    final_approved_buys: int = 0
+    groups: list[BuyFunnelGroupSchema] = []
+
+
 class PortfolioPlanReadinessSchema(BaseModel):
     status: PlanReadinessStatus
     requested_tickers: int
@@ -259,6 +287,25 @@ class PortfolioPlanReadinessSchema(BaseModel):
     actionable_decisions: int
     latest_ticker_data_date: date | None
     buy_rejections_by_reason: dict[str, int]
+    technical_buy_signals: int = 0
+    final_approved_buys: int = 0
+    final_approved_sells: int = 0
+    skipped_or_deferred: int = 0
+    user_excluded_buys: int = 0
+    buy_funnel: BuyFunnelSummarySchema = Field(default_factory=BuyFunnelSummarySchema)
+
+
+class PortfolioNewsEnrichmentSchema(BaseModel):
+    candidate_shortlist: list[str] = []
+    assessed_buy_tickers: list[str] = []
+    aggregate_requested: list[str] = []
+    aggregate_returned: list[str] = []
+    aggregate_reused: list[str] = []
+    aggregate_missing: list[str] = []
+    aggregate_api_calls: int = 0
+    attributable_requested: list[str] = []
+    attributable_api_calls: int = 0
+    targeted_classification_attempts: int = 0
 
 
 class PortfolioPlanSchema(PortfolioDecisionPlanSchema):
@@ -271,6 +318,32 @@ class PortfolioPlanSchema(PortfolioDecisionPlanSchema):
     evaluation_target_ticker: str | None = None
     portfolio_id: UUID | None = None
     portfolio_revision: int | None = None
+    generated_at: datetime
+    news_enrichment: PortfolioNewsEnrichmentSchema = Field(
+        default_factory=PortfolioNewsEnrichmentSchema
+    )
+
+
+class PortfolioTickerPreferenceRequestSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class PortfolioTickerPreferenceSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    portfolio_id: UUID
+    company_id: UUID
+    ticker: str
+    recommendation_status: PortfolioRecommendationStatus
+    reason: str | None
+    excluded_at: datetime | None
+    updated_at: datetime
+
+
+class PortfolioTickerPreferenceMutationSchema(BaseModel):
+    preference: PortfolioTickerPreferenceSchema
+    portfolio_revision: int
 
 
 class PortfolioPlanActionRequest(BaseModel):

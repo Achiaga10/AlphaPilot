@@ -120,6 +120,7 @@ class DailyBriefOpportunitySchema(BaseModel):
     news_policy_version: str | None = None
     supporting_news_article_ids: list[UUID] = []
     entry_safety: Ema20EntrySafety | None = None
+    deferred_group: str = "OTHER"
 
 
 class DailyPortfolioBriefSchema(BaseModel):

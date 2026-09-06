@@ -34,6 +34,7 @@ export const planFixture: PortfolioPlan = {
   plan_id: 'fixture-plan-20260820',
   portfolio_id: '11111111-1111-4111-8111-111111111111',
   portfolio_revision: 0,
+  generated_at: '2026-08-20T21:00:00Z',
   portfolio: {
     equity: '100000',
     cash: '30000',
@@ -78,6 +79,12 @@ export const planFixture: PortfolioPlan = {
   requested_as_of_date: '2026-08-23',
   analysis_as_of_date: '2026-08-20',
   evaluation_target_ticker: null,
+  news_enrichment: {
+    candidate_shortlist: ['NVDA'], assessed_buy_tickers: ['NVDA'],
+    aggregate_requested: ['NVDA'], aggregate_returned: ['NVDA'], aggregate_reused: [],
+    aggregate_missing: [], aggregate_api_calls: 1, attributable_requested: [],
+    attributable_api_calls: 0, targeted_classification_attempts: 0,
+  },
   decisions: [
     {
       ticker: 'NVDA', signal: 'BUY', decision: 'BUY', reason: 'BUY_APPROVED',
@@ -88,6 +95,8 @@ export const planFixture: PortfolioPlan = {
       estimated_proceeds: null, normalized_sizing_weight: null,
       estimated_cash_outlay: '9900', cash_after_decision: '50100', modeled_stop_reference_price: '171.6',
       action_id: '1:BUY:NVDA', application_order: 1, depends_on_action_ids: [],
+      allocation_reason: 'BUY_APPROVED', terminal_reason: 'BUY_APPROVED', final_action: 'BUY',
+      is_final_actionable: true,
       entry_safety: {
         ticker: 'NVDA', as_of: '2026-08-20T20:15:00Z', entry_price: '176',
         entry_price_source: 'COMPLETED_SESSION_CLOSE', entry_price_timestamp: '2026-08-20T20:15:00Z',
@@ -114,6 +123,8 @@ export const planFixture: PortfolioPlan = {
       estimated_proceeds: '30000', normalized_sizing_weight: null,
       estimated_cash_outlay: null, cash_after_decision: '60000', modeled_stop_reference_price: null,
       action_id: '2:SELL:JNJ', application_order: 2, depends_on_action_ids: [], exit_context: null,
+      allocation_reason: 'SELL_APPROVED', terminal_reason: 'SELL_APPROVED', final_action: 'SELL',
+      is_final_actionable: true,
     },
     {
       ticker: 'MSFT', signal: 'HOLD', decision: 'HOLD', reason: 'NO_ACTION',
@@ -124,6 +135,8 @@ export const planFixture: PortfolioPlan = {
       estimated_proceeds: null, normalized_sizing_weight: null,
       estimated_cash_outlay: null, cash_after_decision: null, modeled_stop_reference_price: null,
       action_id: null, application_order: null, depends_on_action_ids: [], exit_context: null,
+      allocation_reason: 'NO_ACTION', terminal_reason: 'NO_ACTION', final_action: 'HOLD',
+      is_final_actionable: false,
     },
     {
       ticker: 'AAPL', signal: 'BUY', decision: 'SKIP', reason: 'SECTOR_LIMIT',
@@ -134,6 +147,8 @@ export const planFixture: PortfolioPlan = {
       estimated_proceeds: null, normalized_sizing_weight: null,
       estimated_cash_outlay: null, cash_after_decision: null, modeled_stop_reference_price: null,
       action_id: null, application_order: null, depends_on_action_ids: [], exit_context: null,
+      allocation_reason: 'SECTOR_LIMIT', terminal_reason: 'SECTOR_LIMIT', final_action: 'NOT_ACTIONABLE',
+      is_final_actionable: false,
     },
   ],
   candidate_statuses: [
@@ -148,5 +163,12 @@ export const planFixture: PortfolioPlan = {
     buy_signals: 1, approved_buys: 1, approved_sells: 1,
     actionable_decisions: 2, latest_ticker_data_date: '2026-08-20',
     buy_rejections_by_reason: {},
+    technical_buy_signals: 1, final_approved_buys: 1, final_approved_sells: 1,
+    skipped_or_deferred: 2, user_excluded_buys: 0,
+    buy_funnel: {
+      evaluated_tickers: 1, technical_buy_signals: 1, rejected_before_news: 0,
+      reached_news: 1, final_approved_buys: 1,
+      groups: [{ stage: 'FINAL_APPROVED_BUY', count: 1, tickers: ['NVDA'] }],
+    },
   },
 }

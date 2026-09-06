@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -17,9 +18,10 @@ from alphapilot.portfolio.decisions import (
     PortfolioCandidate,
     PortfolioDecision,
     PortfolioDecisionEngine,
+    PortfolioFinalAction,
     PortfolioStatePosition,
 )
-from alphapilot.portfolio.sizing import SizingPolicyName
+from alphapilot.portfolio.sizing import PortfolioDecisionReason, SizingPolicyName
 from alphapilot.strategy.signal import Signal
 
 
@@ -32,7 +34,47 @@ def _buy_plan() -> tuple[PortfolioDecision, PortfolioDecision]:
         ),
         sizing_policy=SizingPolicyName.EQUAL_SLOT,
     )
-    return plan.decisions[0], plan.decisions[1]
+    return (
+        replace(
+            plan.decisions[0],
+            reason=PortfolioDecisionReason.BUY_APPROVED,
+            final_action=PortfolioFinalAction.BUY,
+            terminal_reason=PortfolioDecisionReason.BUY_APPROVED,
+            is_final_actionable=True,
+        ),
+        replace(
+            plan.decisions[1],
+            reason=PortfolioDecisionReason.BUY_APPROVED,
+            final_action=PortfolioFinalAction.BUY,
+            terminal_reason=PortfolioDecisionReason.BUY_APPROVED,
+            is_final_actionable=True,
+        ),
+    )
+
+
+def test_provisional_buy_cannot_bypass_final_actionability() -> None:
+    decision = (
+        PortfolioDecisionEngine()
+        .build_plan(
+            CurrentPortfolioState(cash=Decimal("100000")),
+            (PortfolioCandidate("AAA", Signal.BUY, Decimal("100"), Decimal("2")),),
+            sizing_policy=SizingPolicyName.EQUAL_SLOT,
+        )
+        .decisions[0]
+    )
+
+    result = PortfolioPlanActionService().apply(
+        state=CurrentPortfolioState(cash=Decimal("100000")),
+        decision=decision,
+        applied_action_ids=frozenset(),
+        sizing_policy=SizingPolicyName.EQUAL_SLOT,
+    )
+
+    assert decision.action_id is not None
+    assert decision.final_action is PortfolioFinalAction.NOT_ACTIONABLE
+    assert decision.is_final_actionable is False
+    assert result.applied is False
+    assert result.reason is PlanActionApplyReason.ACTION_NOT_APPROVED
 
 
 def test_rank_is_advisory_and_each_action_revalidates_current_draft() -> None:

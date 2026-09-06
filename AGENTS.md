@@ -24,7 +24,8 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Post-Sprint-24 EMA20 Entry Safety Hotfix (COMPLETE LOCALLY)
+Post-Sprint-24 Final BUY Actionability Semantics Hotfix
+(COMPLETE LOCALLY)
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
@@ -47,6 +48,31 @@ signal is not sufficient for actionability: current entry price must be at/below
 within the existing 1% upper proximity boundary of the fixed completed signal-session
 EMA20. Extended or unavailable/stale geometry fails closed. Ranking and News cannot
 override this gate. Sprint 25 has not started.
+
+The focused `fix/portfolio-plan-consistency-ux` hotfix is complete locally. An
+approved BUY is now one final actionable BUY after entry safety, execution
+readiness, News, user preference, allocation, and every other hard gate. Persistent
+per-portfolio ticker exclusions are reversible, run before allocation and targeted
+BUY News work, and never delete historical evidence. Selling does not automatically
+exclude a ticker. Dashboard action surfaces are compact and priority-oriented, while
+Forward Paper evidence is explicitly separate from current ResearchPortfolio state.
+
+The subsequent BUY-funnel/News-gate audit is complete locally on the same branch.
+The backend now assigns every technical BUY exactly one authoritative first blocker,
+automatically refreshes only the bounded final News shortlist, and implements the
+approved Option A semantics: sufficient current non-adverse Adanos aggregate evidence
+can continue without routine Gemini completion; adverse or weak aggregate evidence
+requires bounded attributable review; missing/stale evidence remains explicit.
+Candidates stopped by EMA20 entry safety, user preference, loss-control readiness, or
+portfolio constraints consume no candidate News quota. No threshold, strategy,
+loss-control, or SELL-safety rule changed. Sprint 25 has not started.
+
+The final BUY-semantics follow-up is complete locally. Technical signal, intermediate
+candidate allocation, and final portfolio action are distinct typed facts. A BUY is
+approved only when `final_action=BUY` and `is_final_actionable=true`; terminal blockers
+replace stale approval wording while allocation evidence remains auditable. Summary
+counts, UI filters/rendering, and the apply service all use that invariant. Sprint 25
+has not started.
 
 Final Sprint 24 hardening makes AI-only SEVERE insufficient for exit, requires
 PRIMARY-source deterministic hard-event confirmation, and requires current persisted

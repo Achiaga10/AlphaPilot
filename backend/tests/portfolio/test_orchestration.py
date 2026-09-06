@@ -201,6 +201,59 @@ class AlwaysHoldStrategy:
 
 
 @pytest.mark.asyncio
+async def test_user_exclusion_is_a_hard_preallocation_gate_and_restore_is_normal() -> None:
+    as_of = date(2026, 8, 20)
+    spy = company("SPY", "ETF")
+    stock = company("AAA", "Industrials")
+    histories = {
+        spy.id: candles(spy.id, as_of, close_step=Decimal("0.1")),
+        stock.id: candles(stock.id, as_of, close_step=Decimal("0.2")),
+    }
+    state = CurrentPortfolioState(cash=Decimal("100000"))
+
+    def orchestrator() -> PortfolioDecisionOrchestrator:
+        return PortfolioDecisionOrchestrator(
+            FakeCompanyService({"SPY": spy, "AAA": stock}),
+            FakeCandleService(histories),
+            FakeUniverse(),
+        )
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            "alphapilot.portfolio.orchestration.create_strategy",
+            lambda *args, **kwargs: AlwaysBuyStrategy(),
+        )
+        excluded = await orchestrator().build_plan(
+            state=state,
+            strategy_name=StrategyName.EMA20_PULLBACK,
+            selection_policy=SelectionPolicyName.RELATIVE_STRENGTH_20,
+            sizing_policy=SizingPolicyName.EQUAL_SLOT,
+            risk_config=PortfolioRiskConfig(),
+            requested_as_of_date=as_of,
+            excluded_tickers=frozenset({"AAA"}),
+        )
+        restored = await orchestrator().build_plan(
+            state=state,
+            strategy_name=StrategyName.EMA20_PULLBACK,
+            selection_policy=SelectionPolicyName.RELATIVE_STRENGTH_20,
+            sizing_policy=SizingPolicyName.EQUAL_SLOT,
+            risk_config=PortfolioRiskConfig(),
+            requested_as_of_date=as_of,
+        )
+
+    blocked = excluded.plan.decisions[0]
+    assert blocked.signal is Signal.BUY
+    assert blocked.ranking_score is not None
+    assert blocked.reason is PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS
+    assert blocked.decision is PortfolioDecisionType.SKIP
+    assert blocked.proposed_shares == 0
+    assert blocked.target_allocation_dollars == 0
+    assert restored.plan.decisions[0].reason is not (
+        PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("price_multiple", "age_seconds", "expected_status", "expected_reason"),
     [
@@ -278,7 +331,12 @@ async def test_current_session_buy_uses_fresh_live_entry_revalidation(
     assert provider.calls == [["AAA"]]
     assert result.plan.decisions[0].entry_safety is not None
     assert result.plan.decisions[0].entry_safety.status is expected_status
-    assert result.plan.decisions[0].reason is expected_reason
+    assert result.plan.decisions[0].allocation_reason is expected_reason
+    assert result.plan.decisions[0].reason is (
+        PortfolioDecisionReason.LOSS_CONTROL_UNAVAILABLE
+        if expected_status is Ema20EntrySafetyStatus.ELIGIBLE
+        else expected_reason
+    )
     assert result.plan.decisions[0].decision is (
         PortfolioDecisionType.BUY
         if expected_status is Ema20EntrySafetyStatus.ELIGIBLE
@@ -331,10 +389,12 @@ async def test_orchestrator_loads_and_calculates_signal_rs20_atr_and_sector(
     assert decision.atr == Decimal("4")
     assert decision.sector == "Industrials"
     assert decision.proposed_shares > 0
-    assert result.readiness.status == PlanReadinessStatus.READY
+    assert result.readiness.status == PlanReadinessStatus.NO_ACTION
+    assert result.readiness.technical_buy_signals == 1
+    assert result.readiness.final_approved_buys == 0
     assert result.readiness.requested_tickers == 1
     assert result.readiness.evaluated_tickers == 1
-    assert result.readiness.approved_buys == 1
+    assert result.readiness.approved_buys == 0
 
 
 @pytest.mark.asyncio

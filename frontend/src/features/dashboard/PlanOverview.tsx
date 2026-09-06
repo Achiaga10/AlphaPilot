@@ -30,7 +30,7 @@ export function PlanOverview({ plan, isDirty = false, hasAppliedActions = false,
         <div><span>Sizing</span><strong>{sizingLabel(plan.sizing_policy)}</strong></div>
         <div><span>Requested</span><strong>{formatDate(plan.requested_as_of_date)}</strong></div>
         <div><span>Completed analysis session</span><strong>{formatDate(plan.analysis_as_of_date)}</strong></div>
-        <div><span>Coverage / approved BUY</span><strong>{plan.readiness.evaluated_tickers} / {plan.readiness.requested_tickers} · {plan.readiness.approved_buys}</strong></div>
+        <div><span>Coverage / final actionable BUY</span><strong>{plan.readiness.evaluated_tickers} / {plan.readiness.requested_tickers} · {plan.readiness.final_approved_buys}</strong></div>
       </div>
       <PlanReadinessBanner readiness={plan.readiness} />
       <PortfolioSummary summary={plan.portfolio} snapshot />

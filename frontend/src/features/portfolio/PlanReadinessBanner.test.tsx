@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { planFixture } from '../../test/fixtures'
 import type { PortfolioPlanReadiness } from '../../types/portfolio'
@@ -14,6 +15,7 @@ test('all-stale readiness requires refresh and does not imply strategy rejection
     status: 'DATA_NOT_READY', requested_tickers: 502, evaluated_tickers: 0,
     fresh_tickers: 0, stale_tickers: 502, no_data_tickers: 0,
     insufficient_history_tickers: 0, buy_signals: 0, approved_buys: 0,
+    technical_buy_signals: 0, final_approved_buys: 0,
   })
   expect(screen.getByRole('heading', { name: 'Data refresh required' })).toBeInTheDocument()
   expect(screen.getByText(/No normal strategy evaluation was available/)).toBeInTheDocument()
@@ -26,6 +28,7 @@ test('fresh zero-opportunity readiness is presented as a legitimate strategy res
     status: 'NO_ACTION', requested_tickers: 502, evaluated_tickers: 502,
     fresh_tickers: 502, stale_tickers: 0, no_data_tickers: 0,
     insufficient_history_tickers: 0, buy_signals: 0, approved_buys: 0,
+    technical_buy_signals: 0, final_approved_buys: 0,
   })
   expect(screen.getByRole('heading', { name: /no actionable decision/i })).toBeInTheDocument()
   expect(screen.getByText(/No approved BUY opportunities were produced from 502 normally evaluated tickers/)).toBeInTheDocument()
@@ -37,9 +40,33 @@ test('partial readiness shows coverage and constraint attribution', () => {
     status: 'PARTIAL_DATA', requested_tickers: 10, evaluated_tickers: 7,
     fresh_tickers: 8, stale_tickers: 1, no_data_tickers: 1,
     insufficient_history_tickers: 1, buy_signals: 3, approved_buys: 1,
+    technical_buy_signals: 3, final_approved_buys: 1,
     buy_rejections_by_reason: { SECTOR_LIMIT: 2 },
   })
   expect(screen.getByRole('heading', { name: 'Partial analysis coverage' })).toBeInTheDocument()
   expect(screen.getByText('7 / 10 eligible')).toBeInTheDocument()
   expect(screen.getByText('Sector limit reached: 2')).toBeInTheDocument()
+})
+
+test('backend-owned BUY funnel explains first blockers and reveals affected tickers', async () => {
+  const user = userEvent.setup()
+  renderReadiness({
+    technical_buy_signals: 3,
+    final_approved_buys: 0,
+    buy_funnel: {
+      evaluated_tickers: 502,
+      technical_buy_signals: 3,
+      rejected_before_news: 2,
+      reached_news: 1,
+      final_approved_buys: 0,
+      groups: [
+        { stage: 'EMA20_ENTRY_SAFETY_BLOCKED', count: 2, tickers: ['AAA', 'BBB'] },
+        { stage: 'NEWS_AGGREGATE_UNAVAILABLE', count: 1, tickers: ['CCC'] },
+      ],
+    },
+  })
+
+  expect(screen.getByText(/3 technical BUY signals · 2 stopped before News/)).toBeInTheDocument()
+  await user.click(screen.getByText('EMA20 entry safety blocked: 2'))
+  expect(screen.getByText('AAA, BBB')).toBeInTheDocument()
 })

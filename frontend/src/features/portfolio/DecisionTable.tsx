@@ -7,6 +7,7 @@ import type {
   PortfolioPlanActionResult,
   SizingPolicy,
 } from '../../types/portfolio'
+import { isFinalApprovedBuy, isFinalApprovedSell } from '../../utils/decisionSemantics'
 import { formatMoney, formatPercent, formatScore, humanizeReason } from '../../utils/format'
 import { BuyActionPreviewDialog } from './BuyActionPreviewDialog'
 import { HELP_TEXT } from './helpText'
@@ -23,6 +24,10 @@ interface DecisionTableProps {
   actionPendingId?: string | null
   emptyTitle?: string
   emptyMessage?: string
+  excludedTickers?: ReadonlySet<string>
+  onExcludeTicker?: (ticker: string) => void
+  onRestoreTicker?: (ticker: string) => void
+  preferencePending?: boolean
 }
 
 export function DecisionTable({
@@ -36,6 +41,10 @@ export function DecisionTable({
   actionPendingId = null,
   emptyTitle = 'No portfolio decisions',
   emptyMessage = 'No actionable or held-position decisions match this view and its current filters.',
+  excludedTickers = new Set<string>(),
+  onExcludeTicker,
+  onRestoreTicker,
+  preferencePending = false,
 }: DecisionTableProps) {
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [preview, setPreview] = useState<{ decision: PortfolioDecision; result: PortfolioPlanActionResult } | null>(null)
@@ -66,6 +75,12 @@ export function DecisionTable({
             const quantityKey = decision.action_id ?? decision.ticker
             const quantity = quantities[quantityKey] ?? String(decision.proposed_shares)
             const riskApplicable = sizingPolicy !== 'equal-slot' && decision.decision === 'BUY'
+            const excluded = excludedTickers.has(decision.ticker)
+            const approvedBuy = isFinalApprovedBuy(decision)
+            const approvedSell = isFinalApprovedSell(decision)
+            const terminalReason = decision.terminal_reason ?? decision.reason
+            const allocationLabel = approvedBuy ? 'Approved allocation' : 'Candidate allocation'
+            const finalActionLabel = decision.final_action.replaceAll('_', ' ')
             return (
               <article className="decision-card" key={`${decision.ticker}-${decision.decision}`}>
                 <div className="decision-card__main">
@@ -75,18 +90,25 @@ export function DecisionTable({
                   </div>
                   <div className="decision-card__identity"><strong>{decision.ticker}</strong><span>{decision.sector}</span></div>
                   <div className="decision-card__badges">
-                    <span className="field-label field-label--with-help">Signal <InfoTooltip label="About strategy signal">{METRIC_GLOSSARY.strategySignal}</InfoTooltip></span>
+                    <span className="field-label field-label--with-help">Final status <InfoTooltip label="About final status">The authoritative user-facing action after every hard gate.</InfoTooltip></span>
+                    <StatusBadge value={decision.final_action} label={`Final action ${finalActionLabel}`} />
+                    <span className="field-label field-label--with-help">Technical signal <InfoTooltip label="About strategy signal">{METRIC_GLOSSARY.strategySignal}</InfoTooltip></span>
                     <StatusBadge value={decision.signal} label={`Signal ${decision.signal}`} />
-                    <span className="field-label field-label--with-help">Decision <InfoTooltip label="About portfolio decision">{METRIC_GLOSSARY.portfolioDecision}</InfoTooltip></span>
+                    <span className="field-label field-label--with-help">Candidate decision <InfoTooltip label="About candidate decision">{`${METRIC_GLOSSARY.portfolioDecision} This is intermediate and is not approval to act.`}</InfoTooltip></span>
                     <StatusBadge value={decision.decision} />
                   </div>
                   <div><span className="field-label field-label--with-help">RS20 score <InfoTooltip label="About RS20 score">{HELP_TEXT.rs20}</InfoTooltip></span><strong>{formatScore(decision.ranking_score)}</strong></div>
-                  <div><span className="field-label field-label--with-help">Proposed allocation <InfoTooltip label="About proposed allocation">{METRIC_GLOSSARY.proposedAllocation}</InfoTooltip></span><strong>{formatMoney(decision.target_allocation_dollars)}</strong></div>
-                  <div><span className="field-label field-label--with-help">Reason <InfoTooltip label="About decision reason">{METRIC_GLOSSARY.decisionReason}</InfoTooltip></span><strong>{humanizeReason(decision.reason)}</strong></div>
+                  <div><span className="field-label field-label--with-help">{allocationLabel} <InfoTooltip label={`About ${allocationLabel.toLowerCase()}`}>{METRIC_GLOSSARY.proposedAllocation}</InfoTooltip></span><strong>{formatMoney(decision.target_allocation_dollars)}</strong></div>
+                  <div><span className="field-label field-label--with-help">Terminal reason <InfoTooltip label="About terminal reason">The first authoritative hard gate that determines the final action.</InfoTooltip></span><strong>{humanizeReason(terminalReason)}</strong></div>
                 </div>
-                {canApplyDecisions && decision.cash_after_decision !== null && ((decision.decision === 'BUY' && decision.proposed_shares > 0) || (decision.decision === 'SELL' && decision.current_shares > 0)) ? (
+                {terminalReason === 'LOSS_CONTROL_UNAVAILABLE' ? <p className="inline-note"><strong>LOSS CONTROL</strong><br />No approved numeric loss-control policy<br /><strong>Status: NOT ACTIONABLE</strong></p> : null}
+                {excluded ? <p className="inline-note">Excluded by you. Technical and historical evidence remains available.</p> : null}
+                {onExcludeTicker || onRestoreTicker ? <div className="table-actions">
+                  {excluded ? <button className="button button--secondary button--small" type="button" disabled={preferencePending} onClick={() => onRestoreTicker?.(decision.ticker)}>Return to recommendation pool</button> : <button className="button button--secondary button--small" type="button" disabled={preferencePending} onClick={() => onExcludeTicker?.(decision.ticker)}>Exclude from future plans</button>}
+                </div> : null}
+                {canApplyDecisions && decision.cash_after_decision !== null && ((approvedBuy && decision.proposed_shares > 0) || (approvedSell && decision.current_shares > 0)) ? (
                   <div className="decision-action">
-                    {decision.decision === 'BUY' ? <>
+                    {approvedBuy ? <>
                       <div className="quantity-choice"><span>AlphaPilot research allocation: <strong>{decision.proposed_shares} shares</strong><small>{decision.execution_readiness === 'ACTIONABLE' ? 'Actionable stop evidence approved' : 'Research only · no approved protective stop'}</small></span><label><span>Shares to add</span><input aria-label={`Shares to add for ${decision.ticker}`} type="number" min="1" step="1" value={quantity} disabled={applied || pending} onChange={(event) => setQuantities((current) => ({ ...current, [quantityKey]: event.target.value }))} /></label></div>
                       <button className="button button--primary button--small" type="button" disabled={applied || pending || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0} onClick={() => void reviewBuy(decision)}>{applied ? 'Applied' : pending ? 'Validating…' : 'Review Add'}</button>
                     </> : <><p>Research portfolio update only — no broker order is sent.</p><button className="button button--primary button--small" type="button" disabled={applied || pending} onClick={() => applySell(decision)}>{applied ? 'Applied' : pending ? 'Applying…' : 'Apply Sell'}</button></>}
@@ -95,10 +117,13 @@ export function DecisionTable({
                 <details>
                   <summary>Decision details</summary>
                   <dl className="detail-grid">
-                    <Detail label="Base technical decision" help="The frozen strategy and portfolio-policy result before the separate News overlay."><StatusBadge value={decision.base_decision ?? decision.decision} /></Detail>
+                    <Detail label="Technical signal" help="The frozen strategy output; it does not itself authorize a portfolio action."><StatusBadge value={decision.signal} /></Detail>
+                    <Detail label="Portfolio candidate decision" help="The intermediate allocation-stage outcome before later safety and News gates."><StatusBadge value={decision.base_decision ?? decision.decision} /></Detail>
+                    <Detail label="Allocation-stage outcome" help="Intermediate sizing/allocation evidence, preserved separately from final actionability.">{allocationOutcome(decision)}</Detail>
                     <Detail label="News effect" help="The deterministic backend-owned effect of persisted, validated News evidence."><code>{decision.news_effect ?? 'NO_EFFECT'}</code></Detail>
                     <Detail label="News coverage" help="Current provider and classifier readiness is separate from stored article history."><code>{decision.news_coverage ?? 'NEVER_REFRESHED'}</code></Detail>
-                    <Detail label="Final AlphaPilot action" help="The final advisory action after applying the versioned News policy to the preserved base decision."><StatusBadge value={decision.final_action ?? decision.decision} /></Detail>
+                    <Detail label="Final AlphaPilot action" help="The single authoritative action after all hard gates."><StatusBadge value={decision.final_action} label={finalActionLabel} /></Detail>
+                    <Detail label="Terminal reason" help="The first authoritative blocker, or approval reason for a final actionable decision."><code>{terminalReason}</code></Detail>
                     <Detail label="News reason" help="The stored assessment reason; the AI classifier never supplies a trade action.">{decision.news_reason ?? 'No News-driven change'}</Detail>
                     <Detail label="News policy" help="The deterministic server policy version that produced the News effect."><code>{decision.news_policy_version ?? 'Not applicable'}</code></Detail>
                     <Detail label="Supporting News" help="Persisted article identifiers supporting the News assessment.">{decision.supporting_news_article_ids?.length ? decision.supporting_news_article_ids.join(', ') : 'None'}</Detail>
@@ -115,7 +140,7 @@ export function DecisionTable({
                     <Detail label="Modeled stop distance" help={METRIC_GLOSSARY.stopDistance}>{riskValue(riskApplicable, decision.decision, formatMoney(decision.stop_distance))}</Detail>
                     <Detail label="Research stop reference" help={METRIC_GLOSSARY.stopReference}>{riskValue(riskApplicable, decision.decision, formatMoney(decision.modeled_stop_reference_price))}</Detail>
                     <Detail label="Proposed shares" help={METRIC_GLOSSARY.proposedShares}>{decision.proposed_shares}</Detail>
-                    <Detail label="Proposed allocation" help={METRIC_GLOSSARY.proposedAllocation}>{formatMoney(decision.target_allocation_dollars)}</Detail>
+                    <Detail label={allocationLabel} help={METRIC_GLOSSARY.proposedAllocation}>{formatMoney(decision.target_allocation_dollars)}</Detail>
                     <Detail label="Estimated cash outlay" help={METRIC_GLOSSARY.estimatedOutlay}>{formatMoney(decision.estimated_cash_outlay)}</Detail>
                     <Detail label="Target weight" help={METRIC_GLOSSARY.targetWeight}>{formatPercent(decision.target_weight_pct)}</Detail>
                     <Detail label="Modeled position risk" help={METRIC_GLOSSARY.modeledPositionRisk}>{riskValue(riskApplicable, decision.decision, formatMoney(decision.modeled_position_risk_dollars))}</Detail>
@@ -125,9 +150,9 @@ export function DecisionTable({
                     <Detail label="Sector after" help={METRIC_GLOSSARY.sectorAfter}>{formatPercent(decision.sector_weight_after_pct)}</Detail>
                     <Detail label="Current shares" help={METRIC_GLOSSARY.currentShares}>{decision.current_shares}</Detail>
                     <Detail label="Estimated proceeds" help={METRIC_GLOSSARY.estimatedProceeds}>{formatMoney(decision.estimated_proceeds)}</Detail>
-                    <Detail label="Decision reason" help={METRIC_GLOSSARY.decisionReason}><code>{decision.reason}</code></Detail>
+                    <Detail label="Candidate reason" help="Intermediate allocation-stage reason; it is not the final actionability reason.">{allocationOutcome(decision)}</Detail>
                     <Detail label="Execution readiness" help="Actionability requires an approved deterministic numeric loss-control boundary; it need not be an intraday broker stop.">{decision.execution_readiness ?? 'RESEARCH_ONLY'} · <code>{decision.execution_readiness_reason ?? 'NO_APPROVED_LOSS_CONTROL_POLICY'}</code></Detail>
-                    {decision.loss_control_active ? <Detail label="Loss-control boundary" help="Backend-owned numeric strategy boundary and exact trigger semantics.">{decision.loss_control_policy} · {formatMoney(decision.loss_control_boundary_price)} · {decision.loss_control_trigger} · broker stop: {decision.loss_control_broker_stop_order ? 'YES' : 'NONE'}</Detail> : null}
+                    {decision.loss_control_active ? <Detail label="Loss-control boundary" help="Backend-owned numeric strategy boundary and exact trigger semantics.">{decision.loss_control_policy} · {formatMoney(decision.loss_control_boundary_price)} · {decision.loss_control_trigger} · broker stop: {decision.loss_control_broker_stop_order ? 'YES' : 'NONE'}</Detail> : <Detail label="Loss control" help="A new BUY cannot become final actionable without approved deterministic numeric loss control.">No approved numeric loss-control policy</Detail>}
                     <Detail label="Approved protective stop" help="Null means no approved actionable stop; research references are not substituted.">{decision.approved_protective_stop_price === null || decision.approved_protective_stop_price === undefined ? 'None · research only' : formatMoney(decision.approved_protective_stop_price)}</Detail>
                   </dl>
                   <ExitGuidance decision={decision} riskApplicable={riskApplicable} />
@@ -140,6 +165,16 @@ export function DecisionTable({
       {preview ? <BuyActionPreviewDialog decision={preview.decision} preview={preview.result} pending={actionPendingId === preview.decision.action_id} onCancel={() => setPreview(null)} onConfirm={() => { const shares = preview.result.quantity_semantics === 'USER_QUANTITY_OVERRIDE' ? preview.result.requested_shares : undefined; void Promise.resolve(onApplyDecision?.(preview.decision, shares)).then(() => setPreview(null)) }} /> : null}
     </div>
   )
+}
+
+function allocationOutcome(decision: PortfolioDecision): string {
+  const reason = decision.allocation_reason ?? decision.reason
+  if (reason === 'BUY_APPROVED') {
+    return isFinalApprovedBuy(decision)
+      ? 'Approved allocation'
+      : 'Candidate allocation proposed (intermediate)'
+  }
+  return humanizeReason(reason)
 }
 
 function riskValue(applicable: boolean, decision: string, formatted: string): string {

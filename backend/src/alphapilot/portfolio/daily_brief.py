@@ -21,6 +21,15 @@ class DailyBriefWorkflowStatus(StrEnum):
     NEW_ENTRIES_BLOCKED = "NEW_ENTRIES_BLOCKED"
 
 
+class DeferredOpportunityGroup(StrEnum):
+    ENTRY_TOO_EXTENDED = "ENTRY_TOO_EXTENDED"
+    NEWS_REVIEW_REQUIRED = "NEWS_REVIEW_REQUIRED"
+    NEWS_DATA_UNAVAILABLE = "NEWS_DATA_UNAVAILABLE"
+    PORTFOLIO_CASH_CONSTRAINT = "PORTFOLIO_CASH_CONSTRAINT"
+    USER_EXCLUDED = "USER_EXCLUDED"
+    OTHER = "OTHER"
+
+
 @dataclass(frozen=True, slots=True)
 class DailyBriefDataStatus:
     readiness: DailyBriefReadiness
@@ -134,6 +143,7 @@ class DailyBriefOpportunity:
     news_policy_version: str | None = None
     supporting_news_article_ids: tuple[UUID, ...] = ()
     entry_safety: Ema20EntrySafety | None = None
+    deferred_group: DeferredOpportunityGroup = DeferredOpportunityGroup.OTHER
 
 
 @dataclass(frozen=True, slots=True)

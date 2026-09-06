@@ -12,7 +12,8 @@ function TradeDetail({ trade }: { trade: PaperTradeAnalytics }) {
   const loss = entry?.loss_control as Record<string, unknown> | undefined
   const completed = entry?.completed_state as Record<string, unknown> | undefined
   return <details className="inline-note">
-    <summary><strong>{trade.record.ticker} · {trade.record.status}</strong> · {trade.record.strategy_profile_id ?? 'Unknown profile'} v{trade.record.strategy_profile_version ?? '—'}</summary>
+    <summary><strong>{trade.record.ticker} · {trade.record.status}</strong> · cycle {trade.record.id} · entered {trade.record.actual_entry_at}{trade.record.actual_exit_at ? ` · exited ${trade.record.actual_exit_at}` : ''}</summary>
+    <p>Paper record {trade.record.id} · {trade.record.strategy_profile_id ?? 'Unknown profile'} v{trade.record.strategy_profile_version ?? '—'}</p>
     <h3>AlphaPilot plan</h3><p>Source action: {available(decision?.source_action_id)} · Planned price: {formatMoney(trade.record.reference_entry_price)} · Planned quantity: {available(trade.record.planned_quantity)} · Loss control: {available(loss?.policy)} / {available(loss?.boundary)}</p>
     <h3>Actual Paper entry</h3><p>{trade.record.actual_quantity} shares at {formatMoney(trade.record.actual_entry_price)} · {trade.record.actual_entry_at}</p>
     <h3>Entry comparison</h3><p>Adverse slippage: {formatMoney(trade.record.entry_adverse_slippage_dollars_per_share)} per share ({formatPercent(trade.record.entry_slippage_percent)}) · Quantity adherence: {formatPercent(trade.record.quantity_adherence_percent)}</p>
@@ -26,9 +27,9 @@ export function ForwardPaperAnalyticsPanel({ portfolioId }: { portfolioId: strin
   if (query.isPending) return <section className="panel"><p className="muted">Loading Forward Paper Evidence…</p></section>
   if (query.isError) return <section className="panel"><p className="inline-note inline-note--warning">Forward Paper Analytics is unavailable.</p></section>
   const data = query.data
-  return <section className="panel" aria-labelledby="forward-paper-title">
-    <div className="section-heading"><div><p className="eyebrow">Forward Paper Evidence · separate from Historical Research</p><h2 id="forward-paper-title">Forward Paper Analytics</h2></div><span className="badge">{data.evidence_maturity.replaceAll('_', ' ')}</span></div>
-    <p className="muted">Descriptive evidence from manually recorded Alpaca Paper fills. It cannot promote or retune a strategy.</p>
+  return <details className="panel" aria-labelledby="forward-paper-title">
+    <summary><strong id="forward-paper-title">Forward Paper Evidence</strong> · {data.evidence_maturity.replaceAll('_', ' ')} · {data.open_trade_count} open / {data.closed_trade_count} closed · View analytics</summary>
+    <p className="muted">Secondary research evidence from manually recorded Alpaca Paper fills. It is separate from current ResearchPortfolio holdings and cannot promote or retune a strategy. OPEN means no manual Paper exit is recorded; it does not assert current portfolio ownership.</p>
     {data.evidence_maturity !== 'MEANINGFUL_SAMPLE' ? <p className="inline-note inline-note--warning">Tiny forward sample: treat these execution outcomes as descriptive evidence only.</p> : null}
     <dl className="config-grid">
       <div><dt>Open / closed</dt><dd>{data.open_trade_count} / {data.closed_trade_count}</dd></div>
@@ -37,8 +38,8 @@ export function ForwardPaperAnalyticsPanel({ portfolioId }: { portfolioId: strin
       <div><dt>Evidence quality</dt><dd>{data.complete_evidence_count} full · {data.partial_evidence_count} partial · {data.legacy_evidence_count} legacy</dd></div>
     </dl>
     {data.strategy_breakdown.map((group) => <article className="inline-note" key={`${group.strategy_profile_id}-${group.strategy_profile_version}`}><strong>{group.strategy_profile_id ?? 'Unknown profile'} v{group.strategy_profile_version ?? '—'}</strong><br />{group.closed_trade_count} closed · {formatMoney(group.gross_total_pnl)} gross P&amp;L · {formatPercent(group.win_rate_percent)} win rate · {group.evidence_maturity.replaceAll('_', ' ')}</article>)}
-    {data.open_trades.length ? <><h3>Open Paper trades</h3>{data.open_trades.map((trade) => <TradeDetail key={trade.record.id} trade={trade} />)}</> : null}
-    {data.closed_trades.length ? <><h3>Closed Paper trades</h3>{data.closed_trades.map((trade) => <TradeDetail key={trade.record.id} trade={trade} />)}</> : null}
+    {data.open_trades.length ? <><h3>Current Open Paper Validation Trades</h3><p className="muted">These are open manual Paper-validation cycles, not the authoritative current holdings list.</p>{data.open_trades.map((trade) => <TradeDetail key={trade.record.id} trade={trade} />)}</> : null}
+    {data.closed_trades.length ? <><h3>Historical Closed Paper Trades</h3><p className="muted">A ticker may also appear above when it has a separate, newer Paper cycle.</p>{data.closed_trades.map((trade) => <TradeDetail key={trade.record.id} trade={trade} />)}</> : null}
     {data.total_trade_count === 0 ? <p className="muted">No forward Paper evidence has been recorded yet.</p> : null}
-  </section>
+  </details>
 }

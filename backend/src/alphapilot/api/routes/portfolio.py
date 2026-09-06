@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.api.routes.news import get_news_service
 from alphapilot.core.lifespan import daily_market_scheduler
+from alphapilot.database.models.research_portfolio import PortfolioRecommendationStatus
 from alphapilot.database.session import get_db
 from alphapilot.market.providers.alpaca import AlpacaProvider
-from alphapilot.news.policy import NewsEffect
 from alphapilot.news.service import NewsService
 from alphapilot.portfolio.actions import (
     ManualPortfolioSellService,
@@ -27,13 +27,9 @@ from alphapilot.portfolio.decisions import (
     PortfolioStatePosition,
 )
 from alphapilot.portfolio.entry_safety import Ema20EntrySafety
-from alphapilot.portfolio.execution_readiness import (
-    ExecutionReadiness,
-    ExecutionReadinessReason,
-)
+from alphapilot.portfolio.news_gate import apply_portfolio_news_gate
 from alphapilot.portfolio.orchestration import PortfolioDecisionOrchestrator
 from alphapilot.portfolio.risk import PortfolioRiskConfig
-from alphapilot.portfolio.sizing import PortfolioDecisionReason, PortfolioDecisionType
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
@@ -62,6 +58,7 @@ from alphapilot.schemas.portfolio import (
     PortfolioDecisionRequest,
     PortfolioDecisionSchema,
     PortfolioDraftSummarySchema,
+    PortfolioNewsEnrichmentSchema,
     PortfolioPlanActionRequest,
     PortfolioPlanActionResultSchema,
     PortfolioPlanReadinessSchema,
@@ -71,6 +68,9 @@ from alphapilot.schemas.portfolio import (
     PortfolioPositionSummarySchema,
     PortfolioRiskConfigSchema,
     PortfolioSummarySchema,
+    PortfolioTickerPreferenceMutationSchema,
+    PortfolioTickerPreferenceRequestSchema,
+    PortfolioTickerPreferenceSchema,
     PositionIntelligenceSchema,
     PositionMonitoringSchema,
     PositionReconciliationRequestSchema,
@@ -313,6 +313,85 @@ async def get_current_research_portfolio(
         return None
     return ResearchPortfolioSchema.model_validate(
         await service.value(portfolio.id), from_attributes=True
+    )
+
+
+@router.get(
+    "/{portfolio_id}/excluded-tickers",
+    response_model=list[PortfolioTickerPreferenceSchema],
+)
+async def get_excluded_tickers(
+    portfolio_id: UUID,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> list[PortfolioTickerPreferenceSchema]:
+    try:
+        values = await service.list_ticker_preferences(portfolio_id, excluded_only=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [PortfolioTickerPreferenceSchema.model_validate(item) for item in values]
+
+
+async def _set_ticker_preference(
+    *,
+    portfolio_id: UUID,
+    ticker: str,
+    request: PortfolioTickerPreferenceRequestSchema,
+    status: PortfolioRecommendationStatus,
+    service: ResearchPortfolioService,
+) -> PortfolioTickerPreferenceMutationSchema:
+    try:
+        preference, revision = await service.set_ticker_preference(
+            portfolio_id=portfolio_id,
+            ticker=ticker,
+            status=status,
+            expected_revision=request.expected_revision,
+            reason=request.reason,
+        )
+    except StalePortfolioRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PortfolioTickerPreferenceMutationSchema(
+        preference=PortfolioTickerPreferenceSchema.model_validate(preference),
+        portfolio_revision=revision,
+    )
+
+
+@router.put(
+    "/{portfolio_id}/excluded-tickers/{ticker}",
+    response_model=PortfolioTickerPreferenceMutationSchema,
+)
+async def exclude_ticker(
+    portfolio_id: UUID,
+    ticker: str,
+    request: PortfolioTickerPreferenceRequestSchema,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> PortfolioTickerPreferenceMutationSchema:
+    return await _set_ticker_preference(
+        portfolio_id=portfolio_id,
+        ticker=ticker,
+        request=request,
+        status=PortfolioRecommendationStatus.USER_EXCLUDED,
+        service=service,
+    )
+
+
+@router.post(
+    "/{portfolio_id}/excluded-tickers/{ticker}/restore",
+    response_model=PortfolioTickerPreferenceMutationSchema,
+)
+async def restore_ticker(
+    portfolio_id: UUID,
+    ticker: str,
+    request: PortfolioTickerPreferenceRequestSchema,
+    service: Annotated[ResearchPortfolioService, Depends(get_research_portfolio_service)],
+) -> PortfolioTickerPreferenceMutationSchema:
+    return await _set_ticker_preference(
+        portfolio_id=portfolio_id,
+        ticker=ticker,
+        request=request,
+        status=PortfolioRecommendationStatus.ELIGIBLE,
+        service=service,
     )
 
 
@@ -735,9 +814,11 @@ async def build_portfolio_plan(
     config = PortfolioRiskConfig(**request.risk_config.model_dump())
     portfolio_revision: int | None = None
     persistent_schema: ResearchPortfolioSchema | None = None
+    excluded_tickers: frozenset[str] = frozenset()
     if request.portfolio_id is not None:
         state, persistent_schema = await _persistent_state(persistent, request.portfolio_id)
         portfolio_revision = persistent_schema.revision
+        excluded_tickers = await persistent.excluded_tickers(request.portfolio_id)
     elif request.portfolio is not None:
         state = _state(request.portfolio)
     else:
@@ -754,84 +835,49 @@ async def build_portfolio_plan(
             exit_mode=profile.ema_exit_mode or TrendExitMode.HYBRID,
             hybrid_trend_threshold_pct=(profile.hybrid_trend_threshold_pct or Decimal("2")),
             micho_entry_mode=profile.micho_entry_mode or MichoEntryMode.BOTH,
+            excluded_tickers=excluded_tickers,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     plan = result.plan
+    news_enrichment = PortfolioNewsEnrichmentSchema()
     if request.portfolio_id is not None:
-        # Technical facts remain frozen through the completed analysis session, while
-        # News evidence is evaluated at the current plan-decision instant.
-        as_of = datetime.now(UTC)
-        news_decisions = []
-        held = {item.ticker.upper(): item for item in state.positions}
-        for decision in plan.decisions:
-            if decision.reason in {
-                PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
-                PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
-            }:
-                news_decisions.append(
-                    replace(
-                        decision,
-                        base_decision=decision.decision,
-                        final_action="DO_NOT_BUY",
-                        news_reason="News was not evaluated because EMA20 entry safety failed.",
-                    )
-                )
-                continue
-            assessment = await news.assess(request.portfolio_id, decision.ticker, as_of=as_of)
-            original = decision.decision
-            updated = decision
-            final_action = original.value
-            reason = decision.reason
-            if original is PortfolioDecisionType.BUY and assessment.effect in {
-                NewsEffect.BUY_BLOCKED,
-                NewsEffect.EXIT_REQUIRED,
-            }:
-                updated = replace(
-                    updated,
-                    decision=PortfolioDecisionType.SKIP,
-                    execution_readiness=ExecutionReadiness.RESEARCH_ONLY,
-                    execution_readiness_reason=ExecutionReadinessReason.NEWS_RISK_BLOCK,
-                )
-                final_action = "DO_NOT_BUY"
-                reason = PortfolioDecisionReason.NEWS_RISK_BLOCK
-            elif original is PortfolioDecisionType.BUY and assessment.effect in {
-                NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
-                NewsEffect.NEWS_ASSESSMENT_PARTIAL,
-            }:
-                updated = replace(
-                    updated,
-                    decision=PortfolioDecisionType.SKIP,
-                    execution_readiness=ExecutionReadiness.UNAVAILABLE,
-                    execution_readiness_reason=(
-                        ExecutionReadinessReason.NEWS_ASSESSMENT_UNAVAILABLE
-                    ),
-                )
-                final_action = "DO_NOT_BUY"
-                reason = PortfolioDecisionReason.NEWS_ASSESSMENT_UNAVAILABLE
-            elif assessment.effect is NewsEffect.EXIT_REQUIRED and decision.ticker.upper() in held:
-                position = held[decision.ticker.upper()]
-                updated = replace(
-                    updated,
-                    decision=PortfolioDecisionType.SELL,
-                    current_shares=position.shares,
-                    estimated_proceeds=position.market_value,
-                )
-                final_action = "EXIT_REQUIRED"
-                reason = PortfolioDecisionReason.NEWS_RISK_EXIT
-            updated = replace(
-                updated,
-                reason=reason,
-                base_decision=original,
-                news_effect=assessment.effect.value,
-                news_coverage=assessment.coverage.value,
-                final_action=final_action,
-                news_reason=assessment.reason,
-                news_policy_version=assessment.policy_version,
-                supporting_news_article_ids=assessment.supporting_article_ids,
-            )
-            news_decisions.append(updated)
-        plan = replace(plan, decisions=tuple(news_decisions))
+        gate = await apply_portfolio_news_gate(
+            plan=plan,
+            state=state,
+            portfolio_id=request.portfolio_id,
+            news=news,
+        )
+        plan = gate.plan
+        refresh = gate.refresh
+        news_enrichment = PortfolioNewsEnrichmentSchema(
+            candidate_shortlist=(list(refresh.tickers) if refresh else []),
+            assessed_buy_tickers=list(gate.assessed_buy_tickers),
+            aggregate_requested=(list(refresh.aggregate_requested) if refresh else []),
+            aggregate_returned=(list(refresh.aggregate_returned) if refresh else []),
+            aggregate_reused=(list(refresh.aggregate_reused) if refresh else []),
+            aggregate_missing=(list(refresh.aggregate_missing) if refresh else []),
+            aggregate_api_calls=(refresh.aggregate_api_calls if refresh else 0),
+            attributable_requested=(list(refresh.attributable_requested) if refresh else []),
+            attributable_api_calls=(refresh.attributable_api_calls if refresh else 0),
+            targeted_classification_attempts=(
+                refresh.targeted_classification_attempts if refresh else 0
+            ),
+        )
+    final_by_ticker = {item.ticker: item for item in plan.decisions}
+    final_statuses = tuple(
+        replace(
+            item,
+            decision=final_by_ticker[item.ticker].decision,
+            decision_reason=(
+                final_by_ticker[item.ticker].terminal_reason or final_by_ticker[item.ticker].reason
+            ),
+        )
+        if item.ticker in final_by_ticker
+        else item
+        for item in result.statuses
+    )
+    readiness = PortfolioDecisionOrchestrator.final_readiness(final_statuses, plan)
     return PortfolioPlanSchema(
         plan_id=strategy_profile_plan_id(request, profile, portfolio_revision),
         strategy_profile=StrategyProfileSchema.model_validate(profile, from_attributes=True),
@@ -851,14 +897,14 @@ async def build_portfolio_plan(
         analysis_as_of_date=result.analysis_as_of_date,
         candidate_statuses=[
             CandidateOrchestrationStatusSchema.model_validate(item, from_attributes=True)
-            for item in result.statuses
+            for item in final_statuses
         ],
-        readiness=PortfolioPlanReadinessSchema.model_validate(
-            result.readiness, from_attributes=True
-        ),
+        readiness=PortfolioPlanReadinessSchema.model_validate(readiness, from_attributes=True),
         evaluation_target_ticker=result.evaluation_target_ticker,
         portfolio_id=request.portfolio_id,
         portfolio_revision=portfolio_revision,
+        generated_at=datetime.now(UTC),
+        news_enrichment=news_enrichment,
     )
 
 
@@ -958,7 +1004,11 @@ async def _plan_action_result(
                         else decision.decision.value,
                         "news_effect": decision.news_effect,
                         "news_coverage": decision.news_coverage,
-                        "final_action": decision.final_action or decision.decision.value,
+                        "final_action": (
+                            decision.final_action.value
+                            if decision.final_action
+                            else decision.decision.value
+                        ),
                         "news_reason": decision.news_reason,
                         "news_policy_version": decision.news_policy_version,
                         "supporting_news_article_ids": [
