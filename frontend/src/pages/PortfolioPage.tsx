@@ -6,20 +6,37 @@ import { PositionsTable } from '../features/portfolio/PositionsTable'
 import { RiskSummary } from '../features/portfolio/RiskSummary'
 import { StalePlanWarning } from '../features/portfolio/StalePlanWarning'
 import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
-import { useAdminCapabilityQuery, useAdminTickerSyncMutation, useDeactivateCustomTickerMutation, usePortfolioPlanMutation, useRiskConfigQuery, useStrategyProfilesQuery } from '../hooks/usePortfolioApi'
+import { useAdminCapabilityQuery, useAdminTickerSyncMutation, useDeactivateCustomTickerMutation, useExcludeTickerMutation, useExcludedTickersQuery, usePortfolioPlanMutation, useRestoreTickerMutation, useRiskConfigQuery, useStrategyProfilesQuery } from '../hooks/usePortfolioApi'
 import type { PortfolioPlanRequest } from '../types/portfolio'
 import { formatDate } from '../utils/format'
 import { PlanReadinessBanner } from '../features/portfolio/PlanReadinessBanner'
 import { ResearchPortfolioPanel } from '../features/portfolio/ResearchPortfolioPanel'
 
 export function PortfolioPage() {
-  const { draft, setDraft, portfolio, portfolioPending, portfolioError, refreshPortfolio, plan, setPlanResult, previewDecision, applyDecision, appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions, isPlanDirty } = usePortfolioWorkspace()
+  const { draft, setDraft, portfolio, portfolioPending, portfolioError, refreshPortfolio, plan, setPlanResult, previewDecision, applyDecision, appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions, isPlanDirty, markPlanStale } = usePortfolioWorkspace()
   const riskConfig = useRiskConfigQuery()
   const profiles = useStrategyProfilesQuery()
   const mutation = usePortfolioPlanMutation()
   const admin = useAdminCapabilityQuery()
   const syncTicker = useAdminTickerSyncMutation()
   const deactivateTicker = useDeactivateCustomTickerMutation()
+  const exclusions = useExcludedTickersQuery(portfolio?.portfolio_id ?? null)
+  const excludeTicker = useExcludeTickerMutation(portfolio?.portfolio_id ?? '')
+  const restoreTicker = useRestoreTickerMutation(portfolio?.portfolio_id ?? '')
+
+  async function changeExclusion(ticker: string, excluded: boolean) {
+    if (!portfolio) return
+    if (excluded) {
+      const enteredReason = window.prompt(`Optional note for excluding ${ticker}:`)
+      if (enteredReason === null) return
+      const reason = enteredReason.trim() || undefined
+      await excludeTicker.mutateAsync({ ticker, expectedRevision: portfolio.revision, reason })
+    } else {
+      await restoreTicker.mutateAsync({ ticker, expectedRevision: portfolio.revision })
+    }
+    await Promise.all([exclusions.refetch(), refreshPortfolio()])
+    markPlanStale(`${ticker} recommendation preference changed. Regenerate the plan.`)
+  }
 
   function submit(request: PortfolioPlanRequest) {
     const submittedDraft = structuredClone(draft)
@@ -77,7 +94,7 @@ export function PortfolioPage() {
           <PlanReadinessBanner readiness={plan.readiness} />
           <PortfolioSummary summary={plan.portfolio} snapshot />
           <PositionsTable positions={plan.portfolio.positions} snapshot />
-          <OpportunityExplorer decisions={plan.decisions} statuses={plan.candidate_statuses} readiness={plan.readiness} canApplyDecisions={!isPlanDirty} onApplyDecision={applyDecision} onPreviewDecision={previewDecision} sizingPolicy={plan.sizing_policy} appliedActionIds={appliedActionIds} actionPendingId={actionPendingId} adminEnabled={admin.data?.enabled} onSyncTicker={(ticker) => syncTicker.mutate({ ticker, start_date: new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10), end_date: new Date().toISOString().slice(0, 10) })} onDeactivateTicker={(ticker) => deactivateTicker.mutate(ticker)} />
+          <OpportunityExplorer decisions={plan.decisions} statuses={plan.candidate_statuses} readiness={plan.readiness} canApplyDecisions={!isPlanDirty} onApplyDecision={applyDecision} onPreviewDecision={previewDecision} sizingPolicy={plan.sizing_policy} appliedActionIds={appliedActionIds} actionPendingId={actionPendingId} adminEnabled={admin.data?.enabled} onSyncTicker={(ticker) => syncTicker.mutate({ ticker, start_date: new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10), end_date: new Date().toISOString().slice(0, 10) })} onDeactivateTicker={(ticker) => deactivateTicker.mutate(ticker)} excludedTickers={new Set(exclusions.data?.map((item) => item.ticker) ?? [])} onExcludeTicker={(ticker) => void changeExclusion(ticker, true)} onRestoreTicker={(ticker) => void changeExclusion(ticker, false)} preferencePending={excludeTicker.isPending || restoreTicker.isPending} />
           <RiskSummary config={plan.config} sizingPolicy={plan.sizing_policy} />
         </div>
       ) : null}

@@ -41,6 +41,7 @@ interface WorkspaceValue {
   applyManualSellResult: (result: ManualSellResult) => void
   appliedActionIds: ReadonlySet<string>; actionPendingId: string | null; lastActionMessage: string | null
   hasAppliedPlanActions: boolean; isPlanDirty: boolean; hasPlanDeviation: boolean
+  markPlanStale: (message: string) => void
 }
 const WorkspaceContext = createContext<WorkspaceValue | null>(null)
 
@@ -90,6 +91,7 @@ export function PortfolioWorkspaceProvider({ children }: { children: ReactNode }
     applyManualSellResult: (result) => { if (result.applied) { setManualMutation(true); setLastActionMessage('Research portfolio sale was persisted. Regenerate the plan for the new portfolio revision.'); void refreshPortfolio() } },
     appliedActionIds, actionPendingId, lastActionMessage, hasAppliedPlanActions: appliedActionIds.size > 0,
     isPlanDirty: plan !== null && (portfolio === null || manualMutation || planPreferences !== JSON.stringify({ strategy: draft.strategy, selectionPolicy: draft.selectionPolicy, asOfDate: draft.asOfDate, tickerScope: draft.tickerScope })), hasPlanDeviation,
+    markPlanStale: (message) => { setManualMutation(true); setLastActionMessage(message) },
   }), [actionPendingId, appliedActionIds, draft, hasPlanDeviation, lastActionMessage, manualMutation, plan, planPreferences, portfolio, portfolioQuery.data, portfolioQuery.error, portfolioQuery.isPending, refreshPortfolio])
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

@@ -23,6 +23,9 @@ import {
   getPortfolioNews,
   refreshPortfolioNews,
   getPortfolioNewsSentiment,
+  getExcludedTickers,
+  excludeTicker,
+  restoreTicker,
 } from '../api/portfolio'
 import {
   addCustomTicker,
@@ -131,6 +134,28 @@ export function usePositionMonitoringQuery(portfolioId: string | null) {
     queryKey: ['position-monitoring', portfolioId],
     queryFn: ({ signal }) => getPositionMonitoring(portfolioId ?? '', signal),
     enabled: Boolean(portfolioId),
+  })
+}
+
+export function useExcludedTickersQuery(portfolioId: string | null) {
+  return useQuery({
+    queryKey: ['portfolio-excluded-tickers', portfolioId],
+    queryFn: ({ signal }) => getExcludedTickers(portfolioId ?? '', signal),
+    enabled: Boolean(portfolioId),
+  })
+}
+
+export function useExcludeTickerMutation(portfolioId: string) {
+  return useMutation({
+    mutationFn: ({ ticker, expectedRevision, reason }: { ticker: string; expectedRevision: number; reason?: string }) =>
+      excludeTicker(portfolioId, ticker, expectedRevision, reason),
+  })
+}
+
+export function useRestoreTickerMutation(portfolioId: string) {
+  return useMutation({
+    mutationFn: ({ ticker, expectedRevision }: { ticker: string; expectedRevision: number }) =>
+      restoreTicker(portfolioId, ticker, expectedRevision),
   })
 }
 

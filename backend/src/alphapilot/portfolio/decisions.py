@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
 from alphapilot.portfolio.entry_safety import Ema20EntrySafety, Ema20EntrySafetyStatus
@@ -28,6 +29,15 @@ from alphapilot.portfolio.sizing import (
 from alphapilot.strategy.signal import Signal
 
 UNCLASSIFIED_SECTOR = "Unclassified"
+
+
+class PortfolioFinalAction(StrEnum):
+    BUY = "BUY"
+    SELL = "SELL"
+    HOLD = "HOLD"
+    ATTENTION = "ATTENTION"
+    EXIT_REQUIRED = "EXIT_REQUIRED"
+    NOT_ACTIONABLE = "NOT_ACTIONABLE"
 
 
 @dataclass(slots=True, frozen=True)
@@ -106,13 +116,31 @@ class PortfolioDecision:
     loss_control_active: bool = False
     loss_control_broker_stop_order: bool = False
     base_decision: PortfolioDecisionType | None = None
+    allocation_reason: PortfolioDecisionReason | None = None
+    terminal_reason: PortfolioDecisionReason | None = None
     news_effect: str = "NO_EFFECT"
     news_coverage: str = "NEVER_REFRESHED"
-    final_action: str | None = None
+    news_assessment_reason: str | None = None
+    news_aggregate_strength: str | None = None
+    news_aggregate_effect: str | None = None
+    news_targeted_review_required: bool = False
+    final_action: PortfolioFinalAction | None = None
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: tuple[UUID, ...] = ()
     entry_safety: Ema20EntrySafety | None = None
+    is_final_actionable: bool = False
+
+    @property
+    def is_approved_buy(self) -> bool:
+        return self.final_action is PortfolioFinalAction.BUY and self.is_final_actionable
+
+    @property
+    def is_approved_sell(self) -> bool:
+        return (
+            self.final_action in {PortfolioFinalAction.SELL, PortfolioFinalAction.EXIT_REQUIRED}
+            and self.is_final_actionable
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -531,9 +559,22 @@ class PortfolioDecisionEngine:
             else:
                 readiness = ExecutionReadiness.RESEARCH_ONLY
                 readiness_reason = ExecutionReadinessReason.NOT_A_NEW_BUY
+            is_final_actionable = decision.decision == PortfolioDecisionType.SELL or (
+                decision.decision == PortfolioDecisionType.BUY
+                and readiness == ExecutionReadiness.ACTIONABLE
+            )
+            final_action = PortfolioDecisionEngine._final_action(
+                decision, is_final_actionable=is_final_actionable
+            )
+            terminal_reason = PortfolioDecisionEngine._terminal_reason(
+                decision,
+                loss_control_active=evidence is not None,
+                is_final_actionable=is_final_actionable,
+            )
             enriched.append(
                 replace(
                     decision,
+                    reason=terminal_reason,
                     estimated_cash_outlay=outlay,
                     cash_after_decision=cash_after,
                     modeled_stop_reference_price=stop_reference,
@@ -550,9 +591,47 @@ class PortfolioDecisionEngine:
                     loss_control_broker_stop_order=evidence.broker_stop_order
                     if evidence
                     else False,
+                    allocation_reason=decision.reason,
+                    terminal_reason=terminal_reason,
+                    final_action=final_action,
+                    is_final_actionable=is_final_actionable,
                 )
             )
         return tuple(enriched)
+
+    @staticmethod
+    def _final_action(
+        decision: PortfolioDecision, *, is_final_actionable: bool
+    ) -> PortfolioFinalAction:
+        if is_final_actionable and decision.decision is PortfolioDecisionType.BUY:
+            return PortfolioFinalAction.BUY
+        if is_final_actionable and decision.decision is PortfolioDecisionType.SELL:
+            return PortfolioFinalAction.SELL
+        if decision.signal in {Signal.BUY, Signal.SELL}:
+            return PortfolioFinalAction.NOT_ACTIONABLE
+        return PortfolioFinalAction.HOLD
+
+    @staticmethod
+    def _terminal_reason(
+        decision: PortfolioDecision,
+        *,
+        loss_control_active: bool,
+        is_final_actionable: bool,
+    ) -> PortfolioDecisionReason:
+        if is_final_actionable:
+            return decision.reason
+        if decision.signal is not Signal.BUY:
+            return decision.reason
+        if decision.reason in {
+            PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
+            PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
+            PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS,
+            PortfolioDecisionReason.ALREADY_HELD,
+        }:
+            return decision.reason
+        if not loss_control_active:
+            return PortfolioDecisionReason.LOSS_CONTROL_UNAVAILABLE
+        return decision.reason
 
     @staticmethod
     def _micho_loss_control(decision: PortfolioDecision) -> LossControlEvidence | None:

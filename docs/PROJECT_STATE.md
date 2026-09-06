@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-Post-Sprint-24 EMA20 Entry Safety Hotfix
+Post-Sprint-24 Final BUY Actionability Semantics Hotfix
 COMPLETE LOCALLY
 
 Current development branch:
-fix/ema20-entry-safety
+fix/portfolio-plan-consistency-ux
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -49,6 +49,36 @@ adds a separate current-actionability invariant: every new EMA20 Pullback BUY mu
 fresh entry-price revalidation against the existing completed signal-session EMA20 1%
 upper proximity boundary. Extended or unavailable evidence is non-actionable; News and
 RS20 cannot override the result. Sprint 25 remains not started.
+
+A second focused post-Sprint-24 hotfix is complete locally. Portfolio-plan summary
+counts and rows now share one post-News final-actionability invariant, with typed
+technical-signal and final-action counts plus plan generation provenance. Persistent,
+revision-safe per-portfolio ticker preferences support explicit user exclusion and
+restoration; an exclusion is a hard pre-allocation recommendation gate and selling
+never creates one automatically. The Dashboard now prioritizes required exits,
+approved buys, and attention; deferred reasons and News use compact progressive
+disclosure; Forward Paper evidence is collapsed and explicitly distinguished from
+authoritative current holdings. The current real plan and APO/UBER Paper lifecycles
+were audited read-only. Sprint 25 is still not started.
+
+A third focused post-Sprint-24 audit/hotfix is complete locally. It corrected the
+candidate News workflow to the approved Adanos-first Option A architecture and added a
+backend-owned, exactly reconciled BUY funnel. Generate Portfolio now applies every
+cheaper hard gate before a bounded candidate News refresh; current sufficient
+non-adverse aggregate evidence no longer depends on routine all-article Gemini
+completion, while adverse/weak evidence still takes the bounded Finnhub/Gemini review
+path and unavailable evidence remains explicit. The reproduced 2026-09-02 plan still
+has zero final BUYs for a justified earlier reason: all 65 technical BUYs stop before
+News (37 EMA20 entry-safety blocks, 2 already-held position constraints, and 26 without
+approved loss control). No News thresholds, strategy rules, or SELL protections changed.
+Sprint 25 remains not started.
+
+A final semantics follow-up is complete locally. Technical signal and candidate
+allocation remain auditable, but typed `final_action`, `terminal_reason`, and
+`is_final_actionable` are now the sole action authority. In the real 2026-09-03 plan,
+IBKR and EOG retain candidate allocations but correctly render `NOT_ACTIONABLE` with
+`LOSS_CONTROL_UNAVAILABLE`; Approved Buys remains zero. No financial threshold or safety
+policy changed. Sprint 25 remains not started.
 
 Sprint 21 performance hardening is also complete locally. The Dashboard core and
 opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,

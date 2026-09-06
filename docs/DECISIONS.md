@@ -969,3 +969,72 @@ This comes after strategy and portfolio validation.
   override it.
 - Prospective Paper entry evidence uses schema version 2 to preserve the entry-safety
   snapshot. Existing immutable version-1 evidence is neither rewritten nor backfilled.
+
+# Post-Sprint-24 portfolio-plan consistency and UX decisions
+
+- `APPROVED BUY` means a final portfolio decision whose action is BUY and whose
+  `is_final_actionable` flag remains true after entry safety, execution readiness,
+  News, user preference, allocation, and all other hard gates. Technical BUY is a
+  separate evidence count and is never described as approved.
+- Summary counts are recomputed from the final decision tuple after the News overlay.
+  The legacy approved-count fields mirror the new explicit final counts, and the UI
+  consumes those backend totals rather than deriving competing financial semantics.
+- `PortfolioTickerPreference` is a persistent, portfolio-scoped recommendation
+  preference. `USER_EXCLUDED` is reversible and blocks only future BUY actionability;
+  it preserves companies, candles, News, signals, research history, and Paper evidence.
+- Selling a ticker never excludes it automatically. Restoring a ticker only returns it
+  to ordinary strategy, ranking, safety, News, risk, and allocation gates; it does not
+  force a BUY.
+- A user exclusion runs before allocation and targeted BUY News assessment. Neither
+  positive News nor RS20 can override `USER_EXCLUDED_FROM_RECOMMENDATIONS`.
+- Dashboard sections use action priority. Deferred items carry backend-typed groups,
+  preserve backend rank/order, and use search plus progressive disclosure. News cards
+  show compact ticker summaries first and keep Adanos, Finnhub, and Gemini layers
+  visibly separate.
+- Forward Paper Validation remains a manually recorded observational lifecycle, not
+  the authoritative current ResearchPortfolio. One ticker may correctly have a closed
+  historical Paper cycle and a separate open cycle. An open Paper record means no
+  manual Paper exit was recorded; it does not prove that the ticker is currently held.
+
+# Post-Sprint-24 BUY-funnel and News-gate decisions
+
+- Every technical BUY is assigned one and only one authoritative first-blocker stage.
+  The backend owns both counts and ticker membership; the UI only renders the result.
+- BUY-gate precedence is entry safety, explicit user preference, already-held state,
+  loss-control readiness, portfolio/sector/cash allocation, bounded News assessment,
+  and finally approved BUY. A later gate never masks an earlier failure.
+- Generate Portfolio owns candidate News enrichment. It refreshes only the final
+  actionable BUY shortlist through `CANDIDATES` scope, never the full S&P 500, and
+  Adanos continues to batch at no more than ten tickers per provider request.
+- Adanos aggregate and Finnhub/Gemini attributable-classification coverage are separate
+  evidence dimensions. A current sufficient non-adverse Adanos observation passes only
+  the aggregate screen; it does not assert no risk, create a BUY, or require routine
+  articles to have Gemini classifications.
+- Frozen adverse Adanos evidence and weak aggregate evidence require bounded Finnhub
+  attributable review. Gemini remains limited to the deterministic deep-review path;
+  its failure affects actionability only when that targeted interpretation is required.
+- Missing or stale aggregate evidence is typed unavailability, never bearish sentiment.
+  Confirmed adverse evidence, provider unavailability, and a successful current check
+  finding no adverse trigger remain distinct states and reason codes.
+- Aggregate sentiment alone still cannot produce a SELL. PRIMARY-source deterministic
+  hard-event confirmation, direct relevance, freshness, and SEVERE/NEGATIVE evidence
+  remain mandatory for a News exit. EMA20 safety and loss-control rules are unchanged.
+
+# Post-Sprint-24 final BUY-actionability decisions
+
+- Technical `signal`, intermediate portfolio `decision`/`allocation_reason`, and final
+  `final_action`/`terminal_reason` are separate typed facts.
+- A BUY is approved if and only if `final_action=BUY` and
+  `is_final_actionable=true`. Backend counts, News shortlisting, UI filters, action
+  controls, and the apply service use this invariant.
+- The legacy decision `reason` mirrors the terminal reason. Intermediate
+  `BUY_APPROVED` remains auditable only as `allocation_reason`; it is never presented as
+  a terminal reason for a non-actionable candidate.
+- Non-actionable allocation candidates may retain shares/dollars as research evidence,
+  labeled Candidate allocation. They do not expose Add to Position or an apply bypass.
+- `LOSS_CONTROL_UNAVAILABLE` is a stable terminal reason and is shown prominently.
+  Existing entry-safety, preference, held-position, loss-control, allocation, News, and
+  SELL rules are unchanged.
+- The real IBKR/EOG contradiction was contract/UI ambiguity, not a reason to weaken loss
+  control or inflate Approved Buys. No strategy, News, risk, sizing, or SELL threshold
+  changed.

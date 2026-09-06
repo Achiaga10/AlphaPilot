@@ -6,8 +6,11 @@ import pytest
 from alphapilot.database.models.company import Company
 from alphapilot.news.classifier import ClassificationAttempt
 from alphapilot.news.external_sentiment import (
+    AggregateEvidenceStrength,
+    AggregateSentimentEffect,
     ExternalNewsSentimentSnapshot,
     ExternalSentimentBatchResult,
+    ExternalSentimentFailureCode,
 )
 from alphapilot.news.models import (
     ClassificationStatus,
@@ -17,7 +20,7 @@ from alphapilot.news.models import (
     NewsSeverity,
     NormalizedNewsArticle,
 )
-from alphapilot.news.policy import NewsCoverage, NewsEffect
+from alphapilot.news.policy import NewsAssessmentReason, NewsCoverage, NewsEffect
 from alphapilot.news.service import NewsRefreshScope, NewsService
 from alphapilot.services.research_portfolio import ResearchPortfolioService
 
@@ -110,15 +113,26 @@ class CountingClassifier(Classifier):
 
 
 class AggregateProvider:
-    def __init__(self, score: str = "0.4", bearish: str = "5") -> None:
+    def __init__(
+        self,
+        score: str = "0.4",
+        bearish: str = "5",
+        *,
+        mentions: int = 20,
+        source_count: int = 5,
+        observed_at: datetime | None = None,
+    ) -> None:
         self.batches: list[tuple[str, ...]] = []
         self.score = Decimal(score)
         self.bearish = Decimal(bearish)
+        self.mentions = mentions
+        self.source_count = source_count
+        self.observed_at = observed_at
 
     async def get_sentiments(self, tickers, *, start, end):
         batch = tuple(tickers)
         self.batches.append(batch)
-        now = datetime.now(UTC)
+        now = self.observed_at or datetime.now(UTC)
         return ExternalSentimentBatchResult(
             snapshots=tuple(
                 ExternalNewsSentimentSnapshot(
@@ -132,8 +146,8 @@ class AggregateProvider:
                     bullish_pct=Decimal("70"),
                     bearish_pct=self.bearish,
                     neutral_pct=None,
-                    mentions=20,
-                    source_count=5,
+                    mentions=self.mentions,
+                    source_count=self.source_count,
                     buzz_score=Decimal("40"),
                     trend="stable",
                 )
@@ -147,6 +161,27 @@ class AggregateProvider:
     async def get_sentiment(self, ticker, *, start, end):
         result = await self.get_sentiments((ticker,), start=start, end=end)
         return result.snapshots[0]
+
+
+class MissingAggregateProvider:
+    def __init__(self) -> None:
+        self.batches: list[tuple[str, ...]] = []
+
+    async def get_sentiments(self, tickers, *, start, end):
+        batch = tuple(tickers)
+        self.batches.append(batch)
+        return ExternalSentimentBatchResult(
+            snapshots=(),
+            failures=tuple(
+                (ticker, ExternalSentimentFailureCode.PROVIDER_UNAVAILABLE) for ticker in batch
+            ),
+            request_count=1,
+            elapsed_seconds=0.1,
+        )
+
+    async def get_sentiment(self, ticker, *, start, end):
+        _ = (ticker, start, end)
+        return None
 
 
 @pytest.mark.asyncio
@@ -211,6 +246,83 @@ async def test_aggregate_refresh_batches_ten_and_targets_no_routine_articles(db_
 
 
 @pytest.mark.asyncio
+async def test_sufficient_non_adverse_aggregate_is_current_without_finnhub_or_gemini(
+    db_session,
+) -> None:
+    portfolio = await ResearchPortfolioService(db_session).initialize(
+        starting_cash=Decimal("100000")
+    )
+    aggregate = AggregateProvider()
+    provider = Provider()
+    classifier = CountingClassifier()
+    service = NewsService(
+        db_session,
+        provider,
+        classifier,
+        aggregate,
+        classification_delay_seconds=0,
+    )
+
+    first = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+    assessment = await service.assess(portfolio.id, "AAA", as_of=datetime.now(UTC))
+    second = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+
+    assert provider.calls == []
+    assert classifier.headlines == []
+    assert first.aggregate_requested == ("AAA",)
+    assert first.attributable_api_calls == 0
+    assert second.aggregate_requested == ()
+    assert second.aggregate_reused == ("AAA",)
+    assert aggregate.batches == [("AAA",)]
+    assert assessment.coverage is NewsCoverage.CURRENT
+    assert assessment.effect is NewsEffect.NO_EFFECT
+    assert assessment.reason_code is NewsAssessmentReason.NO_ADVERSE_AGGREGATE_EVIDENCE
+    assert assessment.aggregate_strength is AggregateEvidenceStrength.SUFFICIENT
+    assert assessment.aggregate_effect is AggregateSentimentEffect.POSITIVE_CONTEXT
+
+
+@pytest.mark.asyncio
+async def test_stale_aggregate_is_refreshed_again_without_expanding_candidate_scope(
+    db_session,
+) -> None:
+    portfolio = await ResearchPortfolioService(db_session).initialize(
+        starting_cash=Decimal("100000")
+    )
+    aggregate = AggregateProvider(observed_at=datetime.now(UTC) - timedelta(hours=25))
+    service = NewsService(
+        db_session,
+        Provider(),
+        CountingClassifier(),
+        aggregate,
+        classification_delay_seconds=0,
+    )
+
+    first = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+    second = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+
+    assert aggregate.batches == [("AAA",), ("AAA",)]
+    assert first.aggregate_requested == ("AAA",)
+    assert second.aggregate_requested == ("AAA",)
+    assert dict(second.coverage)["AAA"] is NewsCoverage.STALE
+
+
+@pytest.mark.asyncio
 async def test_adverse_aggregate_targets_only_current_articles(db_session) -> None:
     portfolio = await ResearchPortfolioService(db_session).initialize(
         starting_cash=Decimal("100000")
@@ -231,6 +343,106 @@ async def test_adverse_aggregate_targets_only_current_articles(db_session) -> No
 
     assert result.targeted_classification_attempts == 1
     assert classifier.headlines == ["AAA routine product update"]
+    assert result.attributable_requested == ("AAA",)
+    assessment = await NewsService(
+        db_session,
+        Provider(),
+        classifier,
+        aggregate,
+        classification_delay_seconds=0,
+    ).assess(portfolio.id, "AAA", as_of=datetime.now(UTC))
+    assert assessment.targeted_review_required is True
+    assert assessment.effect is NewsEffect.NO_EFFECT
+    assert assessment.reason_code is NewsAssessmentReason.NO_ADVERSE_ATTRIBUTABLE_EVIDENCE
+
+
+@pytest.mark.asyncio
+async def test_weak_aggregate_remains_explicit_and_uses_bounded_attributable_review(
+    db_session,
+) -> None:
+    portfolio = await ResearchPortfolioService(db_session).initialize(
+        starting_cash=Decimal("100000")
+    )
+    aggregate = AggregateProvider(mentions=2, source_count=1)
+    provider = Provider()
+    classifier = CountingClassifier()
+    service = NewsService(
+        db_session,
+        provider,
+        classifier,
+        aggregate,
+        classification_delay_seconds=0,
+    )
+
+    result = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+    assessment = await service.assess(portfolio.id, "AAA", as_of=datetime.now(UTC))
+
+    assert provider.calls == ["AAA"]
+    assert result.targeted_classification_attempts == 1
+    assert assessment.aggregate_strength is AggregateEvidenceStrength.WEAK_EVIDENCE
+    assert assessment.aggregate_effect is AggregateSentimentEffect.MIXED_OR_NEUTRAL
+    assert assessment.reason_code is NewsAssessmentReason.NO_ADVERSE_ATTRIBUTABLE_EVIDENCE
+    assert assessment.effect is NewsEffect.NO_EFFECT
+
+
+@pytest.mark.asyncio
+async def test_missing_aggregate_is_unavailable_not_bearish_and_skips_deep_providers(
+    db_session,
+) -> None:
+    portfolio = await ResearchPortfolioService(db_session).initialize(
+        starting_cash=Decimal("100000")
+    )
+    provider = Provider()
+    classifier = CountingClassifier()
+    service = NewsService(
+        db_session,
+        provider,
+        classifier,
+        MissingAggregateProvider(),
+        classification_delay_seconds=0,
+    )
+
+    result = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+    assessment = await service.assess(portfolio.id, "AAA", as_of=datetime.now(UTC))
+
+    assert provider.calls == []
+    assert classifier.headlines == []
+    assert result.aggregate_missing == ("AAA",)
+    assert assessment.reason_code is NewsAssessmentReason.NEWS_AGGREGATE_UNAVAILABLE
+    assert assessment.effect is NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_gemini_failure_only_blocks_an_aggregate_targeted_review(db_session) -> None:
+    portfolio = await ResearchPortfolioService(db_session).initialize(
+        starting_cash=Decimal("100000")
+    )
+    service = NewsService(
+        db_session,
+        Provider(),
+        RateLimitedClassifier(),
+        AggregateProvider(score="-0.6", bearish="80"),
+        classification_delay_seconds=0,
+    )
+
+    result = await service.refresh_portfolio(
+        portfolio.id,
+        scope=NewsRefreshScope.CANDIDATES,
+        requested_tickers=("AAA",),
+    )
+    assessment = await service.assess(portfolio.id, "AAA", as_of=datetime.now(UTC))
+
+    assert result.targeted_classification_attempts == 1
+    assert assessment.reason_code is NewsAssessmentReason.GEMINI_REQUIRED_BUT_UNAVAILABLE
+    assert assessment.effect is NewsEffect.NEWS_ASSESSMENT_PARTIAL
 
 
 @pytest.mark.asyncio

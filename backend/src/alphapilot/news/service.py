@@ -24,6 +24,7 @@ from alphapilot.database.models.research_portfolio import ResearchPosition, Rese
 from alphapilot.news.classifier import NewsClassifierProvider
 from alphapilot.news.external_sentiment import (
     AdanosNewsSentimentProvider,
+    AggregateEvidenceStrength,
     AggregateSentimentAssessment,
     AggregateSentimentEffect,
     ExternalNewsSentimentProvider,
@@ -79,9 +80,12 @@ class NewsRefreshResult:
     coverage: tuple[tuple[str, NewsCoverage], ...] = ()
     aggregate_requested: tuple[str, ...] = ()
     aggregate_returned: tuple[str, ...] = ()
+    aggregate_reused: tuple[str, ...] = ()
     aggregate_missing: tuple[str, ...] = ()
     aggregate_api_calls: int = 0
     aggregate_observations_persisted: int = 0
+    attributable_requested: tuple[str, ...] = ()
+    attributable_api_calls: int = 0
     targeted_classification_attempts: int = 0
 
 
@@ -151,6 +155,7 @@ class NewsService:
         aggregate_snapshots: dict[str, ExternalNewsSentimentSnapshot] = {}
         aggregate_requested: list[str] = []
         aggregate_returned: list[str] = []
+        aggregate_reused: list[str] = []
         aggregate_missing: list[str] = []
         aggregate_api_calls = aggregate_persisted = 0
         if self.sentiment_provider is not None:
@@ -158,6 +163,7 @@ class NewsService:
                 aggregate_snapshots,
                 aggregate_requested,
                 aggregate_returned,
+                aggregate_reused,
                 aggregate_missing,
                 aggregate_api_calls,
                 aggregate_persisted,
@@ -174,9 +180,59 @@ class NewsService:
         provider_failures: list[str] = []
         classification_rate_limited = False
         attempts = 0
+        attributable_requested: list[str] = []
         coverage_results: list[tuple[str, NewsCoverage]] = []
         for ticker in tickers:
             attempted_at = datetime.now(UTC)
+            aggregate = assess_external_sentiment(
+                aggregate_snapshots.get(ticker), as_of=refreshed_at
+            )
+            if self.sentiment_provider is not None and scope is NewsRefreshScope.CANDIDATES:
+                if aggregate.strength in {
+                    AggregateEvidenceStrength.UNAVAILABLE,
+                    AggregateEvidenceStrength.STALE,
+                }:
+                    status = (
+                        NewsCoverage.STALE
+                        if aggregate.strength is AggregateEvidenceStrength.STALE
+                        else NewsCoverage.UNAVAILABLE
+                    )
+                    self.session.add(
+                        self._coverage_record(
+                            portfolio_id=portfolio_id,
+                            ticker=ticker,
+                            scope=scope,
+                            window_start=start,
+                            window_end=refreshed_at.date(),
+                            attempted_at=attempted_at,
+                            status=status,
+                            provider_succeeded=False,
+                            provider="ADANOS",
+                            failure_code="NEWS_AGGREGATE_UNAVAILABLE",
+                        )
+                    )
+                    coverage_results.append((ticker, status))
+                    continue
+                if (
+                    aggregate.strength is AggregateEvidenceStrength.SUFFICIENT
+                    and aggregate.effect is not AggregateSentimentEffect.TARGETED_NEWS_REVIEW
+                ):
+                    self.session.add(
+                        self._coverage_record(
+                            portfolio_id=portfolio_id,
+                            ticker=ticker,
+                            scope=scope,
+                            window_start=start,
+                            window_end=refreshed_at.date(),
+                            attempted_at=attempted_at,
+                            status=NewsCoverage.CURRENT,
+                            provider_succeeded=True,
+                            provider="ADANOS",
+                        )
+                    )
+                    coverage_results.append((ticker, NewsCoverage.CURRENT))
+                    continue
+            attributable_requested.append(ticker)
             try:
                 articles = await self.provider.get_company_news(ticker, start, refreshed_at.date())
             except Exception:  # provider failures are isolated; secrets/errors are not exposed
@@ -206,21 +262,22 @@ class NewsService:
                     duplicates += 1
                 else:
                     inserted += 1
-            pending = []
+            required: list[tuple[NewsArticle, NormalizedNewsArticle]] = []
             for article, normalized in sorted(
                 persisted,
                 key=lambda item: (item[0].published_at, str(item[0].id)),
                 reverse=True,
             ):
-                if await self._has_current_classification(article.id):
-                    continue
                 if self.sentiment_provider is not None and not self._needs_deep_classification(
-                    normalized,
-                    assess_external_sentiment(aggregate_snapshots.get(ticker), as_of=refreshed_at),
-                    as_of=refreshed_at,
+                    normalized, aggregate, as_of=refreshed_at
                 ):
                     continue
-                pending.append((article, normalized))
+                required.append((article, normalized))
+            pending = [
+                (article, normalized)
+                for article, normalized in required
+                if not await self._has_current_classification(article.id)
+            ]
             ticker_rate_limited = classification_rate_limited
             retry_after_seconds: int | None = None
             for article, normalized in pending:
@@ -265,7 +322,7 @@ class NewsService:
                     retry_after_seconds = attempt.retry_after_seconds
             classified_count = 0
             unclassified_count = 0
-            for article, _ in persisted:
+            for article, _ in required:
                 if await self._has_current_classification(article.id):
                     classified_count += 1
                 else:
@@ -313,9 +370,12 @@ class NewsService:
             coverage=tuple(coverage_results),
             aggregate_requested=tuple(aggregate_requested),
             aggregate_returned=tuple(aggregate_returned),
+            aggregate_reused=tuple(aggregate_reused),
             aggregate_missing=tuple(aggregate_missing),
             aggregate_api_calls=aggregate_api_calls,
             aggregate_observations_persisted=aggregate_persisted,
+            attributable_requested=tuple(attributable_requested),
+            attributable_api_calls=len(attributable_requested),
             targeted_classification_attempts=attempts,
         )
 
@@ -329,18 +389,28 @@ class NewsService:
         end: date,
         as_of: datetime,
         force: bool,
-    ) -> tuple[dict[str, ExternalNewsSentimentSnapshot], list[str], list[str], list[str], int, int]:
+    ) -> tuple[
+        dict[str, ExternalNewsSentimentSnapshot],
+        list[str],
+        list[str],
+        list[str],
+        list[str],
+        int,
+        int,
+    ]:
         snapshots: dict[str, ExternalNewsSentimentSnapshot] = {}
         to_request: list[str] = []
+        reused: list[str] = []
         for ticker in tickers:
             existing = await self.latest_sentiment_observation(portfolio_id, ticker, as_of=as_of)
             if existing is not None and not force:
                 snapshot = self.observation_snapshot(existing)
+                snapshots[ticker] = snapshot
                 if (
                     assess_external_sentiment(snapshot, as_of=as_of).effect
                     is not AggregateSentimentEffect.UNAVAILABLE
                 ):
-                    snapshots[ticker] = snapshot
+                    reused.append(ticker)
                     continue
             to_request.append(ticker)
         returned: list[str] = []
@@ -380,7 +450,7 @@ class NewsService:
                 snapshots[snapshot.ticker] = snapshot
                 returned.append(snapshot.ticker)
                 persisted += 1
-        return snapshots, to_request, returned, missing, calls, persisted
+        return snapshots, to_request, returned, reused, missing, calls, persisted
 
     @staticmethod
     def _needs_deep_classification(
@@ -394,7 +464,10 @@ class NewsService:
             published = published.replace(tzinfo=UTC)
         if as_of - published > timedelta(days=NEWS_WINDOW_DAYS):
             return False
-        if aggregate.effect is AggregateSentimentEffect.TARGETED_NEWS_REVIEW:
+        if (
+            aggregate.effect is AggregateSentimentEffect.TARGETED_NEWS_REVIEW
+            or aggregate.strength is AggregateEvidenceStrength.WEAK_EVIDENCE
+        ):
             return True
         text = f"{article.headline} {article.summary or ''}".casefold()
         return any(
@@ -508,11 +581,12 @@ class NewsService:
         unclassified_articles: int = 0,
         failure_code: str | None = None,
         retry_after_seconds: int | None = None,
+        provider: str = "FINNHUB",
     ) -> NewsRefreshCoverage:
         return NewsRefreshCoverage(
             portfolio_id=portfolio_id,
             ticker=ticker,
-            provider="FINNHUB",
+            provider=provider,
             refresh_scope=scope.value,
             window_start=window_start,
             window_end=window_end,
@@ -625,11 +699,24 @@ class NewsService:
                 )
             )
         coverage = await self.coverage_state(portfolio_id, ticker, as_of=as_of)
+        coverage_record = await self.latest_coverage_record(portfolio_id, ticker, as_of=as_of)
+        aggregate = None
+        if self.sentiment_provider is not None:
+            observation = await self.latest_sentiment_observation(portfolio_id, ticker, as_of=as_of)
+            aggregate = assess_external_sentiment(
+                self.observation_snapshot(observation) if observation is not None else None,
+                as_of=as_of,
+                fresh_hours=self.coverage_fresh_hours,
+            )
         return assess_news(
             ticker=ticker.upper(),
             as_of=as_of,
             evidence=tuple(evidence),
             coverage=coverage,
+            aggregate=aggregate,
+            attributable_articles_received=(
+                coverage_record.articles_received if coverage_record is not None else None
+            ),
         )
 
     async def coverage_state(

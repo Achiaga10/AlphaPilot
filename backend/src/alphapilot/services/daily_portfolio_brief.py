@@ -23,6 +23,7 @@ from alphapilot.portfolio.daily_brief import (
     DailyBriefWorkflowStatus,
     DailyPortfolioBrief,
     DailyPortfolioBriefCore,
+    DeferredOpportunityGroup,
 )
 from alphapilot.portfolio.decisions import CurrentPortfolioState, PortfolioStatePosition
 from alphapilot.portfolio.execution_readiness import classify_new_buy
@@ -342,6 +343,7 @@ class DailyPortfolioBriefService:
                 state=state,
                 requested_as_of_date=effective_day,
             )
+            excluded_tickers = await self.portfolios.excluded_tickers(core.portfolio_id)
             analysis_day = snapshot.analysis_as_of_date
             for profile in list_strategy_profiles():
                 result = await self.orchestrator.build_plan(
@@ -356,6 +358,7 @@ class DailyPortfolioBriefService:
                     micho_entry_mode=profile.micho_entry_mode or MichoEntryMode.BOTH,
                     evaluate_existing_position_exits=False,
                     market_snapshot=snapshot,
+                    excluded_tickers=excluded_tickers,
                 )
                 plan_id = self._plan_id(
                     core.portfolio_id,
@@ -382,8 +385,14 @@ class DailyPortfolioBriefService:
                     entry_blocked = decision.reason.value in {
                         "ENTRY_TOO_EXTENDED_ABOVE_EMA20",
                         "EMA20_ENTRY_REVALIDATION_UNAVAILABLE",
+                        "USER_EXCLUDED_FROM_RECOMMENDATIONS",
                     }
-                    if self.news is not None and not entry_blocked:
+                    buy_news_eligible = (
+                        not entry_blocked
+                        and decision.decision.value == "BUY"
+                        and decision.execution_readiness.value == "ACTIONABLE"
+                    )
+                    if self.news is not None and buy_news_eligible:
                         assessment = await self.news.assess(
                             core.portfolio_id,
                             decision.ticker,
@@ -399,7 +408,7 @@ class DailyPortfolioBriefService:
                             news_policy_version=assessment.policy_version,
                             supporting_news_article_ids=assessment.supporting_article_ids,
                         )
-                        if not entry_blocked and assessment.effect in {
+                        if assessment.effect in {
                             NewsEffect.BUY_BLOCKED,
                             NewsEffect.EXIT_REQUIRED,
                             NewsEffect.NEWS_ASSESSMENT_PARTIAL,
@@ -419,6 +428,12 @@ class DailyPortfolioBriefService:
                                 ),
                                 final_decision="DO_NOT_BUY",
                                 workflow_status="NEWS_BLOCKED",
+                                deferred_group=(
+                                    DeferredOpportunityGroup.NEWS_REVIEW_REQUIRED
+                                    if assessment.effect
+                                    in {NewsEffect.BUY_BLOCKED, NewsEffect.EXIT_REQUIRED}
+                                    else DeferredOpportunityGroup.NEWS_DATA_UNAVAILABLE
+                                ),
                             )
                     if profile.profile_id == "ema20-pullback-v1" and not entry_blocked:
                         readiness_value, readiness_reason = classify_new_buy(None)
@@ -436,6 +451,7 @@ class DailyPortfolioBriefService:
                             replace(
                                 opportunity,
                                 workflow_status="PORTFOLIO_CONSTRAINT_BLOCKED",
+                                deferred_group=self._deferred_group(opportunity.decision_reason),
                             )
                         )
                     elif decision.execution_readiness.value == "ACTIONABLE":
@@ -448,7 +464,12 @@ class DailyPortfolioBriefService:
         deferred = self._ordered(deferred)
         if core.workflow_status != DailyBriefWorkflowStatus.READY_FOR_REVIEW:
             deferred.extend(
-                replace(item, workflow_status=core.workflow_status.value) for item in actionable
+                replace(
+                    item,
+                    workflow_status=core.workflow_status.value,
+                    deferred_group=DeferredOpportunityGroup.PORTFOLIO_CASH_CONSTRAINT,
+                )
+                for item in actionable
             )
             actionable.clear()
         research_total = len(research_only)
@@ -570,7 +591,32 @@ class DailyPortfolioBriefService:
             decision.action_id,
             "READY_FOR_REVIEW",
             entry_safety=decision.entry_safety,
+            deferred_group=DailyPortfolioBriefService._deferred_group(decision.reason.value),
         )
+
+    @staticmethod
+    def _deferred_group(reason: str) -> DeferredOpportunityGroup:
+        if reason == "ENTRY_TOO_EXTENDED_ABOVE_EMA20":
+            return DeferredOpportunityGroup.ENTRY_TOO_EXTENDED
+        if reason == "USER_EXCLUDED_FROM_RECOMMENDATIONS":
+            return DeferredOpportunityGroup.USER_EXCLUDED
+        if reason in {"NEWS_RISK_BLOCK"}:
+            return DeferredOpportunityGroup.NEWS_REVIEW_REQUIRED
+        if reason in {"NEWS_ASSESSMENT_UNAVAILABLE"}:
+            return DeferredOpportunityGroup.NEWS_DATA_UNAVAILABLE
+        if reason in {
+            "MAX_POSITIONS",
+            "INSUFFICIENT_CASH",
+            "CASH_RESERVE",
+            "MAX_POSITION_WEIGHT",
+            "PORTFOLIO_RISK_LIMIT",
+            "SECTOR_LIMIT",
+            "INSUFFICIENT_ALLOCATION",
+            "WAITING_FOR_REQUIRED_EXITS",
+            "NEW_ENTRIES_BLOCKED",
+        }:
+            return DeferredOpportunityGroup.PORTFOLIO_CASH_CONSTRAINT
+        return DeferredOpportunityGroup.OTHER
 
     @staticmethod
     def _ordered(items: list[DailyBriefOpportunity]) -> list[DailyBriefOpportunity]:

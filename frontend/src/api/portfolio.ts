@@ -32,6 +32,8 @@ import type {
   NewsRefreshResult,
   NewsRefreshRequest,
   ExternalNewsSentiment,
+  PortfolioTickerPreference,
+  PortfolioTickerPreferenceMutation,
 } from '../types/portfolio'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -56,12 +58,22 @@ function isPortfolioPlan(value: unknown): value is PortfolioPlan {
   return (
     isObject(value.portfolio) &&
     Array.isArray(value.decisions) &&
+    value.decisions.every((decision) => (
+      isObject(decision) &&
+      typeof decision.final_action === 'string' &&
+      typeof decision.is_final_actionable === 'boolean' &&
+      (typeof decision.terminal_reason === 'string' || decision.terminal_reason === null)
+    )) &&
     Array.isArray(value.candidate_statuses) &&
     (typeof value.evaluation_target_ticker === 'string' || value.evaluation_target_ticker === null) &&
     isObject(value.readiness) &&
+    isObject(value.readiness.buy_funnel) && Array.isArray(value.readiness.buy_funnel.groups) &&
     typeof value.plan_id === 'string' &&
     typeof value.portfolio_id === 'string' &&
     typeof value.portfolio_revision === 'number' &&
+    typeof value.generated_at === 'string' &&
+    isObject(value.news_enrichment) &&
+    Array.isArray(value.news_enrichment.candidate_shortlist) &&
     typeof value.requested_as_of_date === 'string' &&
     typeof value.analysis_as_of_date === 'string' &&
     value.strategy === value.strategy_profile.strategy &&
@@ -137,6 +149,19 @@ const isResearchPortfolio = (value: unknown): value is ResearchPortfolio =>
 const isNullableResearchPortfolio = (value: unknown): value is ResearchPortfolio | null =>
   value === null || isResearchPortfolio(value)
 
+const isTickerPreference = (value: unknown): value is PortfolioTickerPreference =>
+  isObject(value) && typeof value.portfolio_id === 'string' &&
+  typeof value.company_id === 'string' && typeof value.ticker === 'string' &&
+  (value.recommendation_status === 'ELIGIBLE' || value.recommendation_status === 'USER_EXCLUDED') &&
+  typeof value.updated_at === 'string'
+
+const isTickerPreferences = (value: unknown): value is PortfolioTickerPreference[] =>
+  Array.isArray(value) && value.every(isTickerPreference)
+
+const isTickerPreferenceMutation = (value: unknown): value is PortfolioTickerPreferenceMutation =>
+  isObject(value) && isTickerPreference(value.preference) &&
+  typeof value.portfolio_revision === 'number'
+
 const isDailyPortfolioBrief = (value: unknown): value is DailyPortfolioBrief =>
   isObject(value) && typeof value.portfolio_id === 'string' &&
   typeof value.portfolio_revision === 'number' && isObject(value.data_status) &&
@@ -184,8 +209,10 @@ const isNewsRefresh = (value: unknown): value is NewsRefreshResult =>
   Array.isArray(value.provider_failures) && typeof value.refreshed_at === 'string' &&
   typeof value.scope === 'string' && Array.isArray(value.coverage) &&
   Array.isArray(value.aggregate_requested) && Array.isArray(value.aggregate_returned) &&
+  Array.isArray(value.aggregate_reused) &&
   Array.isArray(value.aggregate_missing) && typeof value.aggregate_api_calls === 'number' &&
   typeof value.aggregate_observations_persisted === 'number' &&
+  Array.isArray(value.attributable_requested) && typeof value.attributable_api_calls === 'number' &&
   typeof value.targeted_classification_attempts === 'number'
 
 const isExternalNewsSentiments = (value: unknown): value is ExternalNewsSentiment[] =>
@@ -332,6 +359,18 @@ export function initializeResearchPortfolio(
 
 export function getPositionMonitoring(portfolioId: string, signal?: AbortSignal): Promise<PositionMonitoring[]> {
   return requestJson(`/api/v1/portfolio/${portfolioId}/monitoring`, { signal }, isMonitoring)
+}
+
+export function getExcludedTickers(portfolioId: string, signal?: AbortSignal): Promise<PortfolioTickerPreference[]> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/excluded-tickers`, { signal }, isTickerPreferences)
+}
+
+export function excludeTicker(portfolioId: string, ticker: string, expectedRevision: number, reason?: string): Promise<PortfolioTickerPreferenceMutation> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/excluded-tickers/${encodeURIComponent(ticker)}`, { method: 'PUT', body: JSON.stringify({ expected_revision: expectedRevision, reason: reason || null }) }, isTickerPreferenceMutation)
+}
+
+export function restoreTicker(portfolioId: string, ticker: string, expectedRevision: number): Promise<PortfolioTickerPreferenceMutation> {
+  return requestJson(`/api/v1/portfolio/${portfolioId}/excluded-tickers/${encodeURIComponent(ticker)}/restore`, { method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }) }, isTickerPreferenceMutation)
 }
 
 export function adjustResearchCash(portfolioId: string, request: CashAdjustmentRequest): Promise<ResearchPortfolio> {

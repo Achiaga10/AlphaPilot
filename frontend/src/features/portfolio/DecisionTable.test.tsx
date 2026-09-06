@@ -23,6 +23,10 @@ test('renders an extended EMA entry as blocked using backend facts', async () =>
     ...planFixture.decisions[0]!,
     decision: 'SKIP' as const,
     reason: 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' as const,
+    allocation_reason: 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' as const,
+    terminal_reason: 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' as const,
+    final_action: 'NOT_ACTIONABLE' as const,
+    is_final_actionable: false,
     entry_safety: {
       ...planFixture.decisions[0]!.entry_safety!,
       entry_price: '180',
@@ -53,8 +57,11 @@ test('shows the preserved technical, news, and final decision stack', async () =
     ...planFixture.decisions[0]!,
     base_decision: 'BUY' as const,
     decision: 'SKIP' as const,
+    allocation_reason: 'BUY_APPROVED' as const,
+    terminal_reason: 'NEWS_RISK_BLOCK' as const,
     news_effect: 'BUY_BLOCKED',
-    final_action: 'DO_NOT_BUY',
+    final_action: 'NOT_ACTIONABLE' as const,
+    is_final_actionable: false,
     news_reason: 'Fresh high-severity adverse guidance',
     news_policy_version: 'news-decision-overlay-v1',
     supporting_news_article_ids: ['article-1'],
@@ -63,8 +70,57 @@ test('shows the preserved technical, news, and final decision stack', async () =
 
   await user.click(screen.getByText('Decision details'))
 
-  expect(screen.getByText('Base technical decision')).toBeInTheDocument()
+  expect(screen.getByText('Portfolio candidate decision')).toBeInTheDocument()
   expect(screen.getByText('BUY_BLOCKED')).toBeInTheDocument()
-  expect(screen.getByText('DO_NOT_BUY')).toBeInTheDocument()
+  expect(screen.getAllByText(/NOT ACTIONABLE/)).not.toHaveLength(0)
+  expect(screen.queryByText('Buy approved')).not.toBeInTheDocument()
   expect(screen.getByText('article-1')).toBeInTheDocument()
+})
+
+test('allocation BUY without loss control is visibly non-actionable and cannot be applied', () => {
+  const decision = {
+    ...planFixture.decisions[0]!,
+    allocation_reason: 'BUY_APPROVED' as const,
+    terminal_reason: 'LOSS_CONTROL_UNAVAILABLE' as const,
+    final_action: 'NOT_ACTIONABLE' as const,
+    execution_readiness: 'RESEARCH_ONLY' as const,
+    execution_readiness_reason: 'NO_APPROVED_LOSS_CONTROL_POLICY' as const,
+    loss_control_active: false,
+    is_final_actionable: false,
+  }
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" canApplyDecisions />)
+
+  expect(screen.getAllByText(/NOT ACTIONABLE/)).not.toHaveLength(0)
+  expect(screen.getAllByText('Candidate allocation')).toHaveLength(2)
+  expect(screen.getByText('Loss control unavailable')).toBeInTheDocument()
+  expect(screen.getByText('LOSS CONTROL')).toBeInTheDocument()
+  expect(screen.getAllByText('No approved numeric loss-control policy')).toHaveLength(2)
+  expect(screen.queryByText('Buy approved')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Review Add' })).not.toBeInTheDocument()
+})
+
+test('hard-gated BUY candidates show their terminal blocker instead of allocation approval', () => {
+  const blockers = [
+    'ENTRY_TOO_EXTENDED_ABOVE_EMA20',
+    'NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE',
+    'USER_EXCLUDED_FROM_RECOMMENDATIONS',
+  ] as const
+  const decisions = blockers.map((terminalReason, index) => ({
+    ...planFixture.decisions[0]!,
+    ticker: `BLOCK${index}`,
+    decision: 'SKIP' as const,
+    reason: terminalReason,
+    allocation_reason: 'BUY_APPROVED' as const,
+    terminal_reason: terminalReason,
+    final_action: 'NOT_ACTIONABLE' as const,
+    is_final_actionable: false,
+  }))
+
+  render(<DecisionTable decisions={decisions} sizingPolicy="equal-slot" canApplyDecisions />)
+
+  expect(screen.queryByText('Buy approved')).not.toBeInTheDocument()
+  expect(screen.getByText('Entry too extended above EMA20')).toBeInTheDocument()
+  expect(screen.getByText('Adverse News blocked BUY')).toBeInTheDocument()
+  expect(screen.getByText('Excluded by you')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Review Add' })).not.toBeInTheDocument()
 })

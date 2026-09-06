@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -10,6 +10,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.database.models.research_portfolio import (
+    PortfolioRecommendationStatus,
+    PortfolioTickerPreference,
     ResearchPortfolio,
     ResearchPosition,
     ResearchPositionProvenance,
@@ -112,6 +114,17 @@ class ResearchPortfolioValuation:
     positions: tuple[PositionValuation, ...]
 
 
+@dataclass(slots=True, frozen=True)
+class PortfolioTickerPreferenceView:
+    portfolio_id: UUID
+    company_id: UUID
+    ticker: str
+    recommendation_status: PortfolioRecommendationStatus
+    reason: str | None
+    excluded_at: datetime | None
+    updated_at: datetime
+
+
 class ResearchPortfolioService:
     def __init__(
         self,
@@ -187,6 +200,77 @@ class ResearchPortfolioService:
 
     async def current(self) -> ResearchPortfolio | None:
         return await self.portfolios.get_current()
+
+    async def list_ticker_preferences(
+        self, portfolio_id: UUID, *, excluded_only: bool = False
+    ) -> tuple[PortfolioTickerPreferenceView, ...]:
+        if await self.portfolios.get(portfolio_id) is None:
+            raise ValueError("Research portfolio not found")
+        rows = await self.portfolios.list_ticker_preferences(
+            portfolio_id, excluded_only=excluded_only
+        )
+        return tuple(self._preference_view(item) for item in rows)
+
+    async def excluded_tickers(self, portfolio_id: UUID) -> frozenset[str]:
+        preferences = await self.list_ticker_preferences(portfolio_id, excluded_only=True)
+        return frozenset(item.ticker.upper() for item in preferences)
+
+    async def set_ticker_preference(
+        self,
+        *,
+        portfolio_id: UUID,
+        ticker: str,
+        status: PortfolioRecommendationStatus,
+        expected_revision: int,
+        reason: str | None = None,
+    ) -> tuple[PortfolioTickerPreferenceView, int]:
+        portfolio = await self._locked(portfolio_id, expected_revision)
+        normalized = ticker.strip().upper()
+        company = await self.companies.get_by_ticker(normalized)
+        if company is None:
+            raise ValueError(f"Company {normalized} not found")
+        preference = await self.portfolios.get_ticker_preference(
+            portfolio_id, company.id, for_update=True
+        )
+        now = datetime.now(UTC)
+        normalized_reason = reason.strip() if reason and reason.strip() else None
+        if preference is None:
+            preference = PortfolioTickerPreference(
+                portfolio_id=portfolio_id,
+                company_id=company.id,
+                ticker=company.ticker,
+                recommendation_status=status.value,
+                reason=normalized_reason
+                if status == PortfolioRecommendationStatus.USER_EXCLUDED
+                else None,
+                excluded_at=now if status == PortfolioRecommendationStatus.USER_EXCLUDED else None,
+            )
+            self.portfolios.add(preference)
+        else:
+            preference.ticker = company.ticker
+            preference.recommendation_status = status.value
+            preference.reason = (
+                normalized_reason if status == PortfolioRecommendationStatus.USER_EXCLUDED else None
+            )
+            preference.excluded_at = (
+                now if status == PortfolioRecommendationStatus.USER_EXCLUDED else None
+            )
+        portfolio.revision += 1
+        await self.session.commit()
+        await self.session.refresh(preference)
+        return self._preference_view(preference), portfolio.revision
+
+    @staticmethod
+    def _preference_view(value: PortfolioTickerPreference) -> PortfolioTickerPreferenceView:
+        return PortfolioTickerPreferenceView(
+            portfolio_id=value.portfolio_id,
+            company_id=value.company_id,
+            ticker=value.ticker,
+            recommendation_status=PortfolioRecommendationStatus(value.recommendation_status),
+            reason=value.reason,
+            excluded_at=value.excluded_at,
+            updated_at=value.updated_at,
+        )
 
     async def value(self, portfolio_id: UUID) -> ResearchPortfolioValuation:
         portfolio = await self.portfolios.get(portfolio_id)

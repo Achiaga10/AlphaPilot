@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -20,6 +20,7 @@ from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.portfolio.decisions import (
     CurrentPortfolioState,
     PortfolioCandidate,
+    PortfolioDecision,
     PortfolioDecisionEngine,
     PortfolioDecisionPlan,
 )
@@ -73,6 +74,42 @@ class PlanReadinessStatus(StrEnum):
     NO_ACTION = "NO_ACTION"
 
 
+class BuyFunnelStage(StrEnum):
+    EMA20_ENTRY_SAFETY_BLOCKED = "EMA20_ENTRY_SAFETY_BLOCKED"
+    EMA20_ENTRY_REVALIDATION_UNAVAILABLE = "EMA20_ENTRY_REVALIDATION_UNAVAILABLE"
+    USER_EXCLUDED = "USER_EXCLUDED"
+    LOSS_CONTROL_UNAVAILABLE = "LOSS_CONTROL_UNAVAILABLE"
+    PORTFOLIO_POSITION_CONSTRAINT = "PORTFOLIO_POSITION_CONSTRAINT"
+    SECTOR_CONSTRAINT = "SECTOR_CONSTRAINT"
+    CASH_ALLOCATION_CONSTRAINT = "CASH_ALLOCATION_CONSTRAINT"
+    NEWS_AGGREGATE_UNAVAILABLE = "NEWS_AGGREGATE_UNAVAILABLE"
+    NEWS_AGGREGATE_STALE = "NEWS_AGGREGATE_STALE"
+    NEWS_WEAK_EVIDENCE = "NEWS_WEAK_EVIDENCE"
+    TARGETED_NEWS_REVIEW_REQUIRED = "TARGETED_NEWS_REVIEW_REQUIRED"
+    ATTRIBUTABLE_NEWS_UNAVAILABLE = "ATTRIBUTABLE_NEWS_UNAVAILABLE"
+    GEMINI_REQUIRED_BUT_UNAVAILABLE = "GEMINI_REQUIRED_BUT_UNAVAILABLE"
+    NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE = "NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE"
+    OTHER = "OTHER"
+    FINAL_APPROVED_BUY = "FINAL_APPROVED_BUY"
+
+
+@dataclass(slots=True, frozen=True)
+class BuyFunnelGroup:
+    stage: BuyFunnelStage
+    count: int
+    tickers: tuple[str, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class BuyFunnelSummary:
+    evaluated_tickers: int = 0
+    technical_buy_signals: int = 0
+    rejected_before_news: int = 0
+    reached_news: int = 0
+    final_approved_buys: int = 0
+    groups: tuple[BuyFunnelGroup, ...] = ()
+
+
 @dataclass(slots=True, frozen=True)
 class CandidateOrchestrationStatus:
     ticker: str
@@ -108,6 +145,12 @@ class PortfolioPlanReadiness:
     actionable_decisions: int
     latest_ticker_data_date: date | None
     buy_rejections_by_reason: dict[str, int]
+    technical_buy_signals: int = 0
+    final_approved_buys: int = 0
+    final_approved_sells: int = 0
+    skipped_or_deferred: int = 0
+    user_excluded_buys: int = 0
+    buy_funnel: BuyFunnelSummary = field(default_factory=BuyFunnelSummary)
 
 
 @dataclass(slots=True, frozen=True)
@@ -237,6 +280,7 @@ class PortfolioDecisionOrchestrator:
         micho_entry_mode: MichoEntryMode = MichoEntryMode.BOTH,
         evaluate_existing_position_exits: bool = True,
         market_snapshot: PortfolioMarketSnapshot | None = None,
+        excluded_tickers: frozenset[str] = frozenset(),
     ) -> PortfolioOrchestrationResult:
         if market_snapshot is None:
             benchmark = await self.company_service.get_company(self.BENCHMARK_TICKER)
@@ -447,9 +491,13 @@ class PortfolioDecisionOrchestrator:
                         atr=atr_value,
                         sector=company.sector,
                         pre_decision_reason=(
-                            PortfolioDecisionReason.INSUFFICIENT_HISTORY
-                            if data_status == CandidateDataStatus.INSUFFICIENT_HISTORY
-                            else None
+                            PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS
+                            if portfolio_signal == Signal.BUY and ticker in excluded_tickers
+                            else (
+                                PortfolioDecisionReason.INSUFFICIENT_HISTORY
+                                if data_status == CandidateDataStatus.INSUFFICIENT_HISTORY
+                                else None
+                            )
                         ),
                         exit_context=exit_context,
                         entry_safety=entry_safety,
@@ -579,7 +627,7 @@ class PortfolioDecisionOrchestrator:
         )
 
     @staticmethod
-    def _readiness(
+    def final_readiness(
         statuses: tuple[CandidateOrchestrationStatus, ...],
         plan: PortfolioDecisionPlan,
     ) -> PortfolioPlanReadiness:
@@ -595,12 +643,8 @@ class PortfolioDecisionOrchestrator:
             + counts[CandidateDataStatus.COMPANY_NOT_FOUND]
             + insufficient
         )
-        approved_buys = sum(
-            decision.decision == PortfolioDecisionType.BUY for decision in plan.decisions
-        )
-        approved_sells = sum(
-            decision.decision == PortfolioDecisionType.SELL for decision in plan.decisions
-        )
+        approved_buys = sum(decision.is_approved_buy for decision in plan.decisions)
+        approved_sells = sum(decision.is_approved_sell for decision in plan.decisions)
         actionable = approved_buys + approved_sells
         if statuses and evaluated == 0 and data_issues > 0:
             readiness_status = PlanReadinessStatus.DATA_NOT_READY
@@ -612,10 +656,21 @@ class PortfolioDecisionOrchestrator:
             readiness_status = PlanReadinessStatus.READY
         rejection_counts: dict[str, int] = {}
         for decision in plan.decisions:
-            if decision.signal == Signal.BUY and decision.decision != PortfolioDecisionType.BUY:
-                reason = decision.reason.value
+            if decision.signal == Signal.BUY and not decision.is_final_actionable:
+                reason = (decision.terminal_reason or decision.reason).value
                 rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
         data_dates = [item.data_as_of_date for item in statuses if item.data_as_of_date is not None]
+        technical_buys = sum(item.signal == Signal.BUY for item in statuses)
+        skipped_or_deferred = sum(not item.is_final_actionable for item in plan.decisions)
+        excluded = sum(
+            item.reason == PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS
+            for item in plan.decisions
+        )
+        buy_funnel = PortfolioDecisionOrchestrator._buy_funnel(
+            statuses=tuple(statuses),
+            plan=plan,
+            evaluated_tickers=evaluated,
+        )
         return PortfolioPlanReadiness(
             status=readiness_status,
             requested_tickers=len(statuses),
@@ -625,10 +680,132 @@ class PortfolioDecisionOrchestrator:
             no_data_tickers=counts[CandidateDataStatus.NO_DATA],
             insufficient_history_tickers=insufficient,
             company_not_found_tickers=counts[CandidateDataStatus.COMPANY_NOT_FOUND],
-            buy_signals=sum(item.signal == Signal.BUY for item in statuses),
+            buy_signals=technical_buys,
             approved_buys=approved_buys,
             approved_sells=approved_sells,
             actionable_decisions=actionable,
             latest_ticker_data_date=max(data_dates) if data_dates else None,
             buy_rejections_by_reason=dict(sorted(rejection_counts.items())),
+            technical_buy_signals=technical_buys,
+            final_approved_buys=approved_buys,
+            final_approved_sells=approved_sells,
+            skipped_or_deferred=skipped_or_deferred,
+            user_excluded_buys=excluded,
+            buy_funnel=buy_funnel,
         )
+
+    @staticmethod
+    def _buy_funnel(
+        *,
+        statuses: tuple[CandidateOrchestrationStatus, ...],
+        plan: PortfolioDecisionPlan,
+        evaluated_tickers: int,
+    ) -> BuyFunnelSummary:
+        decisions = {item.ticker: item for item in plan.decisions}
+        grouped: dict[BuyFunnelStage, list[str]] = {}
+        reached_news = 0
+        for status in statuses:
+            if status.signal is not Signal.BUY:
+                continue
+            decision = decisions.get(status.ticker)
+            stage = PortfolioDecisionOrchestrator._first_buy_blocker(decision)
+            grouped.setdefault(stage, []).append(status.ticker)
+            if decision is not None and decision.news_assessment_reason is not None:
+                reached_news += 1
+        groups = tuple(
+            BuyFunnelGroup(stage, len(tickers), tuple(sorted(tickers)))
+            for stage, tickers in sorted(grouped.items(), key=lambda item: item[0].value)
+        )
+        technical = sum(item.signal is Signal.BUY for item in statuses)
+        final = len(grouped.get(BuyFunnelStage.FINAL_APPROVED_BUY, []))
+        rejected_before_news = sum(
+            group.count
+            for group in groups
+            if group.stage
+            not in {
+                BuyFunnelStage.NEWS_AGGREGATE_UNAVAILABLE,
+                BuyFunnelStage.NEWS_AGGREGATE_STALE,
+                BuyFunnelStage.NEWS_WEAK_EVIDENCE,
+                BuyFunnelStage.TARGETED_NEWS_REVIEW_REQUIRED,
+                BuyFunnelStage.ATTRIBUTABLE_NEWS_UNAVAILABLE,
+                BuyFunnelStage.GEMINI_REQUIRED_BUT_UNAVAILABLE,
+                BuyFunnelStage.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE,
+                BuyFunnelStage.FINAL_APPROVED_BUY,
+            }
+        )
+        if sum(group.count for group in groups) != technical:
+            raise AssertionError("BUY funnel must classify every technical BUY exactly once")
+        return BuyFunnelSummary(
+            evaluated_tickers=evaluated_tickers,
+            technical_buy_signals=technical,
+            rejected_before_news=rejected_before_news,
+            reached_news=reached_news,
+            final_approved_buys=final,
+            groups=groups,
+        )
+
+    @staticmethod
+    def _first_buy_blocker(decision: PortfolioDecision | None) -> BuyFunnelStage:
+        if decision is None:
+            return BuyFunnelStage.OTHER
+        reason = decision.terminal_reason or decision.reason
+        if reason is PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20:
+            return BuyFunnelStage.EMA20_ENTRY_SAFETY_BLOCKED
+        if reason is PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE:
+            return BuyFunnelStage.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
+        if reason is PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS:
+            return BuyFunnelStage.USER_EXCLUDED
+        if reason is PortfolioDecisionReason.ALREADY_HELD:
+            return BuyFunnelStage.PORTFOLIO_POSITION_CONSTRAINT
+        if decision.is_approved_buy:
+            return BuyFunnelStage.FINAL_APPROVED_BUY
+        if not decision.loss_control_active:
+            return BuyFunnelStage.LOSS_CONTROL_UNAVAILABLE
+        position_reasons = {
+            PortfolioDecisionReason.MAX_POSITIONS,
+            PortfolioDecisionReason.RANKING_NOT_SELECTED,
+        }
+        if reason in position_reasons:
+            return BuyFunnelStage.PORTFOLIO_POSITION_CONSTRAINT
+        if reason is PortfolioDecisionReason.SECTOR_LIMIT:
+            return BuyFunnelStage.SECTOR_CONSTRAINT
+        if reason in {
+            PortfolioDecisionReason.INSUFFICIENT_CASH,
+            PortfolioDecisionReason.CASH_RESERVE,
+            PortfolioDecisionReason.MAX_POSITION_WEIGHT,
+            PortfolioDecisionReason.PORTFOLIO_RISK_LIMIT,
+            PortfolioDecisionReason.INVALID_RISK_DISTANCE,
+            PortfolioDecisionReason.INSUFFICIENT_ALLOCATION,
+            PortfolioDecisionReason.INSUFFICIENT_HISTORY,
+        }:
+            return BuyFunnelStage.CASH_ALLOCATION_CONSTRAINT
+        news_stages = {
+            PortfolioDecisionReason.NEWS_AGGREGATE_UNAVAILABLE: (
+                BuyFunnelStage.NEWS_AGGREGATE_UNAVAILABLE
+            ),
+            PortfolioDecisionReason.NEWS_AGGREGATE_STALE: BuyFunnelStage.NEWS_AGGREGATE_STALE,
+            PortfolioDecisionReason.NEWS_WEAK_EVIDENCE: BuyFunnelStage.NEWS_WEAK_EVIDENCE,
+            PortfolioDecisionReason.TARGETED_NEWS_REVIEW_REQUIRED: (
+                BuyFunnelStage.TARGETED_NEWS_REVIEW_REQUIRED
+            ),
+            PortfolioDecisionReason.ATTRIBUTABLE_NEWS_UNAVAILABLE: (
+                BuyFunnelStage.ATTRIBUTABLE_NEWS_UNAVAILABLE
+            ),
+            PortfolioDecisionReason.GEMINI_REQUIRED_BUT_UNAVAILABLE: (
+                BuyFunnelStage.GEMINI_REQUIRED_BUT_UNAVAILABLE
+            ),
+            PortfolioDecisionReason.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE: (
+                BuyFunnelStage.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE
+            ),
+            PortfolioDecisionReason.NEWS_RISK_BLOCK: (
+                BuyFunnelStage.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE
+            ),
+            PortfolioDecisionReason.NEWS_ASSESSMENT_UNAVAILABLE: (
+                BuyFunnelStage.NEWS_AGGREGATE_UNAVAILABLE
+            ),
+        }
+        if reason in news_stages:
+            return news_stages[reason]
+        return BuyFunnelStage.OTHER
+
+    _readiness = final_readiness

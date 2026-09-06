@@ -131,4 +131,13 @@ async def get_portfolio_news_sentiment(
                 limitation=assessment.limitation,
             )
         )
-    return output
+    display_priority = {
+        "TARGETED_NEWS_REVIEW": 0,
+        "UNAVAILABLE": 1,
+        "MIXED_OR_NEUTRAL": 2,
+        "POSITIVE_CONTEXT": 3,
+    }
+    return sorted(
+        output,
+        key=lambda item: (display_priority.get(item.aggregate_effect, 4), item.ticker),
+    )

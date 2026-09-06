@@ -5,6 +5,11 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
+from alphapilot.news.external_sentiment import (
+    AggregateEvidenceStrength,
+    AggregateSentimentAssessment,
+    AggregateSentimentEffect,
+)
 from alphapilot.news.models import (
     ClassificationStatus,
     ClassifiedNewsEvidence,
@@ -40,6 +45,21 @@ class NewsEffect(StrEnum):
     NEWS_ASSESSMENT_UNAVAILABLE = "NEWS_ASSESSMENT_UNAVAILABLE"
 
 
+class NewsAssessmentReason(StrEnum):
+    NO_ADVERSE_AGGREGATE_EVIDENCE = "NO_ADVERSE_AGGREGATE_EVIDENCE"
+    NO_ADVERSE_ATTRIBUTABLE_EVIDENCE = "NO_ADVERSE_ATTRIBUTABLE_EVIDENCE"
+    NEWS_AGGREGATE_UNAVAILABLE = "NEWS_AGGREGATE_UNAVAILABLE"
+    NEWS_AGGREGATE_STALE = "NEWS_AGGREGATE_STALE"
+    NEWS_WEAK_EVIDENCE = "NEWS_WEAK_EVIDENCE"
+    TARGETED_NEWS_REVIEW_REQUIRED = "TARGETED_NEWS_REVIEW_REQUIRED"
+    ATTRIBUTABLE_NEWS_UNAVAILABLE = "ATTRIBUTABLE_NEWS_UNAVAILABLE"
+    GEMINI_REQUIRED_BUT_UNAVAILABLE = "GEMINI_REQUIRED_BUT_UNAVAILABLE"
+    NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE = "NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE"
+    NEWS_EXIT_CONFIRMED = "NEWS_EXIT_CONFIRMED"
+    NEWS_ATTENTION = "NEWS_ATTENTION"
+    LEGACY_CLASSIFIED_NEWS_ASSESSMENT = "LEGACY_CLASSIFIED_NEWS_ASSESSMENT"
+
+
 @dataclass(frozen=True)
 class NewsRiskAssessment:
     ticker: str
@@ -49,6 +69,10 @@ class NewsRiskAssessment:
     reason: str
     supporting_article_ids: tuple[UUID, ...] = ()
     policy_version: str = POLICY_VERSION
+    reason_code: NewsAssessmentReason = NewsAssessmentReason.LEGACY_CLASSIFIED_NEWS_ASSESSMENT
+    aggregate_strength: AggregateEvidenceStrength | None = None
+    aggregate_effect: AggregateSentimentEffect | None = None
+    targeted_review_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -169,7 +193,18 @@ def assess_news(
     as_of: datetime,
     evidence: tuple[ClassifiedNewsEvidence, ...],
     coverage: NewsCoverage,
+    aggregate: AggregateSentimentAssessment | None = None,
+    attributable_articles_received: int | None = None,
 ) -> NewsRiskAssessment:
+    if aggregate is not None:
+        return _assess_option_a_news(
+            ticker=ticker,
+            as_of=as_of,
+            evidence=evidence,
+            coverage=coverage,
+            aggregate=aggregate,
+            attributable_articles_received=attributable_articles_received,
+        )
     if coverage is not NewsCoverage.CURRENT:
         partial = coverage in {NewsCoverage.PARTIAL, NewsCoverage.RATE_LIMITED}
         return NewsRiskAssessment(
@@ -328,4 +363,173 @@ def _assessment(
         effect=effect,
         reason=evidence.output.reason,
         supporting_article_ids=(evidence.article_id,),
+        reason_code=(
+            NewsAssessmentReason.NEWS_EXIT_CONFIRMED
+            if effect is NewsEffect.EXIT_REQUIRED
+            else (
+                NewsAssessmentReason.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE
+                if effect is NewsEffect.BUY_BLOCKED
+                else NewsAssessmentReason.NEWS_ATTENTION
+            )
+        ),
+    )
+
+
+def _assess_option_a_news(
+    *,
+    ticker: str,
+    as_of: datetime,
+    evidence: tuple[ClassifiedNewsEvidence, ...],
+    coverage: NewsCoverage,
+    aggregate: AggregateSentimentAssessment,
+    attributable_articles_received: int | None,
+) -> NewsRiskAssessment:
+    if aggregate.strength is AggregateEvidenceStrength.STALE:
+        return NewsRiskAssessment(
+            ticker=ticker,
+            as_of=as_of,
+            coverage=NewsCoverage.STALE,
+            effect=NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+            reason="Current Adanos aggregate News evidence is stale",
+            reason_code=NewsAssessmentReason.NEWS_AGGREGATE_STALE,
+            aggregate_strength=aggregate.strength,
+            aggregate_effect=aggregate.effect,
+        )
+    if aggregate.strength is AggregateEvidenceStrength.UNAVAILABLE:
+        return NewsRiskAssessment(
+            ticker=ticker,
+            as_of=as_of,
+            coverage=(
+                coverage if coverage is not NewsCoverage.CURRENT else NewsCoverage.UNAVAILABLE
+            ),
+            effect=NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+            reason="Current Adanos aggregate News evidence is unavailable",
+            reason_code=NewsAssessmentReason.NEWS_AGGREGATE_UNAVAILABLE,
+            aggregate_strength=aggregate.strength,
+            aggregate_effect=aggregate.effect,
+        )
+
+    targeted = (
+        aggregate.effect is AggregateSentimentEffect.TARGETED_NEWS_REVIEW
+        or aggregate.strength is AggregateEvidenceStrength.WEAK_EVIDENCE
+    )
+    usable = [item for item in evidence if _usable(item, as_of)]
+    exits = [item for item in usable if _exit_evidence(item, as_of)]
+    if exits:
+        return _with_aggregate(
+            _assessment(_strongest(exits), ticker, as_of, NewsEffect.EXIT_REQUIRED),
+            aggregate,
+            targeted_review_required=targeted,
+        )
+    blocked = [item for item in usable if _buy_block_evidence(item)]
+    if blocked:
+        return _with_aggregate(
+            _assessment(_strongest(blocked), ticker, as_of, NewsEffect.BUY_BLOCKED),
+            aggregate,
+            targeted_review_required=targeted,
+        )
+    if not targeted:
+        return NewsRiskAssessment(
+            ticker=ticker,
+            as_of=as_of,
+            coverage=NewsCoverage.CURRENT,
+            effect=NewsEffect.NO_EFFECT,
+            reason="Current sufficient Adanos aggregate evidence has no adverse trigger",
+            reason_code=NewsAssessmentReason.NO_ADVERSE_AGGREGATE_EVIDENCE,
+            aggregate_strength=aggregate.strength,
+            aggregate_effect=aggregate.effect,
+        )
+
+    reason_code = (
+        NewsAssessmentReason.NEWS_WEAK_EVIDENCE
+        if aggregate.strength is AggregateEvidenceStrength.WEAK_EVIDENCE
+        else NewsAssessmentReason.TARGETED_NEWS_REVIEW_REQUIRED
+    )
+    if coverage is not NewsCoverage.CURRENT:
+        gemini_unavailable = coverage in {NewsCoverage.PARTIAL, NewsCoverage.RATE_LIMITED}
+        return NewsRiskAssessment(
+            ticker=ticker,
+            as_of=as_of,
+            coverage=coverage,
+            effect=(
+                NewsEffect.NEWS_ASSESSMENT_PARTIAL
+                if gemini_unavailable
+                else NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE
+            ),
+            reason=(
+                "Targeted Gemini interpretation required by the aggregate review was unavailable"
+                if gemini_unavailable
+                else (
+                    "Attributable Finnhub evidence required by the aggregate review was unavailable"
+                )
+            ),
+            reason_code=(
+                NewsAssessmentReason.GEMINI_REQUIRED_BUT_UNAVAILABLE
+                if gemini_unavailable
+                else NewsAssessmentReason.ATTRIBUTABLE_NEWS_UNAVAILABLE
+            ),
+            targeted_review_required=True,
+            aggregate_strength=aggregate.strength,
+            aggregate_effect=aggregate.effect,
+        )
+    if attributable_articles_received == 0:
+        return NewsRiskAssessment(
+            ticker=ticker,
+            as_of=as_of,
+            coverage=NewsCoverage.UNAVAILABLE,
+            effect=NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+            reason=(
+                "Aggregate review required attributable Finnhub evidence, but no articles "
+                "were returned"
+            ),
+            reason_code=NewsAssessmentReason.ATTRIBUTABLE_NEWS_UNAVAILABLE,
+            targeted_review_required=True,
+            aggregate_strength=aggregate.strength,
+            aggregate_effect=aggregate.effect,
+        )
+    attention = [item for item in usable if _attention_evidence(item)]
+    if attention:
+        return _with_aggregate(
+            _assessment(_strongest(attention), ticker, as_of, NewsEffect.ATTENTION),
+            aggregate,
+            targeted_review_required=True,
+        )
+    return NewsRiskAssessment(
+        ticker=ticker,
+        as_of=as_of,
+        coverage=NewsCoverage.CURRENT,
+        effect=NewsEffect.NO_EFFECT,
+        reason=(
+            "Targeted attributable review found no qualifying adverse News evidence"
+            if reason_code is NewsAssessmentReason.TARGETED_NEWS_REVIEW_REQUIRED
+            else (
+                "Weak aggregate evidence was reviewed without qualifying adverse attributable "
+                "evidence"
+            )
+        ),
+        reason_code=NewsAssessmentReason.NO_ADVERSE_ATTRIBUTABLE_EVIDENCE,
+        targeted_review_required=True,
+        aggregate_strength=aggregate.strength,
+        aggregate_effect=aggregate.effect,
+    )
+
+
+def _with_aggregate(
+    assessment: NewsRiskAssessment,
+    aggregate: AggregateSentimentAssessment,
+    *,
+    targeted_review_required: bool = False,
+) -> NewsRiskAssessment:
+    return NewsRiskAssessment(
+        ticker=assessment.ticker,
+        as_of=assessment.as_of,
+        coverage=assessment.coverage,
+        effect=assessment.effect,
+        reason=assessment.reason,
+        supporting_article_ids=assessment.supporting_article_ids,
+        policy_version=assessment.policy_version,
+        reason_code=assessment.reason_code,
+        aggregate_strength=aggregate.strength,
+        aggregate_effect=aggregate.effect,
+        targeted_review_required=targeted_review_required,
     )

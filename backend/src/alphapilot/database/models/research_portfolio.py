@@ -58,6 +58,11 @@ class PaperExecutionSource(StrEnum):
     ALPACA_PAPER_MANUAL = "ALPACA_PAPER_MANUAL"
 
 
+class PortfolioRecommendationStatus(StrEnum):
+    ELIGIBLE = "ELIGIBLE"
+    USER_EXCLUDED = "USER_EXCLUDED"
+
+
 class ResearchPortfolio(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "research_portfolios"
     __table_args__ = (
@@ -74,6 +79,25 @@ class ResearchPortfolio(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     revision: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
+
+
+class PortfolioTickerPreference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "portfolio_ticker_preferences"
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "company_id", name="uq_portfolio_ticker_preference"),
+        Index("ix_portfolio_ticker_preferences_status", "portfolio_id", "recommendation_status"),
+    )
+
+    portfolio_id: Mapped[UUID] = mapped_column(
+        ForeignKey("research_portfolios.id", ondelete="CASCADE"), nullable=False
+    )
+    company_id: Mapped[UUID] = mapped_column(
+        ForeignKey("companies.id", ondelete="RESTRICT"), nullable=False
+    )
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False)
+    recommendation_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    excluded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ResearchPosition(UUIDPrimaryKeyMixin, TimestampMixin, Base):

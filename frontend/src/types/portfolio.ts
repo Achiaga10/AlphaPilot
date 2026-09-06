@@ -3,6 +3,13 @@ export type SelectionPolicy = 'relative-strength-20' | 'ticker-ascending'
 export type SizingPolicy = 'equal-slot' | 'atr-risk' | 'atr-volatility-normalized'
 export type StrategySignal = 'BUY' | 'HOLD' | 'SELL'
 export type PortfolioDecisionType = 'BUY' | 'HOLD' | 'SELL' | 'SKIP'
+export type PortfolioFinalAction =
+  | 'BUY'
+  | 'SELL'
+  | 'HOLD'
+  | 'ATTENTION'
+  | 'EXIT_REQUIRED'
+  | 'NOT_ACTIONABLE'
 export type ResearchClassification = 'PROMISING_RESEARCH_BASELINE' | 'RESEARCH_ONLY'
 
 export interface StrategyProfile {
@@ -42,8 +49,18 @@ export type DecisionReason =
   | 'STALE_DATA'
   | 'ENTRY_TOO_EXTENDED_ABOVE_EMA20'
   | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
+  | 'LOSS_CONTROL_UNAVAILABLE'
+  | 'USER_EXCLUDED_FROM_RECOMMENDATIONS'
   | 'NEWS_RISK_BLOCK'
   | 'NEWS_ASSESSMENT_UNAVAILABLE'
+  | 'NEWS_AGGREGATE_UNAVAILABLE'
+  | 'NEWS_AGGREGATE_STALE'
+  | 'NEWS_WEAK_EVIDENCE'
+  | 'TARGETED_NEWS_REVIEW_REQUIRED'
+  | 'ATTRIBUTABLE_NEWS_UNAVAILABLE'
+  | 'GEMINI_REQUIRED_BUT_UNAVAILABLE'
+  | 'NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE'
+  | 'NEWS_RISK_EXIT'
   | 'NO_ACTION'
 
 export type CandidateDataStatus =
@@ -161,13 +178,20 @@ export interface PortfolioDecision {
   loss_control_broker_stop_order?: boolean
   approved_protective_stop_price?: string | null
   base_decision?: PortfolioDecisionType | null
+  allocation_reason?: DecisionReason | null
+  terminal_reason?: DecisionReason | null
   news_effect?: string
   news_coverage?: 'CURRENT' | 'STALE' | 'PARTIAL' | 'RATE_LIMITED' | 'UNAVAILABLE' | 'NEVER_REFRESHED'
-  final_action?: string | null
+  news_assessment_reason?: string | null
+  news_aggregate_strength?: string | null
+  news_aggregate_effect?: string | null
+  news_targeted_review_required?: boolean
+  final_action: PortfolioFinalAction
   news_reason?: string | null
   news_policy_version?: string | null
   supporting_news_article_ids?: string[]
   entry_safety?: Ema20EntrySafety | null
+  is_final_actionable: boolean
 }
 
 export interface Ema20EntrySafety {
@@ -236,6 +260,7 @@ export interface PortfolioPlan {
   plan_id: string
   portfolio_id: string
   portfolio_revision: number
+  generated_at: string
   portfolio: PortfolioSummary
   config: PortfolioRiskConfig
   strategy: StrategyName
@@ -248,6 +273,7 @@ export interface PortfolioPlan {
   candidate_statuses: CandidateStatus[]
   readiness: PortfolioPlanReadiness
   evaluation_target_ticker: string | null
+  news_enrichment: PortfolioNewsEnrichment
 }
 
 export type PlanReadinessStatus = 'READY' | 'PARTIAL_DATA' | 'DATA_NOT_READY' | 'NO_ACTION'
@@ -267,6 +293,73 @@ export interface PortfolioPlanReadiness {
   actionable_decisions: number
   latest_ticker_data_date: string | null
   buy_rejections_by_reason: Record<string, number>
+  technical_buy_signals: number
+  final_approved_buys: number
+  final_approved_sells: number
+  skipped_or_deferred: number
+  user_excluded_buys: number
+  buy_funnel: BuyFunnelSummary
+}
+
+export type BuyFunnelStage =
+  | 'EMA20_ENTRY_SAFETY_BLOCKED'
+  | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
+  | 'USER_EXCLUDED'
+  | 'LOSS_CONTROL_UNAVAILABLE'
+  | 'PORTFOLIO_POSITION_CONSTRAINT'
+  | 'SECTOR_CONSTRAINT'
+  | 'CASH_ALLOCATION_CONSTRAINT'
+  | 'NEWS_AGGREGATE_UNAVAILABLE'
+  | 'NEWS_AGGREGATE_STALE'
+  | 'NEWS_WEAK_EVIDENCE'
+  | 'TARGETED_NEWS_REVIEW_REQUIRED'
+  | 'ATTRIBUTABLE_NEWS_UNAVAILABLE'
+  | 'GEMINI_REQUIRED_BUT_UNAVAILABLE'
+  | 'NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE'
+  | 'OTHER'
+  | 'FINAL_APPROVED_BUY'
+
+export interface BuyFunnelGroup {
+  stage: BuyFunnelStage
+  count: number
+  tickers: string[]
+}
+
+export interface BuyFunnelSummary {
+  evaluated_tickers: number
+  technical_buy_signals: number
+  rejected_before_news: number
+  reached_news: number
+  final_approved_buys: number
+  groups: BuyFunnelGroup[]
+}
+
+export interface PortfolioNewsEnrichment {
+  candidate_shortlist: string[]
+  assessed_buy_tickers: string[]
+  aggregate_requested: string[]
+  aggregate_returned: string[]
+  aggregate_reused: string[]
+  aggregate_missing: string[]
+  aggregate_api_calls: number
+  attributable_requested: string[]
+  attributable_api_calls: number
+  targeted_classification_attempts: number
+}
+
+export interface PortfolioTickerPreference {
+  portfolio_id: string
+  company_id: string
+  ticker: string
+  recommendation_status: 'ELIGIBLE' | 'USER_EXCLUDED'
+  reason: string | null
+  excluded_at: string | null
+  updated_at: string
+}
+
+export interface PortfolioTickerPreferenceMutation {
+  preference: PortfolioTickerPreference
+  portfolio_revision: number
 }
 
 export type PlanActionApplyReason =
@@ -596,9 +689,12 @@ export interface NewsRefreshResult {
   coverage: [string, 'CURRENT' | 'STALE' | 'PARTIAL' | 'RATE_LIMITED' | 'UNAVAILABLE' | 'NEVER_REFRESHED'][]
   aggregate_requested: string[]
   aggregate_returned: string[]
+  aggregate_reused: string[]
   aggregate_missing: string[]
   aggregate_api_calls: number
   aggregate_observations_persisted: number
+  attributable_requested: string[]
+  attributable_api_calls: number
   targeted_classification_attempts: number
 }
 
@@ -705,6 +801,7 @@ export interface DailyBriefOpportunity {
   news_policy_version?: string | null
   supporting_news_article_ids?: string[]
   entry_safety?: Ema20EntrySafety | null
+  deferred_group?: 'ENTRY_TOO_EXTENDED' | 'NEWS_REVIEW_REQUIRED' | 'NEWS_DATA_UNAVAILABLE' | 'PORTFOLIO_CASH_CONSTRAINT' | 'USER_EXCLUDED' | 'OTHER'
 }
 
 export interface DailyPortfolioBrief {

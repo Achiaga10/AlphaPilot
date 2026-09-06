@@ -5,6 +5,7 @@ from alphapilot.portfolio.decisions import (
     CurrentPortfolioState,
     PortfolioCandidate,
     PortfolioDecisionEngine,
+    PortfolioFinalAction,
     PortfolioStatePosition,
 )
 from alphapilot.portfolio.execution_readiness import (
@@ -60,7 +61,8 @@ def test_plan_respects_sell_ranking_held_sector_and_risk_constraints() -> None:
     assert decisions["SELL"].decision == PortfolioDecisionType.SELL
     assert decisions["SELL"].reason == PortfolioDecisionReason.SELL_APPROVED
     assert decisions["AAA"].reason == PortfolioDecisionReason.ALREADY_HELD
-    assert decisions["TECH"].reason == PortfolioDecisionReason.SECTOR_LIMIT
+    assert decisions["TECH"].allocation_reason == PortfolioDecisionReason.SECTOR_LIMIT
+    assert decisions["TECH"].reason == PortfolioDecisionReason.LOSS_CONTROL_UNAVAILABLE
     assert decisions["NEW"].decision == PortfolioDecisionType.BUY
     assert decisions["NEW"].proposed_shares == 100
     assert decisions["NEW"].estimated_cash_outlay == Decimal("10000")
@@ -94,7 +96,7 @@ def test_missing_sector_is_unclassified_and_output_is_deterministic() -> None:
     assert first.decisions[0].sector == "Unclassified"
 
 
-def test_max_positions_and_flat_sell_have_stable_reasons() -> None:
+def test_max_positions_and_flat_sell_preserve_stable_allocation_reasons() -> None:
     positions = tuple(PortfolioStatePosition(str(index), 1, Decimal("100")) for index in range(10))
     plan = PortfolioDecisionEngine().build_plan(
         CurrentPortfolioState(cash=Decimal("10000"), positions=positions),
@@ -103,7 +105,7 @@ def test_max_positions_and_flat_sell_have_stable_reasons() -> None:
             PortfolioCandidate("FLAT", Signal.SELL, Decimal("100")),
         ),
     )
-    reasons = {item.ticker: item.reason for item in plan.decisions}
+    reasons = {item.ticker: item.allocation_reason for item in plan.decisions}
     assert reasons == {
         "BUY": PortfolioDecisionReason.MAX_POSITIONS,
         "FLAT": PortfolioDecisionReason.NO_POSITION_TO_SELL,
@@ -176,3 +178,6 @@ def test_micho_numeric_completed_close_boundary_satisfies_loss_control_readiness
     assert decision.loss_control_active
     assert not decision.loss_control_broker_stop_order
     assert decision.approved_protective_stop_price is None
+    assert decision.final_action is PortfolioFinalAction.BUY
+    assert decision.terminal_reason is PortfolioDecisionReason.BUY_APPROVED
+    assert decision.is_final_actionable

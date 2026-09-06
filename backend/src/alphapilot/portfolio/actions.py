@@ -100,6 +100,8 @@ class PortfolioPlanActionService:
         action_id = decision.action_id
         if decision.decision not in {PortfolioDecisionType.BUY, PortfolioDecisionType.SELL}:
             return self._rejected(state, decision, PlanActionApplyReason.ACTION_NOT_APPROVED)
+        if decision.decision is PortfolioDecisionType.SELL and not decision.is_approved_sell:
+            return self._rejected(state, decision, PlanActionApplyReason.ACTION_NOT_APPROVED)
         if action_id is None:
             return self._rejected(state, decision, PlanActionApplyReason.ACTION_NOT_APPROVED)
         if action_id in applied_action_ids:
@@ -131,6 +133,8 @@ class PortfolioPlanActionService:
                         decision,
                         PlanActionApplyReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE,
                     )
+            if not decision.is_approved_buy:
+                return self._rejected(state, decision, PlanActionApplyReason.ACTION_NOT_APPROVED)
             if held is not None:
                 return self._rejected(
                     state, decision, PlanActionApplyReason.POSITION_ALREADY_HELD, held

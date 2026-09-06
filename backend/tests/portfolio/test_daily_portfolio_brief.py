@@ -151,6 +151,9 @@ class FakePortfolios:
     async def value(self, _portfolio_id):
         return self.valuation
 
+    async def excluded_tickers(self, _portfolio_id):
+        return frozenset()
+
 
 class FakeIntelligence:
     def __init__(self, values):
@@ -344,6 +347,58 @@ async def test_daily_brief_preserves_ema_entry_safety_block_before_news() -> Non
     assert blocked.decision_reason == "ENTRY_TOO_EXTENDED_ABOVE_EMA20"
     assert blocked.execution_readiness == "UNAVAILABLE"
     assert blocked.execution_readiness_reason == "ENTRY_TOO_EXTENDED_ABOVE_EMA20"
+
+
+@pytest.mark.asyncio
+async def test_user_exclusion_survives_generation_and_skips_targeted_news() -> None:
+    valuation = _valuation([])
+
+    class ExcludedPortfolios(FakePortfolios):
+        async def excluded_tickers(self, _portfolio_id):
+            return frozenset({"EMA"})
+
+    class ExclusionAwareOrchestrator(FakeOrchestrator):
+        async def build_plan(self, **kwargs):
+            result = await super().build_plan(**kwargs)
+            assert kwargs["excluded_tickers"] == frozenset({"EMA"})
+            if kwargs["strategy_name"] == StrategyName.EMA20_PULLBACK:
+                decision = replace(
+                    result.plan.decisions[0],
+                    decision=PortfolioDecisionType.SKIP,
+                    reason=PortfolioDecisionReason.USER_EXCLUDED_FROM_RECOMMENDATIONS,
+                    execution_readiness=ExecutionReadiness.UNAVAILABLE,
+                    is_final_actionable=False,
+                )
+                return SimpleNamespace(
+                    plan=replace(result.plan, decisions=(decision,)),
+                    analysis_as_of_date=result.analysis_as_of_date,
+                )
+            return result
+
+    class NewsMustNotRunForExcluded:
+        async def assess(self, _portfolio_id, ticker, **_kwargs):
+            assert ticker != "EMA", "Excluded BUY must not trigger targeted News assessment"
+            return SimpleNamespace(
+                coverage=SimpleNamespace(value="CURRENT"),
+                effect=NewsEffect.NO_EFFECT,
+                reason="NO_NEWS_EFFECT",
+                policy_version="news-decision-overlay-v1",
+                supporting_article_ids=(),
+            )
+
+    service = DailyPortfolioBriefService(
+        ExcludedPortfolios(valuation),
+        FakeIntelligence({}),
+        ExclusionAwareOrchestrator(),
+        FakeFreshness(),
+        DailySchedulerStatus(enabled=False),
+        NewsMustNotRunForExcluded(),
+    )
+    opportunities = await service.build_opportunities(valuation.portfolio_id)
+    excluded = next(item for item in opportunities.deferred_opportunities if item.ticker == "EMA")
+    assert excluded.decision == "SKIP"
+    assert excluded.decision_reason == "USER_EXCLUDED_FROM_RECOMMENDATIONS"
+    assert excluded.deferred_group == "USER_EXCLUDED"
 
 
 @pytest.mark.asyncio

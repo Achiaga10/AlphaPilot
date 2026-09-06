@@ -58,9 +58,12 @@ class NewsRefreshSchema(BaseModel):
     coverage: tuple[tuple[str, NewsCoverage], ...]
     aggregate_requested: tuple[str, ...]
     aggregate_returned: tuple[str, ...]
+    aggregate_reused: tuple[str, ...]
     aggregate_missing: tuple[str, ...]
     aggregate_api_calls: int
     aggregate_observations_persisted: int
+    attributable_requested: tuple[str, ...]
+    attributable_api_calls: int
     targeted_classification_attempts: int
 
 

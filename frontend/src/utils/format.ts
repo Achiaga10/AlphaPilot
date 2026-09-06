@@ -45,6 +45,23 @@ const REASON_LABELS: Record<string, string> = {
   INSUFFICIENT_ALLOCATION: 'Allocation cannot purchase one share',
   STALE_DATA: 'Stored data is stale',
   NO_ACTION: 'No portfolio action',
+  ENTRY_TOO_EXTENDED_ABOVE_EMA20: 'Entry too extended above EMA20',
+  EMA20_ENTRY_SAFETY_BLOCKED: 'EMA20 entry safety blocked',
+  EMA20_ENTRY_REVALIDATION_UNAVAILABLE: 'EMA20 entry revalidation unavailable',
+  USER_EXCLUDED_FROM_RECOMMENDATIONS: 'Excluded by you',
+  USER_EXCLUDED: 'Excluded by you',
+  LOSS_CONTROL_UNAVAILABLE: 'Loss control unavailable',
+  PORTFOLIO_POSITION_CONSTRAINT: 'Portfolio position constraint',
+  SECTOR_CONSTRAINT: 'Sector constraint',
+  CASH_ALLOCATION_CONSTRAINT: 'Cash or allocation constraint',
+  NEWS_AGGREGATE_UNAVAILABLE: 'News aggregate unavailable',
+  NEWS_AGGREGATE_STALE: 'News aggregate stale',
+  NEWS_WEAK_EVIDENCE: 'Weak News evidence',
+  TARGETED_NEWS_REVIEW_REQUIRED: 'Targeted News review required',
+  ATTRIBUTABLE_NEWS_UNAVAILABLE: 'Attributable News unavailable',
+  GEMINI_REQUIRED_BUT_UNAVAILABLE: 'Required Gemini review unavailable',
+  NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE: 'Adverse News blocked BUY',
+  FINAL_APPROVED_BUY: 'Final actionable BUY',
 }
 
 export function humanizeReason(value: string): string {

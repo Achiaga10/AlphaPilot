@@ -59,6 +59,25 @@ def _with_current_ema_entry_safety(decision: dict) -> dict:
     return decision
 
 
+def _with_test_approved_actionability(decision: dict) -> dict:
+    decision = _with_current_ema_entry_safety(decision)
+    decision.update(
+        {
+            "execution_readiness": "ACTIONABLE",
+            "execution_readiness_reason": "LOSS_CONTROL_READY",
+            "loss_control_policy": "TEST_APPROVED_NUMERIC_BOUNDARY",
+            "loss_control_boundary_price": "95",
+            "loss_control_trigger": "TEST_COMPLETED_CLOSE_BELOW",
+            "loss_control_active": True,
+            "reason": "BUY_APPROVED",
+            "terminal_reason": "BUY_APPROVED",
+            "final_action": "BUY",
+            "is_final_actionable": True,
+        }
+    )
+    return decision
+
+
 @pytest.mark.asyncio
 async def test_risk_config_defaults(client: AsyncClient) -> None:
     response = await client.get("/api/v1/portfolio/risk-config")
@@ -174,9 +193,15 @@ async def test_decision_api_returns_ui_ready_reason_codes(client: AsyncClient) -
     assert reasons == {
         "SELL": "SELL_APPROVED",
         "AAA": "ALREADY_HELD",
-        "TECH": "SECTOR_LIMIT",
-        "NEW": "BUY_APPROVED",
+        "TECH": "LOSS_CONTROL_UNAVAILABLE",
+        "NEW": "LOSS_CONTROL_UNAVAILABLE",
     }
+    decisions = {item["ticker"]: item for item in body["decisions"]}
+    assert decisions["TECH"]["allocation_reason"] == "SECTOR_LIMIT"
+    assert decisions["NEW"]["allocation_reason"] == "BUY_APPROVED"
+    assert decisions["NEW"]["terminal_reason"] == "LOSS_CONTROL_UNAVAILABLE"
+    assert decisions["NEW"]["final_action"] == "NOT_ACTIONABLE"
+    assert decisions["NEW"]["is_final_actionable"] is False
     assert body["portfolio"]["equity"] == "100000"
     assert body["portfolio"]["cash_pct"] == "30.0"
     assert body["portfolio"]["invested_value"] == "70000"
@@ -345,7 +370,7 @@ async def test_state_summary_and_same_plan_apply_action_are_backend_owned(
             ],
         },
     )
-    decision = _with_current_ema_entry_safety(plan.json()["decisions"][0])
+    decision = _with_test_approved_actionability(plan.json()["decisions"][0])
     preview = await client.post(
         "/api/v1/portfolio/preview-action",
         json={
@@ -424,7 +449,7 @@ async def test_persistent_action_uses_id_revision_and_makes_old_revision_stale(
             json={"starting_cash": "100000", "imported_positions": []},
         )
     ).json()
-    decision = _with_current_ema_entry_safety(
+    decision = _with_test_approved_actionability(
         (
             await client.post(
                 "/api/v1/portfolio/decisions",
@@ -507,7 +532,7 @@ async def test_same_plan_applies_two_candidates_with_fresh_persistent_revision(
             },
         )
     ).json()["decisions"]
-    decisions = [_with_current_ema_entry_safety(item) for item in decisions]
+    decisions = [_with_test_approved_actionability(item) for item in decisions]
 
     def request(decision, revision: int, applied: list[str]) -> dict[str, object]:
         return {

@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { API_BASE_URL } from '../api/client'
@@ -11,8 +11,8 @@ test('dashboard renders the daily portfolio manager in priority order', async ()
   expect((await screen.findAllByText('Aug 28, 2026')).length).toBeGreaterThan(0)
   expect(screen.getByText('READY')).toBeInTheDocument()
   expect(screen.getByText('$100,000.00')).toBeInTheDocument()
-  const action = screen.getByRole('heading', { name: 'Action Required' })
-  const attention = screen.getByRole('heading', { name: 'Attention' })
+  const action = screen.getByRole('heading', { name: 'Required Exits' })
+  const attention = screen.getByRole('heading', { name: 'Needs Attention' })
   const hold = screen.getByRole('heading', { name: 'Hold / No Action' })
   expect(action.compareDocumentPosition(attention) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(attention.compareDocumentPosition(hold) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -37,18 +37,18 @@ test('News Intelligence renders persisted classification provenance and refreshe
     `${API_BASE_URL}/api/v1/portfolio/:portfolioId/news-refresh`,
     ({ params }) => {
       refreshRequests += 1
-      return HttpResponse.json({ portfolio_id: String(params.portfolioId), tickers: ['APA'], fetched: 1, inserted: 0, duplicates: 1, classified: 0, classification_failures: 0, provider_failures: [], refreshed_at: '2026-09-01T10:00:00Z', scope: 'OPEN_POSITIONS', coverage: [['APA', 'CURRENT']], aggregate_requested: ['APA'], aggregate_returned: ['APA'], aggregate_missing: [], aggregate_api_calls: 1, aggregate_observations_persisted: 1, targeted_classification_attempts: 0 })
+      return HttpResponse.json({ portfolio_id: String(params.portfolioId), tickers: ['APA'], fetched: 1, inserted: 0, duplicates: 1, classified: 0, classification_failures: 0, provider_failures: [], refreshed_at: '2026-09-01T10:00:00Z', scope: 'OPEN_POSITIONS', coverage: [['APA', 'CURRENT']], aggregate_requested: ['APA'], aggregate_returned: ['APA'], aggregate_reused: [], aggregate_missing: [], aggregate_api_calls: 1, aggregate_observations_persisted: 1, attributable_requested: ['APA'], attributable_api_calls: 1, targeted_classification_attempts: 0 })
     },
   ))
   renderApp('/')
   expect(await screen.findByRole('heading', { name: 'News Intelligence' })).toBeInTheDocument()
+  const newsSummary = await screen.findByText((_, element) => element?.tagName === 'SUMMARY' && Boolean(element.textContent?.includes('APA · POSITIVE CONTEXT')))
+  await user.click(newsSummary)
   expect(await screen.findByText('APA updates full-year guidance')).toBeInTheDocument()
-  expect(screen.getByText('NEGATIVE')).toBeInTheDocument()
-  expect(screen.getByText('HIGH severity')).toBeInTheDocument()
-  expect(screen.getByText(/Classified by GOOGLE_GEMINI/)).toBeInTheDocument()
+  expect(screen.getByText(/Gemini:/).parentElement).toHaveTextContent(/NEGATIVE · HIGH · GUIDANCE/)
   expect(screen.getByText(/cannot issue BUY or SELL/i)).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: 'External News Sentiment — Adanos' })).toBeInTheDocument()
-  expect(screen.getByText('SUFFICIENT')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Adanos aggregate context' })).toBeInTheDocument()
+  expect(screen.getByText(/SUFFICIENT/)).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Refresh open holdings' }))
   expect(refreshRequests).toBe(1)
   expect(await screen.findByText(/APA CURRENT/)).toBeInTheDocument()
@@ -68,11 +68,16 @@ test('navigation reaches every required route', async () => {
 
 test('dashboard distinguishes research-only and deferred actionable opportunities', async () => {
   renderApp('/')
-  expect(await screen.findByText('RESEARCH ONLY')).toBeInTheDocument()
+  const researchBadge = await screen.findByText('RESEARCH ONLY')
+  const researchCard = researchBadge.closest('article')
+  if (!researchCard) throw new Error('Expected the research opportunity card')
+  await userEvent.click(within(researchCard).getByText('View details'))
   expect(screen.getByText('NO_APPROVED_LOSS_CONTROL_POLICY')).toBeInTheDocument()
-  expect(screen.getByText('SMA150_COMPLETED_CLOSE_EXIT')).toBeInTheDocument()
+  const sellPolicy = screen.getByText('SMA150_COMPLETED_CLOSE_EXIT')
+  const sellCard = sellPolicy.closest('article')
+  if (!sellCard) throw new Error('Expected the required-exit card')
+  await userEvent.click(within(sellCard).getByText('View details'))
   expect(screen.getByText('COMPLETED_DAILY_CLOSE_BELOW')).toBeInTheDocument()
-  expect(screen.getAllByText('No', { selector: 'dd' }).length).toBeGreaterThan(0)
   expect(screen.getByText(/Resolve required exits before relying/)).toBeInTheDocument()
 })
 
@@ -132,7 +137,7 @@ test('core positions render while opportunity discovery loads and shortlist is b
     },
   ))
   renderApp('/')
-  expect(await screen.findByRole('heading', { name: 'Action Required' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Required Exits' })).toBeInTheDocument()
   expect(screen.getByText('SMA150_BREAKDOWN')).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: /Scanning today.s opportunities/ })).toBeInTheDocument()
   release?.()
@@ -152,7 +157,7 @@ test('opportunity failure does not erase existing position management', async ()
     () => HttpResponse.error(),
   ))
   renderApp('/')
-  expect(await screen.findByRole('heading', { name: 'Action Required' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Required Exits' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Hold / No Action' })).toBeInTheDocument()
   expect(await screen.findByRole('heading', { name: 'Positions remain current' })).toBeInTheDocument()
 })
