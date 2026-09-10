@@ -8,12 +8,17 @@ import pytest
 
 from alphapilot.api.routes.portfolio import get_daily_portfolio_brief_service
 from alphapilot.market.session import CompletedDailySessionPolicy
-from alphapilot.news.policy import NewsEffect
+from alphapilot.news.policy import NewsCoverage, NewsEffect, NewsRiskAssessment
 from alphapilot.portfolio.daily_brief import DailyBriefReadiness
-from alphapilot.portfolio.decisions import PortfolioDecision, PortfolioDecisionPlan
+from alphapilot.portfolio.decisions import (
+    PortfolioDecision,
+    PortfolioDecisionPlan,
+    PortfolioFinalAction,
+)
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
+    LossControlSource,
 )
 from alphapilot.portfolio.exit_guidance import StrategyExitContext, StrategyExitState
 from alphapilot.portfolio.sizing import PortfolioDecisionReason, PortfolioDecisionType
@@ -28,6 +33,78 @@ from alphapilot.strategy.name import StrategyName
 from alphapilot.strategy.signal import Signal
 
 DAY = date(2026, 8, 28)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("strategy", ["ema20-pullback", "micho-150"])
+@pytest.mark.parametrize("status", ["HOLD", "SELL"])
+async def test_daily_news_is_advisory_for_both_supported_strategies(strategy, status):
+    position = replace(_position("AAA"), strategy=strategy, strategy_profile_id=f"{strategy}-v1")
+    valuation = _valuation([position])
+    intel = _intelligence(position, status)
+
+    class News:
+        async def latest_sentiment_observation(self, *args, **kwargs):
+            return None
+
+        async def assess(self, portfolio_id, ticker, *, as_of):
+            return NewsRiskAssessment(
+                ticker=ticker,
+                as_of=as_of,
+                coverage=NewsCoverage.CURRENT,
+                effect=NewsEffect.EXIT_REQUIRED,
+                reason="Controlled hard event",
+            )
+
+    service = DailyPortfolioBriefService(
+        FakePortfolios(valuation),
+        FakeIntelligence({position.position_id: intel}),
+        FakeOrchestrator(),
+        FakeFreshness(),
+        DailySchedulerStatus(enabled=False),
+        news=News(),
+    )
+    result = await service.build_core(valuation.portfolio_id)
+    rows = result.required_actions + result.hold_positions
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.news_effect == "EXIT_REQUIRED"
+    assert row.news_advisory_only
+    assert row.status == status
+    assert row.reason == intel.monitoring_reason
+    assert row.explanation == intel.explanation
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("strategy", ["ema20-pullback", "micho-150"])
+@pytest.mark.parametrize("failure_stage", ["aggregate", "assessment"])
+async def test_daily_position_remains_available_when_news_context_fails(strategy, failure_stage):
+    position = replace(_position("AAA"), strategy=strategy, strategy_profile_id=f"{strategy}-v1")
+    valuation = _valuation([position])
+    intel = _intelligence(position, "HOLD")
+
+    class News:
+        async def latest_sentiment_observation(self, *args, **kwargs):
+            if failure_stage == "aggregate":
+                raise TimeoutError("controlled context failure")
+            return None
+
+        async def assess(self, *args, **kwargs):
+            raise ValueError("controlled parse failure")
+
+    service = DailyPortfolioBriefService(
+        FakePortfolios(valuation),
+        FakeIntelligence({position.position_id: intel}),
+        FakeOrchestrator(),
+        FakeFreshness(),
+        DailySchedulerStatus(enabled=False),
+        news=News(),
+    )
+    result = await service.build_core(valuation.portfolio_id)
+    assert result.required_actions == ()
+    assert result.hold_positions[0].news_coverage == "UNAVAILABLE"
+    assert result.hold_positions[0].news_advisory_only
+    assert result.hold_positions[0].reason == intel.monitoring_reason
 
 
 def _position(ticker: str, profile: str | None = "micho-150-v1") -> PositionValuation:
@@ -128,19 +205,23 @@ def _decision(strategy: StrategyName) -> PortfolioDecision:
         None,
         action_id=f"1:BUY:{'MCHO' if micho else 'EMA'}",
         exit_context=context,
-        execution_readiness=(
-            ExecutionReadiness.ACTIONABLE if micho else ExecutionReadiness.RESEARCH_ONLY
-        ),
+        execution_readiness=ExecutionReadiness.ACTIONABLE,
         execution_readiness_reason=(
             ExecutionReadinessReason.LOSS_CONTROL_READY
             if micho
-            else ExecutionReadinessReason.NO_APPROVED_LOSS_CONTROL_POLICY
+            else ExecutionReadinessReason.MANUAL_STOP_REQUIRED
         ),
         loss_control_policy="SMA150_COMPLETED_CLOSE_EXIT" if micho else "NONE",
         loss_control_boundary_price=Decimal("108") if micho else None,
         loss_control_trigger="COMPLETED_DAILY_CLOSE_BELOW" if micho else None,
         loss_control_active=micho,
         loss_control_broker_stop_order=False,
+        loss_control_source=(
+            LossControlSource.APPROVED_SYSTEM_POLICY if micho else LossControlSource.USER_MANUAL
+        ),
+        manual_stop_required=not micho,
+        final_action=PortfolioFinalAction.BUY,
+        is_final_actionable=True,
     )
 
 
@@ -272,7 +353,7 @@ async def test_daily_brief_prioritizes_sticky_sell_and_defers_actionable_entries
 
 
 @pytest.mark.asyncio
-async def test_daily_brief_keeps_ema_research_only_and_micho_actionable() -> None:
+async def test_daily_brief_keeps_ema_manual_stop_and_micho_system_stop_actionable() -> None:
     valuation = _valuation([])
     orchestrator = FakeOrchestrator()
     service = DailyPortfolioBriefService(
@@ -284,10 +365,12 @@ async def test_daily_brief_keeps_ema_research_only_and_micho_actionable() -> Non
     )
     brief = await service.build(valuation.portfolio_id)
     assert brief.data_status.readiness == DailyBriefReadiness.READY
-    assert [item.ticker for item in brief.actionable_opportunities] == ["MCHO"]
-    assert [item.ticker for item in brief.research_only_opportunities] == ["EMA"]
-    ema = brief.research_only_opportunities[0]
-    assert ema.execution_readiness_reason == "NO_APPROVED_LOSS_CONTROL_POLICY"
+    assert [item.ticker for item in brief.actionable_opportunities] == ["EMA", "MCHO"]
+    assert brief.research_only_opportunities == ()
+    ema = brief.actionable_opportunities[0]
+    assert ema.execution_readiness_reason == "MANUAL_STOP_REQUIRED"
+    assert ema.loss_control_source == "USER_MANUAL"
+    assert ema.manual_stop_required
     assert ema.loss_control_boundary is None
     assert [item.reference_type for item in ema.strategy_references] == [
         "EMA20_PULLBACK_REFERENCE",
@@ -543,6 +626,12 @@ async def test_daily_brief_api_is_typed_and_read_only(client) -> None:
     assert "actionable_opportunities" not in body
     assert opportunity_response.status_code == 200
     opportunity_body = opportunity_response.json()
-    assert opportunity_body["actionable_total_count"] == 1
-    assert opportunity_body["research_only_total_count"] == 1
+    assert opportunity_body["actionable_total_count"] == 2
+    assert opportunity_body["research_only_total_count"] == 0
     assert opportunity_body["research_only_limit"] == 10
+    ema = next(
+        item for item in opportunity_body["actionable_opportunities"] if item["ticker"] == "EMA"
+    )
+    assert ema["loss_control_source"] == "USER_MANUAL"
+    assert ema["manual_stop_required"] is True
+    assert ema["loss_control_boundary"] is None

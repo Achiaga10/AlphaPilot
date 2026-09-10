@@ -106,6 +106,7 @@ class BuyFunnelSummary:
     technical_buy_signals: int = 0
     rejected_before_news: int = 0
     reached_news: int = 0
+    news_advisory_only: bool = False
     final_approved_buys: int = 0
     groups: tuple[BuyFunnelGroup, ...] = ()
 
@@ -516,6 +517,7 @@ class PortfolioDecisionOrchestrator:
             tuple(candidates),
             risk_config,
             sizing_policy=sizing_policy,
+            strategy_name=strategy_name,
         )
         decision_by_ticker = {decision.ticker: decision for decision in plan.decisions}
         buy_rank = 0
@@ -710,7 +712,11 @@ class PortfolioDecisionOrchestrator:
             decision = decisions.get(status.ticker)
             stage = PortfolioDecisionOrchestrator._first_buy_blocker(decision)
             grouped.setdefault(stage, []).append(status.ticker)
-            if decision is not None and decision.news_assessment_reason is not None:
+            if (
+                decision is not None
+                and not decision.news_advisory_only
+                and decision.news_assessment_reason is not None
+            ):
                 reached_news += 1
         groups = tuple(
             BuyFunnelGroup(stage, len(tickers), tuple(sorted(tickers)))
@@ -740,6 +746,7 @@ class PortfolioDecisionOrchestrator:
             technical_buy_signals=technical,
             rejected_before_news=rejected_before_news,
             reached_news=reached_news,
+            news_advisory_only=any(item.news_advisory_only for item in plan.decisions),
             final_approved_buys=final,
             groups=groups,
         )
@@ -759,8 +766,6 @@ class PortfolioDecisionOrchestrator:
             return BuyFunnelStage.PORTFOLIO_POSITION_CONSTRAINT
         if decision.is_approved_buy:
             return BuyFunnelStage.FINAL_APPROVED_BUY
-        if not decision.loss_control_active:
-            return BuyFunnelStage.LOSS_CONTROL_UNAVAILABLE
         position_reasons = {
             PortfolioDecisionReason.MAX_POSITIONS,
             PortfolioDecisionReason.RANKING_NOT_SELECTED,
@@ -779,6 +784,8 @@ class PortfolioDecisionOrchestrator:
             PortfolioDecisionReason.INSUFFICIENT_HISTORY,
         }:
             return BuyFunnelStage.CASH_ALLOCATION_CONSTRAINT
+        if not decision.loss_control_active:
+            return BuyFunnelStage.LOSS_CONTROL_UNAVAILABLE
         news_stages = {
             PortfolioDecisionReason.NEWS_AGGREGATE_UNAVAILABLE: (
                 BuyFunnelStage.NEWS_AGGREGATE_UNAVAILABLE

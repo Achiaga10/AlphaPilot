@@ -26,6 +26,7 @@ import type {
   CopilotAnswer,
   UnifiedCopilotQuestion,
   DailyPortfolioBrief,
+  DailyBriefOpportunity,
   DailyBriefOpportunities,
   PortfolioLiveBrief,
   NewsArticle,
@@ -171,12 +172,22 @@ const isDailyPortfolioBrief = (value: unknown): value is DailyPortfolioBrief =>
   Array.isArray(value.hold_positions) && Array.isArray(value.unavailable_positions) &&
   Array.isArray(value.blockers)
 
+const isDailyBriefOpportunity = (value: unknown): value is DailyBriefOpportunity =>
+  isObject(value) &&
+  (value.loss_control_source === 'NONE' ||
+    value.loss_control_source === 'APPROVED_SYSTEM_POLICY' ||
+    value.loss_control_source === 'USER_MANUAL') &&
+  typeof value.manual_stop_required === 'boolean'
+
 const isDailyBriefOpportunities = (value: unknown): value is DailyBriefOpportunities =>
   isObject(value) && typeof value.portfolio_id === 'string' &&
   typeof value.portfolio_revision === 'number' &&
   Array.isArray(value.actionable_opportunities) &&
+  value.actionable_opportunities.every(isDailyBriefOpportunity) &&
   Array.isArray(value.research_only_opportunities) &&
+  value.research_only_opportunities.every(isDailyBriefOpportunity) &&
   Array.isArray(value.deferred_opportunities) &&
+  value.deferred_opportunities.every(isDailyBriefOpportunity) &&
   typeof value.actionable_total_count === 'number' &&
   typeof value.research_only_total_count === 'number' &&
   typeof value.deferred_total_count === 'number'

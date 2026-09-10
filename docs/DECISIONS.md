@@ -1,5 +1,63 @@
 # AlphaPilot — Current Decisions
 
+## EMA20 user-managed manual-stop approval — frozen hotfix scope
+
+- EMA20 Pullback may produce `APPROVED BUY` without an approved automatic
+  loss-control policy only after every other legitimate deterministic hard gate
+  passes.
+- That case is typed as `loss_control_source=USER_MANUAL`,
+  `manual_stop_required=true`, and `execution_readiness_reason=MANUAL_STOP_REQUIRED`.
+  Automatic protective-stop and system loss-control boundary fields remain null.
+  AlphaPilot does not fabricate a stop; the user is responsible for choosing and
+  placing the protective stop.
+- Missing EMA20 entry-revalidation evidence, extended entry geometry, stale/missing
+  data, user exclusion, already-held state, sizing, allocation, cash, sector and
+  portfolio-capacity constraints remain authoritative blockers. Manual-stop mode
+  cannot override them.
+- `LOSS_CONTROL_UNAVAILABLE` is no longer a terminal blocker for an otherwise-valid
+  EMA20 BUY and a missing system stop does not reduce `approved_buy_count`.
+- A genuine approved system loss-control policy remains authoritative when present:
+  `loss_control_source=APPROVED_SYSTEM_POLICY`, `manual_stop_required=false`, with
+  its numeric boundary preserved. No ATR, EMA50, fixed-percentage, signal-low,
+  trailing, or other fallback stop was introduced.
+- This exception applies to EMA20 Pullback only unless separately approved. Micho
+  semantics and frozen EMA20 technical/exit rules are unchanged. Historical EMA20
+  loss-control research remains valid evidence that no tested automatic policy won.
+- News remains advisory-only and has no authority over either strategy's approval.
+- Current read-only acceptance for completed session 2026-09-09: EMA20 45 technical
+  BUYs, 33 entry-safe, 10 allocation passes, 10 approved/manual-stop BUYs, zero
+  system-stop BUYs, 12 entry-safety blockers and 23 portfolio-capacity blockers.
+  Micho 11 technical BUYs, 10 approved BUYs and one portfolio-capacity blocker. News
+  blocked zero for both; Portfolio/Paper state was unchanged and no broker action
+  occurred.
+
+## Micho and EMA20 advisory-only News authority — frozen hotfix scope
+
+- News Intelligence is advisory-only for both Micho and EMA20 Pullback. This
+  prospectively supersedes earlier News-veto/News-exit wording for both supported
+  operational strategies, including severe/PRIMARY hard-event evidence.
+- News has zero authority over signal, candidate allocation, loss control, final
+  action, terminal reason, actionability, approved counts, profile readiness,
+  Portfolio Plan generation, HOLD, SELL or EXIT_REQUIRED.
+- Final action/reason/actionability are computed from deterministic evidence before
+  optional persisted News context. Plan generation performs no automatic News
+  refresh for either strategy. Provider/read/parse failures attach typed unavailable
+  advisory context and never fail the Profile or Plan request.
+- `APPROVED BUY` is exactly `final_action=BUY && is_final_actionable=true`.
+  Technical BUY and candidate allocation do not imply approval. EMA entry safety,
+  freshness, exclusions, ranking, sizing, portfolio constraints and frozen exits
+  remain authoritative. Numeric system loss control remains mandatory except for the
+  explicitly approved EMA20 user-manual policy above.
+- Existing News providers, evidence, provenance, historical records and explicit
+  bounded refresh remain available. No News infrastructure or data is deleted.
+- Synthetic all-gates-passed EMA boundaries exist only in tests and do not create an
+  operational stop. No fallback stop, BUY, strategy tuning, migration, research rerun,
+  Portfolio/Paper/broker mutation, commit or push is part of this decision.
+- Verification: focused backend 64 passed, Portfolio 198 passed, full backend
+  Ruff/format plus mypy across 199 source files and 645 tests passed. Frontend focused
+  27 passed; lint, 98 tests and production build passed. Controlled Edge acceptance
+  passed for both strategies with News-blocked count zero and no state mutation.
+
 ## Sprint 24 Final News Provider Architecture
 
 - Adanos is the primary persisted aggregate sentiment/context provider for current
@@ -27,7 +85,8 @@
 - Existing Portfolio Plan/decision orchestration and ExecutionReadiness exclusively own
   opportunity signals, ranking, sizing, constraints, and actionability.
 - Micho's numeric SMA150 completed-close policy may satisfy loss-control readiness and is
-  not a broker stop. EMA remains research-only without an approved loss-control policy.
+  not a broker stop. The former EMA research-only rule is superseded prospectively by
+  the EMA20 user-managed manual-stop approval above.
 - Paper Validation remains observational and separate from research-portfolio mutation.
   Daily Brief refresh triggers no market sync, broker action, or portfolio mutation.
 - Sprint 21 adds no strategy/research change, Alpaca API, auto-trading, news, TASE,
@@ -46,13 +105,15 @@
   current stored data. Holidays may conservatively remain blocked until a later stored
   SPY session establishes freshness.
 
-## Sprint 20 Product Constitution and Frozen Protocol
+## Sprint 20 Product Constitution and Frozen Protocol (historical baseline)
 
-- No ACTIONABLE new trade exists without a deterministic numeric loss-control
-  boundary, policy/version provenance, and explicit trigger semantics. A boundary
-  need not be an intraday broker stop.
-- No arbitrary fallback stop, AI-generated stop, React-generated stop, or
-  browser override is permitted. A missing approved stop means RESEARCH_ONLY.
+- The original Sprint 20 rule required every ACTIONABLE new trade to have a
+  deterministic numeric loss-control boundary. It remains authoritative for Micho;
+  the later EMA20-only user-managed exception above prospectively supersedes it for
+  otherwise-valid EMA20 BUYs.
+- No arbitrary fallback stop, AI-generated stop, React-generated stop, or browser
+  override is permitted. The former universal missing-stop/research-only rule is now
+  superseded only for the explicit EMA20 `USER_MANUAL` case above.
 - Protective stop, active strategy loss control, strategy exit reference, trailing
   stop, and profit target remain distinct. Trailing/profit may legitimately remain NONE.
 - Micho's frozen completed-daily-close-below-SMA150 exit is active numeric strategy
@@ -1038,3 +1099,154 @@ This comes after strategy and portfolio validation.
 - The real IBKR/EOG contradiction was contract/UI ambiguity, not a reason to weaken loss
   control or inflate Approved Buys. No strategy, News, risk, sizing, or SELL threshold
   changed.
+
+# Post-Sprint-24 EMA20 numeric loss-control research decisions
+
+- The protocol in `docs/research/EMA20_LOSS_CONTROL_PROTOCOL.md` was frozen before
+  implementation results. It keeps EMA20 Pullback V1, the 1% entry-safety ceiling,
+  HYBRID 2%, RS20, equal-slot sizing, ten positions, COST_LOW, T+1 entry, and all
+  production decision rules unchanged.
+- The only new arm is `ema20-fixed-signal-ema50-stop-v1`: signal-day EMA50 is frozen
+  before the next-open entry, activates on the following session, triggers on a daily
+  low breach or worse opening gap, and applies existing sell slippage. It never follows
+  a future EMA50 value.
+- The ATR arm is the exact prior `ema20-static-atr14-2x-v1` evidence. It was reused,
+  not rerun or parameter-searched. No third candidate was declared.
+- Fixed EMA50 failed its frozen development risk-distance gates despite otherwise
+  acceptable aggregate results: P90 was 11.0638% versus a 10% cap and maximum was
+  20.6438% versus a 20% cap. Its validation and folds therefore remain unopened.
+- ATR14 2× retains the Sprint 20 `NO_WINNER` result because validation drawdown worsened
+  1.62 percentage points, above the frozen 1.50-point ceiling. Its mixed 2-of-3 fold
+  direction does not override that hard failure.
+- Final classification is `NO_APPROVED_EMA20_LOSS_CONTROL_POLICY`. There is no fallback,
+  winner integration, Strategy Profile change, ExecutionReadiness bypass, production
+  BUY change, portfolio/Paper mutation, or broker action. Any next research direction
+  requires a separate user-approved protocol; Sprint 25 has not started.
+
+# Achia_strat_ema20 V1 research decisions
+
+- This is the new research identity `achia-strat-ema20-v1`, version 1, LONG_ONLY,
+  not a revision or replacement of EMA20 Pullback V1. Its Strategy Lab
+  specification is separate; it is deliberately absent from the operational
+  StrategyProfile registry/factory and all production defaults.
+- Entry requires only completed EMA20 > EMA50 and inclusive Close within
+  0.90–1.01 times EMA20. No old slope, SPY regime, touch/reclaim, HYBRID, RS20,
+  or News condition is inherited into the technical signal.
+- The native static stop is actual next-open slipped entry fill minus signal-day
+  simple-mean ATR14 minus 1% of that fill, active immediately after entry. It is
+  not an ATR multiplier overlay. Existing overlays retain their old activation.
+- Completed Close < EMA20 independently produces a held-position next-open exit.
+  Entry and exit eligibility can overlap below EMA20 and must remain separate
+  facts. Opening gap stops precede pending opening exits; opening exits precede
+  later intraday price observations. No duplicate exit or recycled held BUY.
+- The single-candidate protocol, risk/performance gates, source hashes and
+  dataset binding were frozen before performance. Failed development closes
+  validation and folds; no parameter search, threshold change, or activation is
+  authorized. See `docs/research/ACHIA_STRAT_EMA20_PROTOCOL.md`.
+- Research uses the verified immutable snapshot, read-only database transaction,
+  $100k/10 equal slots/COST_LOW, RS20 for allocation only, and independent
+  one-position ticker simulations for signal-level diagnostics. It never changes
+  current portfolio/Paper/News/candle/broker data. Sprint 25 is not started.
+- Development classification is REJECTED: Sharpe 0.3080, Calmar 0.1066, negative
+  independent-ticker expectancy (-0.0969%), and maximum planned stop distance
+  26.30% fail frozen screens. The machine-frozen zero-preparation-failure screen
+  also fails on five known missing-history tickers; this is not an unexplained
+  strategy execution error. Validation/folds remain closed irrespective of that
+  conservative coverage screen because four independent economic/risk gates fail.
+- The first report compared algebraically equivalent Decimal expressions with
+  different operation order, incorrectly flagging six portfolio and 178 independent
+  valid boundaries. Reporting now uses the exact frozen execution expression.
+  Original artifacts/fingerprints are preserved; a separate post-run audit records
+  corrected 100% coverage. No fill, stop formula, return, threshold, or classification
+  changed and no performance was rerun. Final gate passes all 516 backend tests.
+
+# Shauli_strat V1 protocol-approval gate
+
+Historical conceptual-only preflight; the subsequent daily V1 decision below
+supersedes its unresolved numerical/timeframe statements.
+
+- `shauli-strat-v1` is a new requested research identity, not an EMA20, Micho or
+  Achia variant. No operational profile or strategy implementation was added.
+- The conceptual source does not freeze material swing, inducement, BOS/CHOCH,
+  displacement, POI/entry, structural invalidation, target or expiration rules.
+  No separate numeric Shauli specification was found in the inspected repository.
+  Status is `SHAULI_V1_PROTOCOL_REQUIRES_USER_APPROVAL`, not a performance rejection.
+- The current frozen research infrastructure is daily OHLC and long-only. It
+  cannot establish intraday sweep/break/POI/retrace ordering or valid short P&L.
+  A daily research variant requires explicit approval and must not be presented
+  as equivalent to an intraday chart strategy; short diagnostics never authorize
+  negative-share long accounting.
+- `docs/research/SHAULI_STRAT_PROTOCOL.md` is an approval draft with a source/
+  unresolved-gate fingerprint, NOT a frozen executable Strategy Lab protocol.
+  Numerical gates and material research assumptions remain unselected. No P&L,
+  setup statistics, data refresh, tests, migration or application mutation ran.
+- Stop before performance until the user provides the numeric source or approves
+  a separately labeled deterministic variant for review. Existing strategies,
+  News, sizing, production defaults and prior research conclusions are unchanged.
+
+# Shauli_strat DAILY V1 supplied specification and execution-order review
+
+Historical approval review; the user subsequently approved the exact
+`AMBIGUOUS_ENTRY_TARGET_ORDER` exclusion. The current frozen protocol supersedes
+the pending-approval status below. Implement one DAILY/LONG_ONLY research
+hypothesis, no parameter search; failed development closes validation/folds.
+
+- The new user attachment `d324b963-f6a0-4246-a635-621579b1e5e5` explicitly
+  authorizes DAILY/LONG_ONLY research with strict confirmed 2L/2R swings, no
+  EQH/EQL, completed-close breaks, defined inducement/same-session sweep reclaim,
+  structural displacement/FVG, optional full-wick OB, intersection-first POI,
+  midpoint/Discount entry, fixed structural stop with no buffer, nearest unswept
+  confirmed-high target and minimum actual-fill R:R 2.0. No parameter search,
+  short/intraday expansion or operational activation is authorized.
+- This supersedes the earlier broad missing-definition gate. Supplied rules and
+  source SHA-256 are recorded in `docs/research/SHAULI_STRAT_PROTOCOL.md`; the
+  existing conceptual source draft remains unchanged.
+- One material execution case needs approval: later daily entry/target touches
+  with no stop touch and Open strictly between those levels cannot establish
+  whether opposing liquidity was consumed before entry or hit after entry.
+  STOP_FIRST alone does not resolve it. Existing open-entry trade-management
+  behavior must not silently impose favorable intraday limit-entry chronology.
+- A flagged no-trade exclusion for that specific ambiguous case is proposed,
+  NOT adopted. Explicit entry-then-stop cases and existing-position stop/target
+  precedence remain as supplied. No performance may choose the rule afterward.
+- Only protocol/continuity documentation changed at this review point. No code,
+  tests, data reads/writes, provider calls, research performance, activation,
+  migration, branch switch, commit or push. No results report before performance.
+
+# Shauli_strat DAILY V1 frozen implementation and Development outcome
+
+- The user's exact `AMBIGUOUS_ENTRY_TARGET_ORDER` exclusion is approved and
+  frozen: pending entry/target touched without stop and entry < OPEN < target
+  cancels without entry/trade or inferred path. Opening causal precedence,
+  ENTRY_THEN_STOP and unresolved STOP_FIRST remain unchanged.
+- Isolated research detector, pending-limit adapter, reporting, stage-governed
+  runner and tests implement one DAILY/LONG_ONLY hypothesis. Existing strategies,
+  production registry, Portfolio Plan, Paper, News and broker paths are unchanged.
+- Protocol identity is
+  `b62842660be41ebe5ef12d01d7855684aebfd4beb14b2aa726ac7fdf329f56c3`;
+  source/document hashes were sealed before performance and verified afterward.
+  No source, threshold, entry/stop/target or stage gate was retuned.
+- Read-only snapshot verification passed for 745,232 rows and 502 members.
+  Development 2021-08-20 through 2024-12-31 prepared 497 tickers; FDXF, HONA,
+  PSKY, Q and SNDK have no frozen period history and were explicitly excluded.
+- Measured funnel: 7,895 source setups, 4,887 inducements, 1,353 sweeps,
+  104 structural confirmations, zero displacement/POI plans, entries or trades.
+  Swept setups all invalidated: 812 NO_VALID_STRUCTURE and 541 STRUCTURAL_STOP
+  (pending cancellations, not executed stop losses). Twelve unswept setups were
+  censored at period end. Independent and portfolio funnels reconcile exactly.
+- The frozen continuous latest-HH/HL requirement conflicts with progression of
+  a swept lower low through a strictly post-sweep three-bar FVG. This structural
+  attrition must not be repaired by silently freezing bias or changing sequencing.
+  It rejects this mechanical V1, not every conceptual/intraday Shauli strategy.
+- $100,000 final equity/zero return/zero drawdown represents idle cash, not a
+  risk-adjusted winner. Required undefined metrics fail rather than pass vacuously.
+  Ten of fifteen Development checks failed. Classification REJECTED; Validation
+  and folds were not opened. No further research is authorized by this outcome.
+- Ambiguous entry-target exclusions measured zero against zero ready setups and
+  zero would-be trigger bars; both percentages are unavailable, not fabricated 0%.
+  Execution correctness is covered synthetically, not economically established.
+- Focused regression selection: 117 passed. Full backend: 592 passed, Ruff and
+  formatting passed, mypy 199 source files. Read-only run rolled back and source
+  plus 4,990 artifacts verified. Results: `docs/research/SHAULI_STRAT_RESULTS.md`.
+- Retain V1 as rejected research evidence for user review. No production
+  activation, application-data mutation, parameter search, commit or push.

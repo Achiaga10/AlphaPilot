@@ -181,6 +181,11 @@ async def _answer_news_question(
     request: UnifiedCopilotQuestionSchema,
     news: NewsService,
 ) -> CopilotAnswerSchema:
+    authority_note = (
+        " For Micho and EMA20 Pullback, all News (including hard events) is advisory only; "
+        "it cannot block BUY or change the final decision. Numeric loss control "
+        "and entry safety remain mandatory."
+    )
     records = await news.list_portfolio_news(portfolio_id)
     tickers = sorted({article.ticker for article, _ in records})
     mentioned = [
@@ -267,7 +272,7 @@ async def _answer_news_question(
             )
             as_of = aggregate.observed_at.date()
         return CopilotAnswerSchema(
-            answer=answer,
+            answer=answer + authority_note,
             scope="POSITION",
             portfolio_id=portfolio_id,
             position_id=None,
@@ -343,7 +348,8 @@ async def _answer_news_question(
         elif "ai alone" in question or "triggered by ai" in question:
             answer = (
                 f"No. AI classification alone cannot trigger a News SELL. The current "
-                f"News effect is {assessment.effect.value}; EXIT_REQUIRED additionally "
+                f"News evidence-policy assessment is {assessment.effect.value}; where News "
+                "has decision authority, EXIT_REQUIRED additionally "
                 "requires deterministic PRIMARY-source hard-event confirmation under "
                 f"{assessment.policy_version}."
             )
@@ -402,7 +408,7 @@ async def _answer_news_question(
         )
         as_of = article.published_at.date()
     return CopilotAnswerSchema(
-        answer=answer,
+        answer=answer + authority_note,
         scope="POSITION",
         portfolio_id=portfolio_id,
         position_id=None,

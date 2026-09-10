@@ -5,6 +5,11 @@ import { API_BASE_URL } from '../api/client'
 import { dailyBriefFixture, dailyOpportunitiesFixture, liveBriefFixture, server } from '../test/server'
 import { renderApp } from '../test/renderApp'
 
+test('dashboard explains the Micho and EMA20 News advisory rule', async () => {
+  renderApp('/')
+  expect(await screen.findByText(/For Micho and EMA20 Pullback, all News is advisory only, including hard events/)).toBeInTheDocument()
+})
+
 test('dashboard renders the daily portfolio manager in priority order', async () => {
   renderApp('/')
   expect(screen.getByRole('heading', { name: 'Daily Portfolio Manager' })).toBeInTheDocument()
@@ -66,13 +71,16 @@ test('navigation reaches every required route', async () => {
   expect(await screen.findByRole('heading', { name: 'Research Settings' })).toBeInTheDocument()
 })
 
-test('dashboard distinguishes research-only and deferred actionable opportunities', async () => {
+test('dashboard shows approved EMA20 BUY with mandatory manual-stop warning', async () => {
   renderApp('/')
-  const researchBadge = await screen.findByText('RESEARCH ONLY')
-  const researchCard = researchBadge.closest('article')
-  if (!researchCard) throw new Error('Expected the research opportunity card')
-  await userEvent.click(within(researchCard).getByText('View details'))
-  expect(screen.getByText('NO_APPROVED_LOSS_CONTROL_POLICY')).toBeInTheDocument()
+  const approvedBadge = await screen.findByText('APPROVED BUY')
+  const approvedCard = approvedBadge.closest('article')
+  if (!approvedCard) throw new Error('Expected the approved EMA20 opportunity card')
+  expect(within(approvedCard).getByText('MANUAL STOP REQUIRED.')).toBeInTheDocument()
+  expect(within(approvedCard).getAllByText(/No system stop/).length).toBeGreaterThan(0)
+  await userEvent.click(within(approvedCard).getByText('View details'))
+  expect(within(approvedCard).getByText('USER_MANUAL')).toBeInTheDocument()
+  expect(within(approvedCard).getByText('MANUAL_STOP_REQUIRED')).toBeInTheDocument()
   const sellPolicy = screen.getByText('SMA150_COMPLETED_CLOSE_EXIT')
   const sellCard = sellPolicy.closest('article')
   if (!sellCard) throw new Error('Expected the required-exit card')
@@ -119,9 +127,13 @@ test('core positions render while opportunity discovery loads and shortlist is b
   let release: (() => void) | undefined
   const pending = new Promise<void>((resolve) => { release = resolve })
   const ranked = Array.from({ length: 89 }, (_, index) => ({
-    ...dailyOpportunitiesFixture.research_only_opportunities[0],
+    ...dailyOpportunitiesFixture.actionable_opportunities[0],
     ticker: `R${String(index + 1).padStart(2, '0')}`,
     ranking_score: String(1 - index / 100),
+    execution_readiness: 'RESEARCH_ONLY',
+    execution_readiness_reason: 'NO_APPROVED_LOSS_CONTROL_POLICY',
+    loss_control_source: 'NONE',
+    manual_stop_required: false,
   }))
   server.use(http.get(
     `${API_BASE_URL}/api/v1/portfolio/:portfolioId/daily-brief/opportunities`,

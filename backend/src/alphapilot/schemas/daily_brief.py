@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from alphapilot.portfolio.entry_safety import Ema20EntrySafety
+from alphapilot.portfolio.execution_readiness import LossControlSource
 
 
 class DailyBriefDataStatusSchema(BaseModel):
@@ -64,6 +65,7 @@ class DailyBriefPositionSchema(BaseModel):
     references: list[DailyBriefReferenceSchema]
     base_status: str | None = None
     news_effect: str = "NO_EFFECT"
+    news_advisory_only: bool = False
     news_coverage: str = "NEVER_REFRESHED"
     final_status: str | None = None
     news_reason: str | None = None
@@ -115,12 +117,15 @@ class DailyBriefOpportunitySchema(BaseModel):
     base_decision: str | None = None
     news_coverage: str = "NEVER_REFRESHED"
     news_effect: str = "NO_EFFECT"
+    news_advisory_only: bool = False
     final_decision: str | None = None
     news_reason: str | None = None
     news_policy_version: str | None = None
     supporting_news_article_ids: list[UUID] = []
     entry_safety: Ema20EntrySafety | None = None
     deferred_group: str = "OTHER"
+    loss_control_source: LossControlSource = LossControlSource.NONE
+    manual_stop_required: bool = False
 
 
 class DailyPortfolioBriefSchema(BaseModel):

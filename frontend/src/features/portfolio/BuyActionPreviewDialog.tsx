@@ -24,6 +24,7 @@ export function BuyActionPreviewDialog({
           <button className="icon-button" type="button" onClick={onCancel} aria-label="Close buy preview">Close</button>
         </div>
         {override ? <p className="inline-note inline-note--warning" role="status">User quantity override. {larger ? 'This position is larger than AlphaPilot’s sizing recommendation.' : 'This position is smaller than AlphaPilot’s sizing recommendation.'}</p> : null}
+        {decision.manual_stop_required ? <p className="inline-note inline-note--warning" role="status"><strong>MANUAL STOP REQUIRED.</strong> AlphaPilot generated no system stop. You are responsible for choosing and placing the protective stop.</p> : null}
         <dl className="config-grid action-preview-grid">
           <div><dt>AlphaPilot recommendation</dt><dd>{preview.recommended_shares} shares</dd></div>
           <div><dt>Recommended allocation</dt><dd>{formatMoney(preview.recommended_allocation_dollars)}</dd></div>

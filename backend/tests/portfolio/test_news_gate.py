@@ -111,7 +111,7 @@ def status(ticker: str) -> CandidateOrchestrationStatus:
 
 
 @pytest.mark.asyncio
-async def test_news_gate_refreshes_only_actionable_ranked_shortlist_and_funnel_reconciles() -> None:
+async def test_micho_news_is_advisory_and_funnel_reconciles_without_news_gate() -> None:
     portfolio_id = uuid4()
     context = micho_exit()
     state = CurrentPortfolioState(Decimal("100000"))
@@ -156,7 +156,7 @@ async def test_news_gate_refreshes_only_actionable_ranked_shortlist_and_funnel_r
     )
     groups = {group.stage: group for group in readiness.buy_funnel.groups}
 
-    assert news.refreshes == [("ACTION",)]
+    assert news.refreshes == []
     assert news.assessments == ["ACTION"]
     assert result.assessed_buy_tickers == ("ACTION",)
     assert groups[BuyFunnelStage.FINAL_APPROVED_BUY].tickers == ("ACTION",)
@@ -179,12 +179,13 @@ async def test_news_gate_refreshes_only_actionable_ranked_shortlist_and_funnel_r
         group.count for group in readiness.buy_funnel.groups
     )
     assert readiness.buy_funnel.rejected_before_news == 3
-    assert readiness.buy_funnel.reached_news == 1
+    assert readiness.buy_funnel.reached_news == 0
+    assert readiness.buy_funnel.news_advisory_only
     assert readiness.buy_funnel.final_approved_buys == 1
 
 
 @pytest.mark.asyncio
-async def test_actual_adverse_and_provider_unavailability_have_distinct_reasons() -> None:
+async def test_micho_adverse_and_unavailable_news_preserve_approved_buy() -> None:
     portfolio_id = uuid4()
     context = micho_exit()
     state = CurrentPortfolioState(Decimal("100000"))
@@ -194,42 +195,40 @@ async def test_actual_adverse_and_provider_unavailability_have_distinct_reasons(
         sizing_policy=SizingPolicyName.EQUAL_SLOT,
     )
 
+    adverse_news = FakeNews(
+        assessment(
+            effect=NewsEffect.BUY_BLOCKED,
+            reason=NewsAssessmentReason.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE,
+        )
+    )
+    unavailable_news = FakeNews(
+        assessment(
+            effect=NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+            reason=NewsAssessmentReason.NEWS_AGGREGATE_UNAVAILABLE,
+        )
+    )
     adverse = await apply_portfolio_news_gate(
         plan=base,
         state=state,
         portfolio_id=portfolio_id,
-        news=FakeNews(
-            assessment(
-                effect=NewsEffect.BUY_BLOCKED,
-                reason=NewsAssessmentReason.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE,
-            )
-        ),
+        news=adverse_news,
     )
     unavailable = await apply_portfolio_news_gate(
         plan=base,
         state=state,
         portfolio_id=portfolio_id,
-        news=FakeNews(
-            assessment(
-                effect=NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
-                reason=NewsAssessmentReason.NEWS_AGGREGATE_UNAVAILABLE,
-            )
-        ),
+        news=unavailable_news,
     )
 
-    assert adverse.plan.decisions[0].reason is (
-        PortfolioDecisionReason.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE
-    )
-    assert unavailable.plan.decisions[0].reason is (
-        PortfolioDecisionReason.NEWS_AGGREGATE_UNAVAILABLE
-    )
-    assert adverse.plan.decisions[0].decision is PortfolioDecisionType.SKIP
-    assert unavailable.plan.decisions[0].decision is PortfolioDecisionType.SKIP
-    assert adverse.plan.decisions[0].terminal_reason is (
-        PortfolioDecisionReason.NEWS_BUY_BLOCKED_ADVERSE_EVIDENCE
-    )
-    assert unavailable.plan.decisions[0].terminal_reason is (
-        PortfolioDecisionReason.NEWS_AGGREGATE_UNAVAILABLE
-    )
-    assert adverse.plan.decisions[0].final_action is PortfolioFinalAction.NOT_ACTIONABLE
-    assert unavailable.plan.decisions[0].final_action is PortfolioFinalAction.NOT_ACTIONABLE
+    for result in (adverse, unavailable):
+        decision = result.plan.decisions[0]
+        assert decision.reason is PortfolioDecisionReason.BUY_APPROVED
+        assert decision.terminal_reason is PortfolioDecisionReason.BUY_APPROVED
+        assert decision.decision is PortfolioDecisionType.BUY
+        assert decision.final_action is PortfolioFinalAction.BUY
+        assert decision.is_approved_buy
+        assert decision.news_advisory_only
+        assert result.refresh is None
+    assert adverse.plan.decisions[0].news_effect == NewsEffect.BUY_BLOCKED.value
+    assert unavailable.plan.decisions[0].news_effect == NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE.value
+    assert adverse_news.refreshes == unavailable_news.refreshes == []

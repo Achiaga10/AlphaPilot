@@ -97,6 +97,11 @@ export const planFixture: PortfolioPlan = {
       action_id: '1:BUY:NVDA', application_order: 1, depends_on_action_ids: [],
       allocation_reason: 'BUY_APPROVED', terminal_reason: 'BUY_APPROVED', final_action: 'BUY',
       is_final_actionable: true,
+      execution_readiness: 'ACTIONABLE', execution_readiness_reason: 'MANUAL_STOP_REQUIRED',
+      approved_protective_stop_price: null, loss_control_policy: 'NONE',
+      loss_control_boundary_price: null, loss_control_trigger: null,
+      loss_control_active: false, loss_control_broker_stop_order: false,
+      loss_control_source: 'USER_MANUAL', manual_stop_required: true,
       entry_safety: {
         ticker: 'NVDA', as_of: '2026-08-20T20:15:00Z', entry_price: '176',
         entry_price_source: 'COMPLETED_SESSION_CLOSE', entry_price_timestamp: '2026-08-20T20:15:00Z',

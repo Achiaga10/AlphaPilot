@@ -119,6 +119,7 @@ class MultiPortfolioSimulator:
                 candidate.ticker: candidate
                 for candidate in candidates
                 if candidate.signal_bar.signal == Signal.SELL
+                or candidate.signal_bar.evaluation.position_exit_reason is not None
             }
 
             # Opening events are processed before new entries. A pre-known gap
@@ -189,7 +190,17 @@ class MultiPortfolioSimulator:
             buys = [
                 candidate
                 for candidate in candidates
-                if candidate.signal_bar.signal == Signal.BUY and candidate.ticker not in positions
+                if candidate.signal_bar.signal == Signal.BUY
+                and candidate.ticker not in positions
+                # An overlapping BUY/held-exit fact generated while held is not
+                # a fresh re-entry instruction after this session's opening exit.
+                and not (
+                    (
+                        candidate.signal_bar.evaluation.position_exit_reason is not None
+                        or self.config.trade_management.stop_active_on_entry_session
+                    )
+                    and candidate.ticker in positions_at_session_start
+                )
             ]
 
             available_slots_at_start = self.config.max_positions - len(positions)
@@ -342,16 +353,24 @@ class MultiPortfolioSimulator:
                         )
                     )
 
-            # Intraday management cannot fund same-open entries and does not
-            # apply on the entry session. Same-bar stop/target ambiguity is
-            # resolved inside the policy with stop-first priority.
-            for ticker in sorted(positions_at_session_start):
+            # Intraday proceeds never fund same-open entries. Existing policies
+            # retain next-session activation; the new native Achia stop explicitly
+            # activates after its opening fill, including the remaining entry day.
+            managed_tickers = (
+                set(positions)
+                if self.config.trade_management.stop_active_on_entry_session
+                else positions_at_session_start
+            )
+            for ticker in sorted(managed_tickers):
                 position = positions.get(ticker)
                 bar = bars_by_ticker_day[ticker].get(trading_day)
-                if position is None or bar is None or position.entry_day == trading_day:
+                if position is None or bar is None:
+                    continue
+                entry_session = position.entry_day == trading_day
+                if entry_session and not self.config.trade_management.stop_active_on_entry_session:
                     continue
                 action = self.trade_management_policy.evaluate(
-                    open_price=bar.open,
+                    open_price=position.entry_price if entry_session else bar.open,
                     high_price=bar.effective_high,
                     low_price=bar.effective_low,
                     effective_stop=position.effective_stop,
@@ -360,7 +379,9 @@ class MultiPortfolioSimulator:
                     shares=position.shares,
                     partial_profit_taken=position.partial_profit_taken,
                 )
-                if action is None or self._is_opening_action(action, bar.open):
+                if action is None or (
+                    not entry_session and self._is_opening_action(action, bar.open)
+                ):
                     continue
                 cash, trade, remaining = self._apply_management_action(
                     cash=cash,
@@ -592,6 +613,10 @@ class MultiPortfolioSimulator:
         if cash <= commission:
             return cash, None, None
 
+        if self.config.trade_management.stop_active_on_entry_session and (
+            not candidate.execution_bar.open.is_finite() or candidate.execution_bar.open <= 0
+        ):
+            return cash, None, None
         execution_price = self._apply_buy_slippage(candidate.execution_bar.open)
         sizing: SizingDecision | None = sizing_override
         if sizing_override is not None:
@@ -628,6 +653,7 @@ class MultiPortfolioSimulator:
             entry_price=execution_price,
             atr=atr,
             signal_bar_low=candidate.signal_bar.effective_low,
+            signal_bar_ema50=candidate.signal_bar.evaluation.ema50,
         )
         if self.config.trade_management.requires_initial_stop and initial_stop is None:
             return cash, None, sizing
@@ -662,6 +688,20 @@ class MultiPortfolioSimulator:
                 trade_id=(
                     f"{candidate.ticker}:{candidate.signal_bar.trading_day}:"
                     f"{candidate.execution_bar.trading_day}"
+                ),
+                entry_equity=equity,
+                loss_control_source=(
+                    self.config.trade_management.protective_stop.loss_control_source
+                    if initial_stop is not None
+                    else None
+                ),
+                loss_control_as_of=(
+                    candidate.signal_bar.trading_day if initial_stop is not None else None
+                ),
+                loss_control_policy_version=(
+                    self.config.trade_management.protective_stop.policy_version
+                    if initial_stop is not None
+                    else None
                 ),
             ),
             sizing,
@@ -757,7 +797,10 @@ class MultiPortfolioSimulator:
             entry_commission=position.entry_commission,
             exit_commission=commission,
             exit_reason=TradeManagementExitReason.STRATEGY_EXIT,
-            strategy_exit_reason=candidate.signal_bar.evaluation.reason,
+            strategy_exit_reason=(
+                candidate.signal_bar.evaluation.position_exit_reason
+                or candidate.signal_bar.evaluation.reason
+            ),
         )
 
     def _apply_management_action(
@@ -852,6 +895,11 @@ class MultiPortfolioSimulator:
             mae_pct=mae,
             peak_giveback_pct=giveback,
             strategy_exit_reason=strategy_exit_reason,
+            initial_shares=position.initial_shares,
+            entry_equity=position.entry_equity,
+            loss_control_source=position.loss_control_source,
+            loss_control_as_of=position.loss_control_as_of,
+            loss_control_policy_version=position.loss_control_policy_version,
         )
 
     @staticmethod
@@ -872,6 +920,8 @@ class MultiPortfolioSimulator:
         if trade.exit_reason in (
             TradeManagementExitReason.INITIAL_ATR_STOP,
             TradeManagementExitReason.ATR_TRAILING_STOP,
+            TradeManagementExitReason.FIXED_SIGNAL_EMA50_STOP,
+            TradeManagementExitReason.PROTECTIVE_STOP,
         ):
             pending_stop_reentry[trade.ticker] = day_index
 
@@ -889,11 +939,15 @@ class MultiPortfolioSimulator:
             if trade.exit_reason in (
                 TradeManagementExitReason.INITIAL_ATR_STOP,
                 TradeManagementExitReason.ATR_TRAILING_STOP,
+                TradeManagementExitReason.FIXED_SIGNAL_EMA50_STOP,
+                TradeManagementExitReason.PROTECTIVE_STOP,
             ):
                 stop_counts_by_ticker[trade.ticker] += 1
         stop_reasons = (
             TradeManagementExitReason.INITIAL_ATR_STOP,
             TradeManagementExitReason.ATR_TRAILING_STOP,
+            TradeManagementExitReason.FIXED_SIGNAL_EMA50_STOP,
+            TradeManagementExitReason.PROTECTIVE_STOP,
         )
         return TradeManagementDiagnostics(
             exit_reasons=tuple(sorted(counts.items())),

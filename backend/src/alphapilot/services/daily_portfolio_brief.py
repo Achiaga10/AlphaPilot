@@ -26,7 +26,11 @@ from alphapilot.portfolio.daily_brief import (
     DeferredOpportunityGroup,
 )
 from alphapilot.portfolio.decisions import CurrentPortfolioState, PortfolioStatePosition
-from alphapilot.portfolio.execution_readiness import classify_new_buy
+from alphapilot.portfolio.news_gate import (
+    assess_portfolio_news,
+    news_is_advisory,
+    unavailable_advisory,
+)
 from alphapilot.portfolio.orchestration import PortfolioDecisionOrchestrator
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.portfolio.stop_exit_guidance import StopExitGuidanceService
@@ -89,33 +93,54 @@ class DailyPortfolioBriefService:
             aggregate = None
             aggregate_assessment = None
             explanation = intel.explanation
+            advisory_only = news_is_advisory(intel.strategy) or news_is_advisory(
+                intel.strategy_profile_id
+            )
             if self.news is not None and intel.monitoring_completed_trading_day is not None:
-                aggregate = await self.news.latest_sentiment_observation(
-                    portfolio_id, intel.ticker, as_of=datetime.now(UTC)
-                )
-                aggregate_assessment = assess_external_sentiment(
-                    self.news.observation_snapshot(aggregate) if aggregate else None,
-                    as_of=datetime.now(UTC),
-                )
-                assessment = await self.news.assess(
-                    portfolio_id,
-                    intel.ticker,
-                    as_of=datetime.now(UTC),
-                )
+                try:
+                    aggregate = await self.news.latest_sentiment_observation(
+                        portfolio_id, intel.ticker, as_of=datetime.now(UTC)
+                    )
+                    aggregate_assessment = assess_external_sentiment(
+                        self.news.observation_snapshot(aggregate) if aggregate else None,
+                        as_of=datetime.now(UTC),
+                    )
+                    assessment = await assess_portfolio_news(
+                        self.news,
+                        portfolio_id,
+                        intel.ticker,
+                        as_of=datetime.now(UTC),
+                        advisory_only=advisory_only,
+                    )
+                except Exception:
+                    if not advisory_only:
+                        raise
+                    aggregate = None
+                    aggregate_assessment = None
+                    assessment = unavailable_advisory(intel.ticker, datetime.now(UTC))
                 news_effect = assessment.effect
                 news_coverage = assessment.coverage.value
                 news_reason = assessment.reason
                 news_policy_version = assessment.policy_version
                 supporting_news_article_ids = assessment.supporting_article_ids
-                if base_status != "SELL" and news_effect is NewsEffect.EXIT_REQUIRED:
+                if (
+                    not advisory_only
+                    and base_status != "SELL"
+                    and news_effect is NewsEffect.EXIT_REQUIRED
+                ):
                     status = "SELL"
                     position_reason = "NEWS_RISK_EXIT"
                     explanation = f"News risk exit: {assessment.reason}"
-                elif base_status == "HOLD" and news_effect in {
-                    NewsEffect.ATTENTION,
-                    NewsEffect.BUY_BLOCKED,
-                    NewsEffect.NEWS_ASSESSMENT_PARTIAL,
-                }:
+                elif (
+                    not advisory_only
+                    and base_status == "HOLD"
+                    and news_effect
+                    in {
+                        NewsEffect.ATTENTION,
+                        NewsEffect.BUY_BLOCKED,
+                        NewsEffect.NEWS_ASSESSMENT_PARTIAL,
+                    }
+                ):
                     status = "ATTENTION"
                     explanation = f"News attention: {assessment.reason}"
             positions.append(
@@ -153,6 +178,7 @@ class DailyPortfolioBriefService:
                     ),
                     base_status=base_status,
                     news_effect=news_effect.value,
+                    news_advisory_only=advisory_only,
                     news_coverage=news_coverage,
                     final_status=status,
                     news_reason=news_reason,
@@ -382,6 +408,8 @@ class DailyPortfolioBriefService:
                         result.analysis_as_of_date,
                     )
                     news_blocked = False
+                    advisory_only = news_is_advisory(profile.strategy)
+                    opportunity = replace(opportunity, news_advisory_only=advisory_only)
                     entry_blocked = decision.reason.value in {
                         "ENTRY_TOO_EXTENDED_ABOVE_EMA20",
                         "EMA20_ENTRY_REVALIDATION_UNAVAILABLE",
@@ -393,10 +421,12 @@ class DailyPortfolioBriefService:
                         and decision.execution_readiness.value == "ACTIONABLE"
                     )
                     if self.news is not None and buy_news_eligible:
-                        assessment = await self.news.assess(
+                        assessment = await assess_portfolio_news(
+                            self.news,
                             core.portfolio_id,
                             decision.ticker,
                             as_of=datetime.now(UTC),
+                            advisory_only=advisory_only,
                         )
                         opportunity = replace(
                             opportunity,
@@ -408,7 +438,7 @@ class DailyPortfolioBriefService:
                             news_policy_version=assessment.policy_version,
                             supporting_news_article_ids=assessment.supporting_article_ids,
                         )
-                        if assessment.effect in {
+                        if not advisory_only and assessment.effect in {
                             NewsEffect.BUY_BLOCKED,
                             NewsEffect.EXIT_REQUIRED,
                             NewsEffect.NEWS_ASSESSMENT_PARTIAL,
@@ -435,13 +465,6 @@ class DailyPortfolioBriefService:
                                     else DeferredOpportunityGroup.NEWS_DATA_UNAVAILABLE
                                 ),
                             )
-                    if profile.profile_id == "ema20-pullback-v1" and not entry_blocked:
-                        readiness_value, readiness_reason = classify_new_buy(None)
-                        opportunity = replace(
-                            opportunity,
-                            execution_readiness=readiness_value.value,
-                            execution_readiness_reason=readiness_reason.value,
-                        )
                     if news_blocked:
                         deferred.append(opportunity)
                     elif opportunity.execution_readiness == "RESEARCH_ONLY":
@@ -507,12 +530,20 @@ class DailyPortfolioBriefService:
 
         assert isinstance(decision, PortfolioDecision)
         boundary = decision.loss_control_boundary_price
-        if decision.execution_readiness.value == "ACTIONABLE" and (
-            boundary is None or boundary <= 0 or not decision.loss_control_trigger
-        ):
-            raise ValueError(
-                "ACTIONABLE opportunity lacks deterministic numeric loss-control evidence"
-            )
+        if decision.execution_readiness.value == "ACTIONABLE":
+            if decision.manual_stop_required:
+                if (
+                    strategy != "ema20-pullback"
+                    or decision.loss_control_source.value != "USER_MANUAL"
+                    or boundary is not None
+                    or decision.loss_control_trigger is not None
+                    or decision.loss_control_active
+                ):
+                    raise ValueError("Manual-stop opportunity has inconsistent loss-control state")
+            elif boundary is None or boundary <= 0 or not decision.loss_control_trigger:
+                raise ValueError(
+                    "ACTIONABLE opportunity lacks deterministic numeric loss-control evidence"
+                )
         distance = decision.reference_price - boundary if boundary is not None else None
         distance_pct = (
             distance / decision.reference_price * Decimal("100")
@@ -592,6 +623,8 @@ class DailyPortfolioBriefService:
             "READY_FOR_REVIEW",
             entry_safety=decision.entry_safety,
             deferred_group=DailyPortfolioBriefService._deferred_group(decision.reason.value),
+            loss_control_source=decision.loss_control_source,
+            manual_stop_required=decision.manual_stop_required,
         )
 
     @staticmethod

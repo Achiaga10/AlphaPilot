@@ -170,17 +170,20 @@ export interface PortfolioDecision {
   depends_on_action_ids: string[]
   exit_context: StrategyExitContext | null
   execution_readiness?: 'ACTIONABLE' | 'RESEARCH_ONLY' | 'UNAVAILABLE'
-  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY' | 'NEWS_RISK_BLOCK' | 'NEWS_ASSESSMENT_UNAVAILABLE' | 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
+  execution_readiness_reason?: 'LOSS_CONTROL_READY' | 'MANUAL_STOP_REQUIRED' | 'NO_APPROVED_LOSS_CONTROL_POLICY' | 'MISSING_NUMERIC_BOUNDARY' | 'MISSING_TRIGGER_SEMANTICS' | 'NOT_A_NEW_BUY' | 'NEWS_RISK_BLOCK' | 'NEWS_ASSESSMENT_UNAVAILABLE' | 'ENTRY_TOO_EXTENDED_ABOVE_EMA20' | 'EMA20_ENTRY_REVALIDATION_UNAVAILABLE'
   loss_control_policy?: string
   loss_control_boundary_price?: string | null
   loss_control_trigger?: string | null
   loss_control_active?: boolean
   loss_control_broker_stop_order?: boolean
+  loss_control_source?: 'NONE' | 'APPROVED_SYSTEM_POLICY' | 'USER_MANUAL'
+  manual_stop_required?: boolean
   approved_protective_stop_price?: string | null
   base_decision?: PortfolioDecisionType | null
   allocation_reason?: DecisionReason | null
   terminal_reason?: DecisionReason | null
   news_effect?: string
+  news_advisory_only?: boolean
   news_coverage?: 'CURRENT' | 'STALE' | 'PARTIAL' | 'RATE_LIMITED' | 'UNAVAILABLE' | 'NEVER_REFRESHED'
   news_assessment_reason?: string | null
   news_aggregate_strength?: string | null
@@ -330,6 +333,7 @@ export interface BuyFunnelSummary {
   technical_buy_signals: number
   rejected_before_news: number
   reached_news: number
+  news_advisory_only?: boolean
   final_approved_buys: number
   groups: BuyFunnelGroup[]
 }
@@ -757,6 +761,7 @@ export interface DailyBriefPosition {
   references: DailyBriefReference[]
   base_status?: string | null
   news_effect?: string
+  news_advisory_only?: boolean
   news_coverage?: string
   final_status?: string | null
   news_reason?: string | null
@@ -789,6 +794,8 @@ export interface DailyBriefOpportunity {
   loss_control_distance_dollars: string | null
   loss_control_distance_pct: string | null
   broker_stop_order: boolean
+  loss_control_source: 'NONE' | 'APPROVED_SYSTEM_POLICY' | 'USER_MANUAL'
+  manual_stop_required: boolean
   strategy_references: DailyBriefReference[]
   analysis_as_of_date: string
   action_id: string | null
@@ -796,6 +803,7 @@ export interface DailyBriefOpportunity {
   base_decision?: string | null
   news_coverage?: string
   news_effect?: string
+  news_advisory_only?: boolean
   final_decision?: string | null
   news_reason?: string | null
   news_policy_version?: string | null

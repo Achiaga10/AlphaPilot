@@ -14,6 +14,8 @@ class ProtectiveStopPolicyName(StrEnum):
     ATR_STOP_2_5 = "atr-stop-2-5"
     ATR_STOP_3_0 = "atr-stop-3-0"
     SIGNAL_DAY_LOW = "signal-day-low-invalidation"
+    FIXED_SIGNAL_EMA50 = "fixed-signal-ema50-stop"
+    ACHIA_ATR_PLUS_ENTRY_PERCENT = "achia-ema20-atr14-plus-1pct-stop-v1"
 
     @property
     def atr_multiple(self) -> Decimal | None:
@@ -25,7 +27,33 @@ class ProtectiveStopPolicyName(StrEnum):
             self.ATR_STOP_2_5: Decimal("2.5"),
             self.ATR_STOP_3_0: Decimal("3"),
             self.SIGNAL_DAY_LOW: None,
+            self.FIXED_SIGNAL_EMA50: None,
+            self.ACHIA_ATR_PLUS_ENTRY_PERCENT: None,
         }[self]
+
+    @property
+    def loss_control_source(self) -> str | None:
+        if self == self.CONTROL:
+            return None
+        if self == self.SIGNAL_DAY_LOW:
+            return "SIGNAL_DAY_LOW"
+        if self == self.FIXED_SIGNAL_EMA50:
+            return "SIGNAL_DAY_EMA50"
+        return "SIGNAL_DAY_ATR14"
+
+    @property
+    def policy_version(self) -> str | None:
+        if self == self.CONTROL:
+            return None
+        if self == self.ACHIA_ATR_PLUS_ENTRY_PERCENT:
+            return self.value
+        if self == self.FIXED_SIGNAL_EMA50:
+            return "ema20-fixed-signal-ema50-stop-v1"
+        if self == self.SIGNAL_DAY_LOW:
+            return "ema20-signal-day-low-invalidation-v1"
+        multiple = self.atr_multiple
+        assert multiple is not None
+        return f"static-atr14-{str(multiple).replace('.', '-')}x-v1"
 
 
 class TrailingStopPolicyName(StrEnum):
@@ -51,6 +79,8 @@ class ProfitManagementPolicyName(StrEnum):
 class TradeManagementExitReason(StrEnum):
     STRATEGY_EXIT = "STRATEGY_EXIT"
     INITIAL_ATR_STOP = "INITIAL_ATR_STOP"
+    FIXED_SIGNAL_EMA50_STOP = "FIXED_SIGNAL_EMA50_STOP"
+    PROTECTIVE_STOP = "PROTECTIVE_STOP"
     ATR_TRAILING_STOP = "ATR_TRAILING_STOP"
     PARTIAL_PROFIT_2R = "PARTIAL_PROFIT_2R"
     FULL_PROFIT_3R = "FULL_PROFIT_3R"
@@ -67,6 +97,11 @@ class TradeManagementConfig:
     def __post_init__(self) -> None:
         if self.atr_period != 14:
             raise ValueError("Sprint 12 trade-management ATR period must be 14")
+        if self.stop_active_on_entry_session and (
+            self.trailing_stop != TrailingStopPolicyName.NONE
+            or self.profit_management != ProfitManagementPolicyName.NONE
+        ):
+            raise ValueError("Achia V1 is static: no trailing or profit management")
         if self.protective_stop == ProtectiveStopPolicyName.CONTROL and (
             self.trailing_stop != TrailingStopPolicyName.NONE
             or self.profit_management != ProfitManagementPolicyName.NONE
@@ -83,11 +118,16 @@ class TradeManagementConfig:
         return self.protective_stop not in {
             ProtectiveStopPolicyName.CONTROL,
             ProtectiveStopPolicyName.SIGNAL_DAY_LOW,
+            ProtectiveStopPolicyName.FIXED_SIGNAL_EMA50,
         }
 
     @property
     def requires_initial_stop(self) -> bool:
         return self.protective_stop != ProtectiveStopPolicyName.CONTROL
+
+    @property
+    def stop_active_on_entry_session(self) -> bool:
+        return self.protective_stop == ProtectiveStopPolicyName.ACHIA_ATR_PLUS_ENTRY_PERCENT
 
 
 @dataclass(slots=True, frozen=True)
@@ -103,7 +143,12 @@ class TradeManagementPolicy(Protocol):
     config: TradeManagementConfig
 
     def initial_stop(
-        self, *, entry_price: Decimal, atr: Decimal | None, signal_bar_low: Decimal | None = None
+        self,
+        *,
+        entry_price: Decimal,
+        atr: Decimal | None,
+        signal_bar_low: Decimal | None = None,
+        signal_bar_ema50: Decimal | None = None,
     ) -> Decimal | None: ...
 
     def profit_target(
@@ -140,8 +185,30 @@ class ConfiguredTradeManagementPolicy:
         self.config = config
 
     def initial_stop(
-        self, *, entry_price: Decimal, atr: Decimal | None, signal_bar_low: Decimal | None = None
+        self,
+        *,
+        entry_price: Decimal,
+        atr: Decimal | None,
+        signal_bar_low: Decimal | None = None,
+        signal_bar_ema50: Decimal | None = None,
     ) -> Decimal | None:
+        if self.config.protective_stop == ProtectiveStopPolicyName.ACHIA_ATR_PLUS_ENTRY_PERCENT:
+            if (
+                not entry_price.is_finite()
+                or entry_price <= 0
+                or atr is None
+                or not atr.is_finite()
+                or atr <= 0
+            ):
+                return None
+            stop = entry_price - atr - entry_price * Decimal("0.01")
+            return stop if 0 < stop < entry_price else None
+        if self.config.protective_stop == ProtectiveStopPolicyName.FIXED_SIGNAL_EMA50:
+            return (
+                signal_bar_ema50
+                if signal_bar_ema50 is not None and 0 < signal_bar_ema50 < entry_price
+                else None
+            )
         if self.config.protective_stop == ProtectiveStopPolicyName.SIGNAL_DAY_LOW:
             return (
                 signal_bar_low
@@ -269,10 +336,13 @@ class ConfiguredTradeManagementPolicy:
         values = [value for value in (left, right) if value is not None]
         return max(values) if values else None
 
-    @staticmethod
     def _stop_reason(
-        effective_stop: Decimal, initial_stop: Decimal | None
+        self, effective_stop: Decimal, initial_stop: Decimal | None
     ) -> TradeManagementExitReason:
+        if self.config.protective_stop == ProtectiveStopPolicyName.ACHIA_ATR_PLUS_ENTRY_PERCENT:
+            return TradeManagementExitReason.PROTECTIVE_STOP
+        if self.config.protective_stop == ProtectiveStopPolicyName.FIXED_SIGNAL_EMA50:
+            return TradeManagementExitReason.FIXED_SIGNAL_EMA50_STOP
         if initial_stop is not None and effective_stop > initial_stop:
             return TradeManagementExitReason.ATR_TRAILING_STOP
         return TradeManagementExitReason.INITIAL_ATR_STOP

@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from alphapilot.news.policy import NewsAssessmentReason, NewsEffect, NewsRiskAssessment
+from alphapilot.news.policy import (
+    NewsAssessmentReason,
+    NewsCoverage,
+    NewsEffect,
+    NewsRiskAssessment,
+)
 from alphapilot.news.service import NewsRefreshResult, NewsRefreshScope
 from alphapilot.portfolio.decisions import (
     CurrentPortfolioState,
@@ -19,7 +24,46 @@ from alphapilot.portfolio.execution_readiness import (
     ExecutionReadinessReason,
 )
 from alphapilot.portfolio.sizing import PortfolioDecisionReason, PortfolioDecisionType
+from alphapilot.strategy.name import StrategyName
 from alphapilot.strategy.signal import Signal
+
+
+def news_is_advisory(strategy: StrategyName | str | None) -> bool:
+    """Prospective product authority, separate from the frozen News evidence policy."""
+    return strategy in {
+        StrategyName.EMA20_PULLBACK,
+        StrategyName.MICHO_150,
+        "ema20-pullback-v1",
+        "micho-150-v1",
+    }
+
+
+def unavailable_advisory(ticker: str, as_of: datetime) -> NewsRiskAssessment:
+    return NewsRiskAssessment(
+        ticker=ticker,
+        as_of=as_of,
+        coverage=NewsCoverage.UNAVAILABLE,
+        effect=NewsEffect.NEWS_ASSESSMENT_UNAVAILABLE,
+        reason="News context unavailable; advisory only, with no decision authority.",
+        reason_code=NewsAssessmentReason.NEWS_AGGREGATE_UNAVAILABLE,
+    )
+
+
+async def assess_portfolio_news(
+    news: PortfolioNewsService,
+    portfolio_id: UUID,
+    ticker: str,
+    *,
+    as_of: datetime,
+    advisory_only: bool,
+) -> NewsRiskAssessment:
+    """Persisted context only; never expose provider/parse exceptions as advice."""
+    try:
+        return await news.assess(portfolio_id, ticker, as_of=as_of)
+    except Exception:
+        if not advisory_only:
+            raise
+        return unavailable_advisory(ticker, as_of)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,13 +95,20 @@ async def apply_portfolio_news_gate(
     portfolio_id: UUID,
     news: PortfolioNewsService,
     as_of: datetime | None = None,
+    strategy_name: StrategyName | None = None,
 ) -> PortfolioNewsGateResult:
-    """Refresh and assess only BUYs that survived every cheaper hard gate."""
+    """Attach persisted advisory News without changing supported strategy decisions."""
     decision_time = (as_of or datetime.now(UTC)).astimezone(UTC)
+
+    def advisory(decision: PortfolioDecision) -> bool:
+        return news_is_advisory(
+            strategy_name or (decision.exit_context.strategy if decision.exit_context else None)
+        )
+
     shortlist = tuple(
         decision.ticker
         for decision in plan.decisions
-        if decision.signal is Signal.BUY and decision.is_approved_buy
+        if decision.signal is Signal.BUY and decision.is_approved_buy and not advisory(decision)
     )
     refresh = None
     if shortlist:
@@ -73,6 +124,23 @@ async def apply_portfolio_news_gate(
     output = []
     for decision in plan.decisions:
         original = decision.decision
+        if advisory(decision):
+            if not decision.is_approved_buy and decision.ticker.upper() not in held:
+                output.append(
+                    replace(
+                        decision,
+                        news_advisory_only=True,
+                        news_reason="Optional News context not evaluated; no decision authority.",
+                    )
+                )
+                continue
+            assessment = await assess_portfolio_news(
+                news, portfolio_id, decision.ticker, as_of=decision_time, advisory_only=True
+            )
+            if decision.signal is Signal.BUY:
+                assessed_buys.append(decision.ticker)
+            output.append(_apply_assessment(decision, assessment, held, advisory_only=True))
+            continue
         if decision.signal is Signal.BUY and decision.ticker not in shortlist_set:
             output.append(
                 replace(
@@ -102,12 +170,34 @@ def _apply_assessment(
     decision: PortfolioDecision,
     assessment: NewsRiskAssessment,
     held: dict[str, PortfolioStatePosition],
+    *,
+    advisory_only: bool = False,
 ) -> PortfolioDecision:
     original = decision.decision
     updated = decision
     final_action = decision.final_action or PortfolioFinalAction.NOT_ACTIONABLE
     reason = decision.reason
     terminal_reason = decision.terminal_reason or decision.reason
+    if advisory_only:
+        # Preserve all authoritative and allocation fields exactly, even for
+        # severe hard events, missing coverage, or previously blocked candidates.
+        return replace(
+            decision,
+            news_advisory_only=True,
+            news_effect=assessment.effect.value,
+            news_coverage=assessment.coverage.value,
+            news_assessment_reason=assessment.reason_code.value,
+            news_aggregate_strength=(
+                assessment.aggregate_strength.value if assessment.aggregate_strength else None
+            ),
+            news_aggregate_effect=(
+                assessment.aggregate_effect.value if assessment.aggregate_effect else None
+            ),
+            news_targeted_review_required=assessment.targeted_review_required,
+            news_reason=assessment.reason,
+            news_policy_version=assessment.policy_version,
+            supporting_news_article_ids=assessment.supporting_article_ids,
+        )
     if original is PortfolioDecisionType.BUY and assessment.effect in {
         NewsEffect.BUY_BLOCKED,
         NewsEffect.EXIT_REQUIRED,

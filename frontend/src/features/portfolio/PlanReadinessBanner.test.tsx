@@ -10,6 +10,16 @@ function renderReadiness(overrides: Partial<PortfolioPlanReadiness>) {
   return render(<MemoryRouter><PlanReadinessBanner readiness={readiness} /></MemoryRouter>)
 }
 
+test('EMA advisory News is outside the approved BUY funnel', () => {
+  renderReadiness({ buy_funnel: {
+    evaluated_tickers: 4, technical_buy_signals: 4, rejected_before_news: 2,
+    reached_news: 0, final_approved_buys: 2, news_advisory_only: true, groups: [],
+  } })
+  expect(screen.getByText(/4 technical BUY signals · 2 stopped by deterministic hard gates · 2 final actionable BUYs/)).toBeInTheDocument()
+  expect(screen.getByText(/News is optional advisory context, not an approval gate/)).toBeInTheDocument()
+  expect(screen.queryByText(/stopped before News/)).not.toBeInTheDocument()
+})
+
 test('all-stale readiness requires refresh and does not imply strategy rejection', () => {
   renderReadiness({
     status: 'DATA_NOT_READY', requested_tickers: 502, evaluated_tickers: 0,

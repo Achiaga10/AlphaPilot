@@ -193,15 +193,18 @@ async def test_decision_api_returns_ui_ready_reason_codes(client: AsyncClient) -
     assert reasons == {
         "SELL": "SELL_APPROVED",
         "AAA": "ALREADY_HELD",
-        "TECH": "LOSS_CONTROL_UNAVAILABLE",
-        "NEW": "LOSS_CONTROL_UNAVAILABLE",
+        "TECH": "SECTOR_LIMIT",
+        "NEW": "EMA20_ENTRY_REVALIDATION_UNAVAILABLE",
     }
     decisions = {item["ticker"]: item for item in body["decisions"]}
     assert decisions["TECH"]["allocation_reason"] == "SECTOR_LIMIT"
     assert decisions["NEW"]["allocation_reason"] == "BUY_APPROVED"
-    assert decisions["NEW"]["terminal_reason"] == "LOSS_CONTROL_UNAVAILABLE"
+    assert decisions["NEW"]["terminal_reason"] == "EMA20_ENTRY_REVALIDATION_UNAVAILABLE"
     assert decisions["NEW"]["final_action"] == "NOT_ACTIONABLE"
     assert decisions["NEW"]["is_final_actionable"] is False
+    assert decisions["NEW"]["loss_control_source"] == "NONE"
+    assert decisions["NEW"]["manual_stop_required"] is False
+    assert decisions["NEW"]["approved_protective_stop_price"] is None
     assert body["portfolio"]["equity"] == "100000"
     assert body["portfolio"]["cash_pct"] == "30.0"
     assert body["portfolio"]["invested_value"] == "70000"

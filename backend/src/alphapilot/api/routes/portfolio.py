@@ -27,7 +27,7 @@ from alphapilot.portfolio.decisions import (
     PortfolioStatePosition,
 )
 from alphapilot.portfolio.entry_safety import Ema20EntrySafety
-from alphapilot.portfolio.news_gate import apply_portfolio_news_gate
+from alphapilot.portfolio.news_gate import apply_portfolio_news_gate, news_is_advisory
 from alphapilot.portfolio.orchestration import PortfolioDecisionOrchestrator
 from alphapilot.portfolio.risk import PortfolioRiskConfig
 from alphapilot.repositories.company import CompanyRepository
@@ -778,6 +778,7 @@ async def build_portfolio_decisions(
         candidates,
         config,
         sizing_policy=request.sizing_policy,
+        strategy_name=request.strategy,
     )
     return PortfolioDecisionPlanSchema(
         portfolio=build_portfolio_summary(
@@ -839,7 +840,13 @@ async def build_portfolio_plan(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    plan = result.plan
+    plan = replace(
+        result.plan,
+        decisions=tuple(
+            replace(item, news_advisory_only=news_is_advisory(request.strategy))
+            for item in result.plan.decisions
+        ),
+    )
     news_enrichment = PortfolioNewsEnrichmentSchema()
     if request.portfolio_id is not None:
         gate = await apply_portfolio_news_gate(
@@ -847,6 +854,7 @@ async def build_portfolio_plan(
             state=state,
             portfolio_id=request.portfolio_id,
             news=news,
+            strategy_name=request.strategy,
         )
         plan = gate.plan
         refresh = gate.refresh
