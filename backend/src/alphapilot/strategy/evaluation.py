@@ -35,6 +35,11 @@ class SignalReason(Enum):
     MICHO_150_TREND_NOT_READY = "MICHO_150_TREND_NOT_READY"
     MICHO_150_NO_ENTRY = "MICHO_150_NO_ENTRY"
 
+    ACHIA_EMA20_ENTRY_ZONE = "ACHIA_EMA20_ENTRY_ZONE"
+    ACHIA_EMA20_NO_ENTRY = "ACHIA_EMA20_NO_ENTRY"
+    CLOSE_BELOW_EMA20 = "CLOSE_BELOW_EMA20"
+    INVALID_CANDLE_DATA = "INVALID_CANDLE_DATA"
+
 
 @dataclass(slots=True, frozen=True)
 class StrategyEvaluation:
@@ -47,3 +52,7 @@ class StrategyEvaluation:
     market_regime: MarketRegime = MarketRegime.UNKNOWN
 
     sma150: Decimal | None = None
+
+    # Independent held-position exit evidence, for strategies whose flat-entry
+    # and held-exit conditions can overlap. Existing single-signal rules keep None.
+    position_exit_reason: SignalReason | None = None

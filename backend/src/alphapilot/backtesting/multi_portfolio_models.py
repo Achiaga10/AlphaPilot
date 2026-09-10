@@ -67,6 +67,10 @@ class MultiPortfolioPosition:
     lowest_observed_price: Decimal | None = None
     partial_profit_taken: bool = False
     trade_id: str = ""
+    entry_equity: Decimal | None = None
+    loss_control_source: str | None = None
+    loss_control_as_of: date | None = None
+    loss_control_policy_version: str | None = None
 
     @property
     def cost_basis(self) -> Decimal:
@@ -104,6 +108,11 @@ class MultiPortfolioTrade:
     mae_pct: Decimal = Decimal("0")
     peak_giveback_pct: Decimal = Decimal("0")
     strategy_exit_reason: SignalReason | None = None
+    initial_shares: int = 0
+    entry_equity: Decimal | None = None
+    loss_control_source: str | None = None
+    loss_control_as_of: date | None = None
+    loss_control_policy_version: str | None = None
 
     @property
     def cost_basis(self) -> Decimal:

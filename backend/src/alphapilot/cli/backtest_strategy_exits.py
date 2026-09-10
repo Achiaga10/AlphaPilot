@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Repeat for each run: control, atr-stop-1-0, atr-stop-1-5, atr-stop-2-0, "
             "atr-stop-2-5, atr-stop-3-0, "
-            "signal-day-low-invalidation, "
+            "signal-day-low-invalidation, fixed-signal-ema50-stop, "
             "or one stop plus one declared trailing/profit overlay joined by '+'."
         ),
     )
@@ -88,11 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
 def parse_configurations(
     values: list[str], stage: Sprint12ResearchStage
 ) -> tuple[Sprint12ExitConfiguration, ...]:
-    parser = (
-        Sprint12ExitConfiguration.parse_sprint20
-        if stage.value.startswith("sprint20-")
-        else Sprint12ExitConfiguration.parse
-    )
+    if stage.value.startswith("ema20-loss-control-"):
+        parser = Sprint12ExitConfiguration.parse_ema20_loss_control
+    elif stage.value.startswith("sprint20-"):
+        parser = Sprint12ExitConfiguration.parse_sprint20
+    else:
+        parser = Sprint12ExitConfiguration.parse
     return tuple(parser(value) for value in values)
 
 

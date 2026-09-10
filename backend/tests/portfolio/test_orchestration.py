@@ -14,6 +14,10 @@ from alphapilot.market.live import ProviderLiveSnapshot
 from alphapilot.market.session import CompletedDailySessionPolicy
 from alphapilot.portfolio.decisions import CurrentPortfolioState, PortfolioStatePosition
 from alphapilot.portfolio.entry_safety import Ema20EntrySafetyStatus
+from alphapilot.portfolio.execution_readiness import (
+    ExecutionReadinessReason,
+    LossControlSource,
+)
 from alphapilot.portfolio.exit_guidance import StrategyExitState
 from alphapilot.portfolio.orchestration import (
     CandidateDataStatus,
@@ -332,16 +336,20 @@ async def test_current_session_buy_uses_fresh_live_entry_revalidation(
     assert result.plan.decisions[0].entry_safety is not None
     assert result.plan.decisions[0].entry_safety.status is expected_status
     assert result.plan.decisions[0].allocation_reason is expected_reason
-    assert result.plan.decisions[0].reason is (
-        PortfolioDecisionReason.LOSS_CONTROL_UNAVAILABLE
-        if expected_status is Ema20EntrySafetyStatus.ELIGIBLE
-        else expected_reason
-    )
+    assert result.plan.decisions[0].reason is expected_reason
     assert result.plan.decisions[0].decision is (
         PortfolioDecisionType.BUY
         if expected_status is Ema20EntrySafetyStatus.ELIGIBLE
         else PortfolioDecisionType.SKIP
     )
+    if expected_status is Ema20EntrySafetyStatus.ELIGIBLE:
+        assert result.plan.decisions[0].is_approved_buy
+        assert result.plan.decisions[0].manual_stop_required
+        assert result.plan.decisions[0].loss_control_source is LossControlSource.USER_MANUAL
+        assert (
+            result.plan.decisions[0].execution_readiness_reason
+            is ExecutionReadinessReason.MANUAL_STOP_REQUIRED
+        )
 
 
 @pytest.mark.asyncio
@@ -389,12 +397,14 @@ async def test_orchestrator_loads_and_calculates_signal_rs20_atr_and_sector(
     assert decision.atr == Decimal("4")
     assert decision.sector == "Industrials"
     assert decision.proposed_shares > 0
-    assert result.readiness.status == PlanReadinessStatus.NO_ACTION
+    assert result.readiness.status == PlanReadinessStatus.READY
     assert result.readiness.technical_buy_signals == 1
-    assert result.readiness.final_approved_buys == 0
+    assert result.readiness.final_approved_buys == 1
     assert result.readiness.requested_tickers == 1
     assert result.readiness.evaluated_tickers == 1
-    assert result.readiness.approved_buys == 0
+    assert result.readiness.approved_buys == 1
+    assert decision.manual_stop_required
+    assert decision.loss_control_source is LossControlSource.USER_MANUAL
 
 
 @pytest.mark.asyncio

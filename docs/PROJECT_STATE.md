@@ -2,11 +2,100 @@
 
 ## Current Phase
 
-Post-Sprint-24 Final BUY Actionability Semantics Hotfix
-COMPLETE LOCALLY
+Post-Sprint-24 EMA20 Manual-Stop Approved BUY Hotfix / Project Pause
+IMPLEMENTED LOCALLY — ALL CODE AND BROWSER GATES PASS
+
+News Intelligence is advisory-only for both Micho and EMA20 Pullback, including
+severe/hard-event evidence. It cannot change signal, allocation, deterministic
+loss control, final action, terminal reason, actionability, counts, HOLD, SELL or
+EXIT_REQUIRED, and it cannot prevent either Profile or Portfolio Plan from being
+generated. Plan creation reads optional persisted context without automatic News
+refresh; context failures degrade only the advisory metadata. Providers, persisted
+evidence, provenance and explicit bounded refresh remain intact.
+
+Final approval remains deterministic: `APPROVED BUY` is displayed only for
+`final_action=BUY && is_final_actionable=true`. Technical BUY and candidate
+allocation remain distinct intermediate facts. All legitimate non-News gates are
+unchanged, including current EMA20 entry revalidation, freshness, user exclusion,
+allocation and portfolio limits. The operational policy now allows EMA20 Pullback
+to become approved without an automatic/system stop only when those other gates
+pass. The output is `USER_MANUAL` / `MANUAL STOP REQUIRED`, with null system stop
+fields; AlphaPilot fabricates no stop and the user chooses and places it. This
+exception is EMA20-only. Micho and any genuine approved system policy retain system
+loss-control semantics.
+
+Read-only acceptance requested the current S&P 500 universe for 2026-09-09 and used
+completed session 2026-09-09. Micho produced 11 technical BUYs and 10 final approved
+BUYs; TXN stopped at portfolio capacity. EMA20 produced 45 technical BUYs, 33
+entry-safety passes, 10 allocation passes and 10 final approved BUYs. All 10 are
+manual-stop-required; none has a system stop. The other 35 had truthful first
+blockers: 12 entry-safety and 23 portfolio capacity. News-blocked count was zero for
+both, with no automatic News provider calls.
+
+Verification: focused backend 95 passed; full backend Ruff/format, mypy 199 source
+files and 656 tests passed. Frontend focused 24 passed; lint, 100 tests and production
+build passed. Controlled Edge acceptance passed for both profiles, reconciled
+backend/UI counts and manual-stop labels, and verified unchanged Portfolio and Paper
+state with no broker action. No migration, research rerun, application-data write,
+commit or push occurred. Full evidence:
+`docs/hotfixes/EMA20_MANUAL_STOP_APPROVED_BUY.md`. Feature work is paused; Sprint 25
+is not started.
+
+Previous task: Shauli DAILY V1 complete locally, REJECTED at Development;
+Validation/folds remain closed. The following records its completed evidence.
 
 Current development branch:
-fix/portfolio-plan-consistency-ux
+research/ema20-loss-control
+
+Latest approval resolves the historical blocker described below: pending entry
+and target touched without stop, with OPEN strictly between entry and target,
+cancels as `AMBIGUOUS_ENTRY_TARGET_ORDER`, no trade. The protocol and executable
+source were frozen before performance. Development is complete and rejected;
+validation/folds remain unopened. No operational integration or tuning occurred.
+
+Completed task: implement/backtest the newly specified `shauli-strat-v1` DAILY,
+LONG_ONLY research variant. Attachment `d324b963-f6a0-4246-a635-621579b1e5e5`
+resolves the earlier broad definition blockers. The protocol now records its
+numeric rules and preserves the earlier conceptual audit as historical only.
+The existing `SHAULI_STRAT_SPEC_DRAFT.md` was read and left unchanged.
+
+The final order ambiguity is resolved by explicit user approval: pending entry
+and target touched without stop, with OPEN strictly between entry and target,
+cancels as `AMBIGUOUS_ENTRY_TARGET_ORDER`, no trade or inferred path. An isolated
+daily research state machine, pending-limit adapter, reporting and runner are
+implemented with focused deterministic/no-lookahead tests. Final backend gate:
+592 tests passed, Ruff/format passed, mypy 199 source files; focused regression
+selection 117 passed. Development verified 745,232 snapshot rows/502 members,
+prepared 497 tickers, and explained five absent-history constituents. Its 7,895
+setups reached 1,353 sweeps and 104 structural confirmations, but no displacement,
+POI or entries. All 1,353 swept setups invalidated (812 lost valid structure,
+541 breached the sweep boundary). Twelve unswept setups were censored at period
+end. Equity stayed $100,000, return/drawdown/exposure 0%; undefined trade/risk
+statistics do not pass mandatory gates. Final classification: REJECTED.
+Validation/folds were not opened, and no source or parameter was changed after
+freeze. The new ambiguity exclusion had zero eligible observations, not proven
+economic benefit. All 4,990 artifact hashes and 66 frozen source hashes verified.
+Handoff: `docs/research/SHAULI_STRAT_RESULTS.md`. No operational activation,
+application-data mutation, commit, push or Sprint 25 work occurred. The existing
+source draft and unrelated work are preserved.
+
+Previous completed research: the user-defined new long-only `achia-strat-ema20-v1`, NOT a change
+to `ema20-pullback-v1`. The exact one-candidate protocol, snapshot binding,
+execution semantics, and stage gates are recorded before performance in
+`docs/research/ACHIA_STRAT_EMA20_PROTOCOL.md`. Existing frontend/research worktree
+changes are preserved. No migrations, provider calls, portfolio/Paper writes,
+broker actions, default changes, commit, or push are part of this task.
+
+Development is complete on the frozen snapshot: 497 prepared tickers and five
+known absent-history constituents; Achia net return 15.46%, CAGR 4.37%, drawdown
+40.95%, Sharpe 0.3080, Calmar 0.1066, 1,504 completed portfolio trades. Independent
+ticker expectancy is -0.0969% over 41,065 trades. Maximum initial stop distance is
+26.30%, above the frozen 20% screen. Final classification is REJECTED; validation
+and folds are unopened. The unchanged EMA20 HYBRID 2% reference returned 80.15%
+with 26.43% drawdown. A post-run reporting-only Decimal-order correction fixed
+false invalid-boundary flags; original artifacts remain intact and no performance
+was rerun. Final backend gate: 516 tests, Ruff/formatting, mypy 194 source files.
+Handoff: `docs/research/ACHIA_STRAT_EMA20_RESULTS.md`. Sprint 25 is not started.
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -79,6 +168,18 @@ allocation remain auditable, but typed `final_action`, `terminal_reason`, and
 IBKR and EOG retain candidate allocations but correctly render `NOT_ACTIONABLE` with
 `LOSS_CONTROL_UNAVAILABLE`; Approved Buys remains zero. No financial threshold or safety
 policy changed. Sprint 25 remains not started.
+
+The subsequent focused EMA20 numeric loss-control study is complete locally. The
+protocol, candidate identities, immutable snapshot, execution semantics, and gates
+were frozen before results. The new fixed signal-day EMA50 protective boundary
+preserved 96.54% of control CAGR, slightly improved drawdown and loss tails, and kept
+turnover tolerable, but failed both hard entry-risk gates: P90 11.06% exceeded 10%
+and maximum 20.64% exceeded 20%. It therefore stopped at development; validation and
+folds were not opened. The exact ATR14 2× reference was not rerun and retains its
+Sprint 20 rejection after validation drawdown worsened 1.62 percentage points against
+the 1.50-point cap. Final decision: `NO_APPROVED_EMA20_LOSS_CONTROL_POLICY`. Production
+BUY semantics and all persistent portfolio, Paper, News, and broker state remain
+unchanged. Sprint 25 remains not started.
 
 Sprint 21 performance hardening is also complete locally. The Dashboard core and
 opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,

@@ -42,7 +42,9 @@ export function PlanReadinessBanner({ readiness }: { readiness: PortfolioPlanRea
         <section aria-labelledby="buy-funnel-title">
           <h3 id="buy-funnel-title">BUY funnel</h3>
           <p className="inline-note">
-            {readiness.buy_funnel.technical_buy_signals} technical BUY signals · {readiness.buy_funnel.rejected_before_news} stopped before News · {readiness.buy_funnel.reached_news} reached News · {readiness.buy_funnel.final_approved_buys} final actionable BUYs.
+            {readiness.buy_funnel.news_advisory_only
+              ? <>{readiness.buy_funnel.technical_buy_signals} technical BUY signals · {readiness.buy_funnel.rejected_before_news} stopped by deterministic hard gates · {readiness.buy_funnel.final_approved_buys} final actionable BUYs. News is optional advisory context, not an approval gate.</>
+              : <>{readiness.buy_funnel.technical_buy_signals} technical BUY signals · {readiness.buy_funnel.rejected_before_news} stopped before News · {readiness.buy_funnel.reached_news} reached News · {readiness.buy_funnel.final_approved_buys} final actionable BUYs.</>}
           </p>
           <div className="disclosure-list">
             {readiness.buy_funnel.groups.map((group) => (

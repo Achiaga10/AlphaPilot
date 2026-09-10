@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { PortfolioDraftSummary } from '../../types/portfolio'
 import { formatMoney, formatPercent } from '../../utils/format'
 
@@ -11,7 +12,20 @@ interface Slice {
   color: string
 }
 
+function slicePath(start: number, weight: number, outerRadius: number) {
+  const point = (radius: number, fraction: number) => {
+    const angle = 2 * Math.PI * fraction / 100
+    return `${60 + radius * Math.cos(angle)} ${60 + radius * Math.sin(angle)}`
+  }
+  const middle = start + weight / 2
+  const end = start + weight
+  // Two arcs per edge also handle the all-cash full circle. Shared radial ends
+  // avoid dashed-stroke seams; focus expands outward without changing the hole.
+  return `M ${point(outerRadius, start)} A ${outerRadius} ${outerRadius} 0 0 1 ${point(outerRadius, middle)} A ${outerRadius} ${outerRadius} 0 0 1 ${point(outerRadius, end)} L ${point(35, end)} A 35 35 0 0 0 ${point(35, middle)} A 35 35 0 0 0 ${point(35, start)} Z`
+}
+
 export function PortfolioAllocationDonut({ summary }: { summary: PortfolioDraftSummary }) {
+  const [focusedSlice, setFocusedSlice] = useState<string | null>(null)
   const positions = [...summary.positions].sort((a, b) => a.ticker.localeCompare(b.ticker))
   const slices: Slice[] = [
     ...positions.map((position, index) => ({
@@ -23,7 +37,6 @@ export function PortfolioAllocationDonut({ summary }: { summary: PortfolioDraftS
     { label: 'Cash', value: summary.cash, weight: summary.cash_pct, color: CASH_COLOR },
   ]
   const radius = 44
-  const circumference = 2 * Math.PI * radius
   let cumulative = 0
 
   return (
@@ -34,34 +47,32 @@ export function PortfolioAllocationDonut({ summary }: { summary: PortfolioDraftS
           <circle cx="60" cy="60" r={radius} fill="none" stroke="#edf0f4" strokeWidth="18" />
           {slices.map((slice) => {
             const weight = Math.max(Number(slice.weight), 0)
-            const length = circumference * weight / 100
-            const offset = -circumference * cumulative / 100
+            const start = cumulative
             cumulative += weight
             return (
-              <circle
+              <path
                 key={slice.label}
-                cx="60"
-                cy="60"
-                r={radius}
-                fill="none"
-                stroke={slice.color}
-                strokeWidth="18"
-                strokeDasharray={`${length} ${Math.max(circumference - length, 0)}`}
-                strokeDashoffset={offset}
+                d={slicePath(start, weight, focusedSlice === slice.label ? 55 : 53)}
+                fill={slice.color}
                 transform="rotate(-90 60 60)"
                 tabIndex={0}
+                onFocus={() => setFocusedSlice(slice.label)}
+                onBlur={() => setFocusedSlice(null)}
                 role="img"
+                data-allocation-label={slice.label}
+                data-allocation-value={slice.value}
+                data-allocation-weight={slice.weight}
                 aria-label={`${slice.label}: ${formatMoney(slice.value)}, ${formatPercent(slice.weight)}`}
               >
                 <title>{slice.label}: {formatMoney(slice.value)} · {formatPercent(slice.weight)}</title>
-              </circle>
+              </path>
             )
           })}
           <text x="60" y="57" textAnchor="middle" className="donut-center-label">{summary.open_positions === 0 ? 'All cash' : `${summary.open_positions} held`}</text>
           <text x="60" y="67" textAnchor="middle" className="donut-center-value">{formatPercent(summary.cash_pct)} cash</text>
         </svg>
         <ul className="allocation-legend" aria-label="Allocation legend">
-          {slices.map((slice) => <li key={slice.label}><span className="allocation-swatch" style={{ backgroundColor: slice.color }} aria-hidden="true" /><strong>{slice.label}</strong><span>{formatMoney(slice.value)}</span><span>{formatPercent(slice.weight)}</span></li>)}
+          {slices.map((slice) => <li key={slice.label} data-allocation-label={slice.label} data-allocation-value={slice.value} data-allocation-weight={slice.weight}><span className="allocation-swatch" style={{ backgroundColor: slice.color }} aria-hidden="true" /><strong>{slice.label}</strong><span>{formatMoney(slice.value)}</span><span>{formatPercent(slice.weight)}</span></li>)}
         </ul>
       </div>
     </section>

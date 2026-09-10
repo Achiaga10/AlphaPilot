@@ -16,7 +16,11 @@ from alphapilot.portfolio.actions import (
 )
 from alphapilot.portfolio.decisions import PortfolioFinalAction
 from alphapilot.portfolio.entry_safety import Ema20EntrySafety
-from alphapilot.portfolio.execution_readiness import ExecutionReadiness, ExecutionReadinessReason
+from alphapilot.portfolio.execution_readiness import (
+    ExecutionReadiness,
+    ExecutionReadinessReason,
+    LossControlSource,
+)
 from alphapilot.portfolio.exit_guidance import FixedTakeProfitPolicy, StrategyExitState
 from alphapilot.portfolio.orchestration import (
     BuyFunnelStage,
@@ -165,10 +169,13 @@ class PortfolioDecisionSchema(BaseModel):
     loss_control_trigger: str | None = None
     loss_control_active: bool = False
     loss_control_broker_stop_order: bool = False
+    loss_control_source: LossControlSource = LossControlSource.NONE
+    manual_stop_required: bool = False
     base_decision: PortfolioDecisionType | None = None
     allocation_reason: PortfolioDecisionReason | None = None
     terminal_reason: PortfolioDecisionReason | None = None
     news_effect: str = "NO_EFFECT"
+    news_advisory_only: bool = False
     news_coverage: str = "NEVER_REFRESHED"
     news_assessment_reason: str | None = None
     news_aggregate_strength: str | None = None
@@ -268,6 +275,7 @@ class BuyFunnelSummarySchema(BaseModel):
     technical_buy_signals: int = 0
     rejected_before_news: int = 0
     reached_news: int = 0
+    news_advisory_only: bool = False
     final_approved_buys: int = 0
     groups: list[BuyFunnelGroupSchema] = []
 

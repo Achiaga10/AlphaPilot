@@ -23,6 +23,9 @@ class Sprint12ResearchStage(StrEnum):
     SPRINT20_ROUND2_DEVELOPMENT = "sprint20-round2-development"
     SPRINT20_ROUND2_VALIDATION = "sprint20-round2-validation"
     SPRINT20_ROUND2_FOLD = "sprint20-round2-fold"
+    EMA20_LOSS_CONTROL_DEVELOPMENT = "ema20-loss-control-development"
+    EMA20_LOSS_CONTROL_VALIDATION = "ema20-loss-control-validation"
+    EMA20_LOSS_CONTROL_FOLD = "ema20-loss-control-fold"
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,7 +53,28 @@ class Sprint12ExitConfiguration:
 
     @classmethod
     def parse_sprint20(cls, value: str) -> Sprint12ExitConfiguration:
-        return cls._parse(value, allowed_protective=set(ProtectiveStopPolicyName))
+        return cls._parse(
+            value,
+            allowed_protective={
+                ProtectiveStopPolicyName.CONTROL,
+                ProtectiveStopPolicyName.ATR_STOP_1_0,
+                ProtectiveStopPolicyName.ATR_STOP_1_5,
+                ProtectiveStopPolicyName.ATR_STOP_2_0,
+                ProtectiveStopPolicyName.ATR_STOP_2_5,
+                ProtectiveStopPolicyName.ATR_STOP_3_0,
+                ProtectiveStopPolicyName.SIGNAL_DAY_LOW,
+            },
+        )
+
+    @classmethod
+    def parse_ema20_loss_control(cls, value: str) -> Sprint12ExitConfiguration:
+        return cls._parse(
+            value,
+            allowed_protective={
+                ProtectiveStopPolicyName.CONTROL,
+                ProtectiveStopPolicyName.FIXED_SIGNAL_EMA50,
+            },
+        )
 
     @classmethod
     def _parse(
@@ -134,6 +158,21 @@ def validate_stage_configurations(
         Sprint12ResearchStage.SPRINT20_DEVELOPMENT,
         Sprint12ResearchStage.SPRINT20_ROUND2_DEVELOPMENT,
     ):
+        return
+    if stage in (
+        Sprint12ResearchStage.EMA20_LOSS_CONTROL_DEVELOPMENT,
+        Sprint12ResearchStage.EMA20_LOSS_CONTROL_VALIDATION,
+        Sprint12ResearchStage.EMA20_LOSS_CONTROL_FOLD,
+    ):
+        expected_order = (
+            ProtectiveStopPolicyName.CONTROL,
+            ProtectiveStopPolicyName.FIXED_SIGNAL_EMA50,
+        )
+        actual_order = tuple(item.trade_management.protective_stop for item in configurations)
+        if strategy != StrategyName.EMA20_PULLBACK or actual_order != expected_order:
+            raise ValueError(
+                "EMA20 loss-control stages require control followed by fixed-signal-ema50-stop"
+            )
         return
     if stage in (
         Sprint12ResearchStage.SPRINT20_VALIDATION,

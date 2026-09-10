@@ -10,6 +10,7 @@ from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
     LossControlEvidence,
+    LossControlSource,
     classify_new_buy,
 )
 from alphapilot.portfolio.exit_guidance import StrategyExitContext
@@ -26,6 +27,7 @@ from alphapilot.portfolio.sizing import (
     VolatilityBatchContext,
     VolatilitySizingCandidate,
 )
+from alphapilot.strategy.name import StrategyName
 from alphapilot.strategy.signal import Signal
 
 UNCLASSIFIED_SECTOR = "Unclassified"
@@ -75,6 +77,7 @@ class PortfolioCandidate:
     pre_decision_reason: PortfolioDecisionReason | None = None
     exit_context: StrategyExitContext | None = None
     entry_safety: Ema20EntrySafety | None = None
+    approved_loss_control_evidence: LossControlEvidence | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -115,10 +118,14 @@ class PortfolioDecision:
     loss_control_trigger: str | None = None
     loss_control_active: bool = False
     loss_control_broker_stop_order: bool = False
+    loss_control_source: LossControlSource = LossControlSource.NONE
+    manual_stop_required: bool = False
+    approved_loss_control_evidence: LossControlEvidence | None = None
     base_decision: PortfolioDecisionType | None = None
     allocation_reason: PortfolioDecisionReason | None = None
     terminal_reason: PortfolioDecisionReason | None = None
     news_effect: str = "NO_EFFECT"
+    news_advisory_only: bool = False
     news_coverage: str = "NEVER_REFRESHED"
     news_assessment_reason: str | None = None
     news_aggregate_strength: str | None = None
@@ -164,10 +171,13 @@ class PortfolioDecisionEngine:
         candidates: tuple[PortfolioCandidate, ...],
         config: PortfolioRiskConfig | None = None,
         sizing_policy: SizingPolicyName = SizingPolicyName.ATR_RISK,
+        strategy_name: StrategyName | str | None = None,
     ) -> PortfolioDecisionPlan:
         risk_config = config or PortfolioRiskConfig()
         if sizing_policy == SizingPolicyName.ATR_VOLATILITY_NORMALIZED:
-            return self._build_volatility_plan(state, candidates, risk_config)
+            return self._build_volatility_plan(
+                state, candidates, risk_config, strategy_name=strategy_name
+            )
         equity = state.equity
         cash = state.cash
         positions = {item.ticker.upper(): item for item in state.positions}
@@ -299,6 +309,7 @@ class PortfolioDecisionEngine:
                     normalized_sizing_weight=sizing.normalized_sizing_weight,
                     exit_context=candidate.exit_context,
                     entry_safety=candidate.entry_safety,
+                    approved_loss_control_evidence=candidate.approved_loss_control_evidence,
                 )
             )
             if approved:
@@ -330,7 +341,9 @@ class PortfolioDecisionEngine:
                 Decimal("0"),
             ),
             open_positions=len(state.positions),
-            decisions=self._workflow_decisions(state, tuple(decisions)),
+            decisions=self._workflow_decisions(
+                state, tuple(decisions), strategy_name=strategy_name
+            ),
         )
 
     def _build_volatility_plan(
@@ -338,6 +351,8 @@ class PortfolioDecisionEngine:
         state: CurrentPortfolioState,
         candidates: tuple[PortfolioCandidate, ...],
         config: PortfolioRiskConfig,
+        *,
+        strategy_name: StrategyName | str | None = None,
     ) -> PortfolioDecisionPlan:
         equity = state.equity
         cash = state.cash
@@ -460,7 +475,7 @@ class PortfolioDecisionEngine:
                 current_risk += sizing.modeled_risk
                 sector_values[sector] = sector_values.get(sector, Decimal("0")) + sizing.allocation
 
-        return self._plan_summary(state, config, tuple(decisions))
+        return self._plan_summary(state, config, tuple(decisions), strategy_name=strategy_name)
 
     @staticmethod
     def _from_sizing(
@@ -491,6 +506,7 @@ class PortfolioDecisionEngine:
             normalized_sizing_weight=sizing.normalized_sizing_weight,
             exit_context=candidate.exit_context,
             entry_safety=candidate.entry_safety,
+            approved_loss_control_evidence=candidate.approved_loss_control_evidence,
         )
 
     @staticmethod
@@ -498,6 +514,8 @@ class PortfolioDecisionEngine:
         state: CurrentPortfolioState,
         config: PortfolioRiskConfig,
         decisions: tuple[PortfolioDecision, ...],
+        *,
+        strategy_name: StrategyName | str | None = None,
     ) -> PortfolioDecisionPlan:
         equity = state.equity
         current_risk = sum((item.modeled_risk_dollars for item in state.positions), Decimal("0"))
@@ -509,13 +527,17 @@ class PortfolioDecisionEngine:
             current_portfolio_risk=current_risk,
             available_portfolio_risk=max(risk_limit - current_risk, Decimal("0")),
             open_positions=len(state.positions),
-            decisions=PortfolioDecisionEngine._workflow_decisions(state, decisions),
+            decisions=PortfolioDecisionEngine._workflow_decisions(
+                state, decisions, strategy_name=strategy_name
+            ),
         )
 
     @staticmethod
     def _workflow_decisions(
         state: CurrentPortfolioState,
         decisions: tuple[PortfolioDecision, ...],
+        *,
+        strategy_name: StrategyName | str | None = None,
     ) -> tuple[PortfolioDecision, ...]:
         """Add exact research-draft action values without synthetic rank dependencies."""
         enriched: list[PortfolioDecision] = []
@@ -547,15 +569,38 @@ class PortfolioDecisionEngine:
                 if action_order > 0 and (outlay is not None or cash_after is not None)
                 else None
             )
-            evidence = PortfolioDecisionEngine._micho_loss_control(decision)
+            evidence = PortfolioDecisionEngine._approved_loss_control(decision)
+            ema20_manual_policy = PortfolioDecisionEngine._is_ema20(decision, strategy_name)
+            ema20_entry_revalidation_missing = (
+                ema20_manual_policy
+                and decision.signal is Signal.BUY
+                and decision.decision is PortfolioDecisionType.BUY
+                and decision.entry_safety is None
+            )
+            manual_stop_required = (
+                evidence is None
+                and ema20_manual_policy
+                and decision.entry_safety is not None
+                and decision.entry_safety.status is Ema20EntrySafetyStatus.ELIGIBLE
+                and decision.decision is PortfolioDecisionType.BUY
+                and decision.proposed_shares > 0
+                and decision.reason is PortfolioDecisionReason.BUY_APPROVED
+            )
             if decision.reason == PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20:
                 readiness = ExecutionReadiness.UNAVAILABLE
                 readiness_reason = ExecutionReadinessReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20
             elif decision.reason == PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE:
                 readiness = ExecutionReadiness.UNAVAILABLE
                 readiness_reason = ExecutionReadinessReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
+            elif ema20_entry_revalidation_missing:
+                readiness = ExecutionReadiness.UNAVAILABLE
+                readiness_reason = ExecutionReadinessReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
             elif decision.decision == PortfolioDecisionType.BUY:
-                readiness, readiness_reason = classify_new_buy(evidence)
+                if manual_stop_required:
+                    readiness = ExecutionReadiness.ACTIONABLE
+                    readiness_reason = ExecutionReadinessReason.MANUAL_STOP_REQUIRED
+                else:
+                    readiness, readiness_reason = classify_new_buy(evidence)
             else:
                 readiness = ExecutionReadiness.RESEARCH_ONLY
                 readiness_reason = ExecutionReadinessReason.NOT_A_NEW_BUY
@@ -570,6 +615,8 @@ class PortfolioDecisionEngine:
                 decision,
                 loss_control_active=evidence is not None,
                 is_final_actionable=is_final_actionable,
+                ema20_manual_policy=ema20_manual_policy,
+                ema20_entry_revalidation_missing=ema20_entry_revalidation_missing,
             )
             enriched.append(
                 replace(
@@ -583,7 +630,12 @@ class PortfolioDecisionEngine:
                     depends_on_action_ids=(),
                     execution_readiness=readiness,
                     execution_readiness_reason=readiness_reason,
-                    approved_protective_stop_price=None,
+                    approved_protective_stop_price=(
+                        evidence.boundary_price
+                        if evidence is not None
+                        and decision.approved_loss_control_evidence is not None
+                        else None
+                    ),
                     loss_control_policy=evidence.policy_name if evidence else "NONE",
                     loss_control_boundary_price=evidence.boundary_price if evidence else None,
                     loss_control_trigger=evidence.trigger if evidence else None,
@@ -591,6 +643,14 @@ class PortfolioDecisionEngine:
                     loss_control_broker_stop_order=evidence.broker_stop_order
                     if evidence
                     else False,
+                    loss_control_source=(
+                        LossControlSource.APPROVED_SYSTEM_POLICY
+                        if evidence
+                        else LossControlSource.USER_MANUAL
+                        if manual_stop_required
+                        else LossControlSource.NONE
+                    ),
+                    manual_stop_required=manual_stop_required,
                     allocation_reason=decision.reason,
                     terminal_reason=terminal_reason,
                     final_action=final_action,
@@ -617,10 +677,16 @@ class PortfolioDecisionEngine:
         *,
         loss_control_active: bool,
         is_final_actionable: bool,
+        ema20_manual_policy: bool = False,
+        ema20_entry_revalidation_missing: bool = False,
     ) -> PortfolioDecisionReason:
         if is_final_actionable:
             return decision.reason
         if decision.signal is not Signal.BUY:
+            return decision.reason
+        if ema20_entry_revalidation_missing:
+            return PortfolioDecisionReason.EMA20_ENTRY_REVALIDATION_UNAVAILABLE
+        if ema20_manual_policy and decision.decision is not PortfolioDecisionType.BUY:
             return decision.reason
         if decision.reason in {
             PortfolioDecisionReason.ENTRY_TOO_EXTENDED_ABOVE_EMA20,
@@ -653,6 +719,21 @@ class PortfolioDecisionEngine:
             classification="ACTIVE_STRATEGY_LOSS_CONTROL",
             broker_stop_order=False,
         )
+
+    @staticmethod
+    def _approved_loss_control(decision: PortfolioDecision) -> LossControlEvidence | None:
+        return (
+            decision.approved_loss_control_evidence
+            or PortfolioDecisionEngine._micho_loss_control(decision)
+        )
+
+    @staticmethod
+    def _is_ema20(decision: PortfolioDecision, strategy_name: StrategyName | str | None) -> bool:
+        if strategy_name is not None:
+            value = getattr(strategy_name, "value", strategy_name)
+            return value == "ema20-pullback"
+        context = decision.exit_context
+        return context is not None and context.strategy.value == "ema20-pullback"
 
     @staticmethod
     def _sector(value: str | None) -> str:
@@ -708,4 +789,5 @@ class PortfolioDecisionEngine:
             normalized_sizing_weight=None,
             exit_context=candidate.exit_context,
             entry_safety=candidate.entry_safety,
+            approved_loss_control_evidence=candidate.approved_loss_control_evidence,
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
@@ -35,6 +36,9 @@ class Sprint12ReportMetadata:
     atr_period: int
     protective_atr_multiple: Decimal | None
     trailing_atr_multiple: Decimal | None
+    loss_control_source: str | None
+    loss_control_policy_version: str | None
+    loss_control_trigger: str | None
     cost_scenario: str
     commission_per_order: Decimal
     slippage_bps_per_side: Decimal
@@ -89,6 +93,13 @@ def build_metadata(
         atr_period=management.atr_period,
         protective_atr_multiple=management.protective_stop.atr_multiple,
         trailing_atr_multiple=management.trailing_stop.atr_multiple,
+        loss_control_source=management.protective_stop.loss_control_source,
+        loss_control_policy_version=management.protective_stop.policy_version,
+        loss_control_trigger=(
+            "DAILY_LOW_OR_GAP_OPEN"
+            if management.protective_stop.loss_control_source is not None
+            else None
+        ),
         cost_scenario="cost-low",
         commission_per_order=config.commission_per_order,
         slippage_bps_per_side=config.slippage_bps,
@@ -166,6 +177,8 @@ def write_sprint12_report(
         "ranking_diagnostics": asdict(result.portfolio.ranking_diagnostics),
         "risk_diagnostics": asdict(result.portfolio.risk_diagnostics),
         "trade_management_diagnostics": asdict(result.portfolio.trade_management_diagnostics),
+        "trade_outcome_diagnostics": _trade_outcome_summary(result),
+        "loss_control_risk_diagnostics": _loss_control_risk_summary(result),
         "attribution": {
             "gross_realized_pnl": result.attribution.gross_realized_pnl,
             "gross_unrealized_pnl": result.attribution.gross_unrealized_pnl,
@@ -235,6 +248,14 @@ def write_sprint12_report(
             "peak_giveback_pct",
             "initial_atr14",
             "initial_stop",
+            "loss_control_source",
+            "loss_control_as_of",
+            "loss_control_policy_version",
+            "risk_per_share",
+            "entry_to_boundary_risk_pct",
+            "initial_position_value",
+            "planned_risk_dollars",
+            "planned_risk_pct_of_entry_equity",
             "profit_target",
             "exit_reason",
             "strategy_exit_reason",
@@ -265,6 +286,23 @@ def write_sprint12_report(
                 trade.peak_giveback_pct,
                 trade.initial_atr,
                 trade.initial_stop,
+                trade.loss_control_source,
+                trade.loss_control_as_of,
+                trade.loss_control_policy_version,
+                _risk_per_share(trade.entry_price, trade.initial_stop),
+                _risk_pct(trade.entry_price, trade.initial_stop),
+                Decimal(trade.initial_shares or trade.shares) * trade.entry_price,
+                _planned_risk_dollars(
+                    trade.entry_price,
+                    trade.initial_stop,
+                    trade.initial_shares or trade.shares,
+                ),
+                _portfolio_risk_pct(
+                    entry_price=trade.entry_price,
+                    boundary=trade.initial_stop,
+                    shares=trade.initial_shares or trade.shares,
+                    entry_equity=trade.entry_equity,
+                ),
                 trade.profit_target,
                 trade.exit_reason,
                 trade.strategy_exit_reason,
@@ -288,6 +326,14 @@ def write_sprint12_report(
             "shares",
             "initial_atr14",
             "initial_stop",
+            "loss_control_source",
+            "loss_control_as_of",
+            "loss_control_policy_version",
+            "risk_per_share",
+            "entry_to_boundary_risk_pct",
+            "initial_position_value",
+            "planned_risk_dollars",
+            "planned_risk_pct_of_entry_equity",
             "effective_stop",
             "profit_target",
             "final_price",
@@ -305,6 +351,23 @@ def write_sprint12_report(
                 position.shares,
                 position.initial_atr,
                 position.initial_stop,
+                position.loss_control_source,
+                position.loss_control_as_of,
+                position.loss_control_policy_version,
+                _risk_per_share(position.entry_price, position.initial_stop),
+                _risk_pct(position.entry_price, position.initial_stop),
+                Decimal(position.initial_shares or position.shares) * position.entry_price,
+                _planned_risk_dollars(
+                    position.entry_price,
+                    position.initial_stop,
+                    position.initial_shares or position.shares,
+                ),
+                _portfolio_risk_pct(
+                    entry_price=position.entry_price,
+                    boundary=position.initial_stop,
+                    shares=position.initial_shares or position.shares,
+                    entry_equity=position.entry_equity,
+                ),
                 position.effective_stop,
                 position.profit_target,
                 dict(result.portfolio.final_prices)[position.ticker],
@@ -381,7 +444,142 @@ def _recovery_summary(result: MultiPortfolioRunResult) -> dict[str, Any]:
     }
 
 
-def _average_optional(values: list[Decimal | None]) -> Decimal | None:
+def _trade_outcome_summary(result: MultiPortfolioRunResult) -> dict[str, Decimal | int | None]:
+    returns = [trade.return_pct for trade in result.portfolio.trades]
+    winners = [value for value in returns if value > 0]
+    losers = [value for value in returns if value < 0]
+    gross_pnl = result.attribution.gross_realized_pnl + result.attribution.gross_unrealized_pnl
+    return {
+        "winning_trade_count": len(winners),
+        "losing_trade_count": len(losers),
+        "average_winner_pct": _average_optional(winners),
+        "average_loser_pct": _average_optional(losers),
+        "median_loser_pct": _percentile(losers, Decimal("0.50")),
+        "worst_trade_pct": min(returns) if returns else None,
+        "expectancy_average_trade_pct": _average_optional(returns),
+        "gross_return_pct": (
+            gross_pnl / result.portfolio.initial_capital * Decimal("100")
+            if result.portfolio.initial_capital > 0
+            else None
+        ),
+        "net_return_pct": result.portfolio.total_return_pct,
+        "transaction_friction": result.attribution.transaction_friction,
+    }
+
+
+def _loss_control_risk_summary(result: MultiPortfolioRunResult) -> dict[str, Any]:
+    entries: dict[str, tuple[Decimal, Decimal, int, Decimal | None]] = {}
+    for trade in result.portfolio.trades:
+        if trade.initial_stop is not None:
+            entries.setdefault(
+                trade.trade_id,
+                (
+                    trade.entry_price,
+                    trade.initial_stop,
+                    trade.initial_shares or trade.shares,
+                    trade.entry_equity,
+                ),
+            )
+    for position in result.portfolio.open_positions:
+        if position.initial_stop is not None:
+            entries.setdefault(
+                position.trade_id,
+                (
+                    position.entry_price,
+                    position.initial_stop,
+                    position.initial_shares or position.shares,
+                    position.entry_equity,
+                ),
+            )
+    all_entries = {trade.trade_id for trade in result.portfolio.trades} | {
+        position.trade_id for position in result.portfolio.open_positions
+    }
+    risks = [
+        (entry - boundary) / entry * Decimal("100")
+        for entry, boundary, _, _ in entries.values()
+        if entry > 0
+    ]
+    planned_dollars = [
+        Decimal(shares) * (entry - boundary) for entry, boundary, shares, _ in entries.values()
+    ]
+    portfolio_risks = [
+        value
+        for entry, boundary, shares, equity in entries.values()
+        if (
+            value := _portfolio_risk_pct(
+                entry_price=entry,
+                boundary=boundary,
+                shares=shares,
+                entry_equity=equity,
+            )
+        )
+        is not None
+    ]
+    stops = result.portfolio.trade_management_diagnostics.stop_hit_count
+    return {
+        "portfolio_entries": len(all_entries),
+        "entries_with_valid_numeric_boundary": len(entries),
+        "boundary_coverage_pct": (
+            Decimal(len(entries)) / Decimal(len(all_entries)) * Decimal("100")
+            if all_entries
+            else None
+        ),
+        "risk_distance_p50_pct": _percentile(risks, Decimal("0.50")),
+        "risk_distance_p75_pct": _percentile(risks, Decimal("0.75")),
+        "risk_distance_p90_pct": _percentile(risks, Decimal("0.90")),
+        "risk_distance_max_pct": max(risks) if risks else None,
+        "average_planned_risk_dollars": _average_optional(planned_dollars),
+        "average_planned_risk_pct_of_entry_equity": _average_optional(portfolio_risks),
+        "stop_trigger_count": stops,
+        "stop_out_rate_pct": (
+            Decimal(stops) / Decimal(len(entries)) * Decimal("100") if entries else None
+        ),
+        "percentile_method": "sorted floor(q * (n - 1))",
+    }
+
+
+def _risk_per_share(entry_price: Decimal, boundary: Decimal | None) -> Decimal | None:
+    return entry_price - boundary if boundary is not None else None
+
+
+def _risk_pct(entry_price: Decimal, boundary: Decimal | None) -> Decimal | None:
+    risk = _risk_per_share(entry_price, boundary)
+    return (
+        risk / entry_price * Decimal("100")
+        if entry_price > 0 and risk is not None and risk > 0
+        else None
+    )
+
+
+def _planned_risk_dollars(
+    entry_price: Decimal, boundary: Decimal | None, shares: int
+) -> Decimal | None:
+    risk = _risk_per_share(entry_price, boundary)
+    return Decimal(shares) * risk if risk is not None else None
+
+
+def _portfolio_risk_pct(
+    *,
+    entry_price: Decimal,
+    boundary: Decimal | None,
+    shares: int,
+    entry_equity: Decimal | None,
+) -> Decimal | None:
+    if entry_equity is None or entry_equity <= 0:
+        return None
+    risk = _risk_per_share(entry_price, boundary)
+    return Decimal(shares) * risk / entry_equity * Decimal("100") if risk is not None else None
+
+
+def _percentile(values: list[Decimal], quantile: Decimal) -> Decimal | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = int(quantile * Decimal(len(ordered) - 1))
+    return ordered[index]
+
+
+def _average_optional(values: Sequence[Decimal | None]) -> Decimal | None:
     available = [value for value in values if value is not None]
     return sum(available, Decimal("0")) / Decimal(len(available)) if available else None
 

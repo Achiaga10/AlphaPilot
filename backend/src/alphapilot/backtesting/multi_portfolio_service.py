@@ -309,6 +309,8 @@ class MultiPortfolioBacktestService:
         stop_reasons = {
             TradeManagementExitReason.INITIAL_ATR_STOP,
             TradeManagementExitReason.ATR_TRAILING_STOP,
+            TradeManagementExitReason.FIXED_SIGNAL_EMA50_STOP,
+            TradeManagementExitReason.PROTECTIVE_STOP,
         }
         for trade in portfolio.trades:
             if trade.exit_reason not in stop_reasons:

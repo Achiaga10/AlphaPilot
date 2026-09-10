@@ -24,8 +24,36 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Post-Sprint-24 Final BUY Actionability Semantics Hotfix
-(COMPLETE LOCALLY)
+Post-Sprint-24 EMA20 Manual-Stop Approved BUY Hotfix / Project Pause
+(IMPLEMENTED LOCALLY — ALL CODE AND BROWSER GATES PASS)
+
+News Intelligence is advisory-only for both Micho and EMA20 Pullback. It has no
+authority over signal, allocation, loss control, final actionability, counts,
+profiles, plans, HOLD, SELL or EXIT_REQUIRED. Persisted News evidence and explicit
+bounded refresh remain available, but plan generation never refreshes News to
+establish approval. Provider/read/parse failures attach unavailable advisory
+context and cannot fail either supported strategy's Profile or Portfolio Plan.
+
+`APPROVED BUY` means exactly `final_action=BUY` and
+`is_final_actionable=true`. EMA20 Pullback may produce an approved BUY without an
+approved automatic loss-control policy only after every other deterministic hard
+gate passes. Such a decision is explicitly `loss_control_source=USER_MANUAL` and
+`manual_stop_required=true`; its system stop/boundary remains null and the user is
+responsible for choosing and placing the protective stop. This exception is EMA20-
+only. Micho retains approved system loss control, and a future genuine approved
+EMA20 system policy remains authoritative. No fallback stop was introduced.
+
+Final read-only acceptance for completed session 2026-09-09: Micho produced 11
+technical BUYs and 10 approved BUYs; TXN stopped at portfolio capacity. EMA20
+produced 45 technical BUYs, 33 entry-safety passes and 10 approved BUYs, all marked
+USER_MANUAL / MANUAL STOP REQUIRED with null automatic stops. The remaining EMA20
+BUYs had 12 entry-safety blockers and 23 portfolio-capacity blockers. News blocked
+zero candidates for both. Focused backend: 95 passed; full backend: Ruff/format,
+mypy 199 source files and 656 tests passed. Frontend: focused 24 passed; lint, 100
+tests and production build passed. Controlled Edge acceptance passed for both
+profiles and verified no Portfolio, Paper or broker mutation. See
+`docs/hotfixes/EMA20_MANUAL_STOP_APPROVED_BUY.md`. Feature work is paused; Sprint 25
+is not started.
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
@@ -74,12 +102,55 @@ replace stale approval wording while allocation evidence remains auditable. Summ
 counts, UI filters/rendering, and the apply service all use that invariant. Sprint 25
 has not started.
 
+The focused `research/ema20-loss-control` study is complete locally. Its candidate
+space and gates were frozen before results. The one new fixed signal-day EMA50
+protective boundary failed development because entry-risk P90 was 11.06% (10% cap)
+and maximum was 20.64% (20% cap), so validation and folds were not opened. The exact
+prior ATR14 2× candidate was reused rather than rerun and retains its Sprint 20
+`NO_WINNER` result. The outcome is `NO_APPROVED_EMA20_LOSS_CONTROL_POLICY`; no
+Strategy Profile, ExecutionReadiness, Portfolio Plan, UI, Paper, or broker behavior
+changed. Sprint 25 has not started.
+
 Final Sprint 24 hardening makes AI-only SEVERE insufficient for exit, requires
 PRIMARY-source deterministic hard-event confirmation, and requires current persisted
 provider/classifier coverage before a new BUY can be actionable. Candidate refresh is
 explicit and capped at 25 tickers; Ollama remains disabled by default.
 
+The new `achia-strat-ema20-v1` hypothesis is separate from EMA20 Pullback and Micho.
+Its protocol is frozen in `docs/research/ACHIA_STRAT_EMA20_PROTOCOL.md`: completed
+EMA20 > EMA50, inclusive close zone 90%–101% of EMA20, next-open entry, static
+actual-fill minus signal ATR14 minus 1% actual-fill stop active on entry day, and
+strict completed-close-below-EMA20 next-open exit. No sweep or production registry
+change is authorized. Development gates govern access to validation/folds.
+Development returned 15.46% with 40.95% drawdown, Sharpe 0.3080, Calmar 0.1066,
+negative pooled independent expectancy, and maximum planned stop distance 26.30%.
+It is REJECTED; validation/folds were not opened. A reporting-only Decimal-order
+correction restored true 100% boundary coverage without changing performance or
+classification. See `docs/research/ACHIA_STRAT_EMA20_RESULTS.md`. No production
+activation, parameter tuning, portfolio/Paper writes, or broker action occurred.
+
+The latest Shauli request explicitly authorizes DAILY/LONG_ONLY research and
+supplies the numeric V1 rules, superseding the earlier broad definition blockers.
+`docs/research/SHAULI_STRAT_PROTOCOL.md` freezes those rules and the now-approved
+`AMBIGUOUS_ENTRY_TARGET_ORDER` no-trade exclusion. The isolated research strategy,
+pending-limit adapter and deterministic tests are complete. The verified snapshot
+Development run prepared 497 tickers (five known absent-history constituents):
+7,895 setups, 1,353 sweeps, 104 structural confirmations, zero displacement/POI
+plans or trades. All swept setups invalidated before displacement. Final equity
+remained $100,000; this is no exposure, not evidence of profitable risk control.
+Classification is REJECTED; validation/folds were not opened. The continuous HH/HL
+gate and strictly post-sweep three-bar FVG sequence prevent progression in this
+frozen implementation. No rule was relaxed or rerun after results. Full backend
+gate: 592 tests passed, Ruff/format passed, mypy 199 source files. Handoff:
+`docs/research/SHAULI_STRAT_RESULTS.md`. No operational activation or application-
+data mutation occurred. Achia remains separately rejected; Sprint 25 is not started.
+
 ## Development Environment
+
+The approved `AMBIGUOUS_ENTRY_TARGET_ORDER` no-trade exclusion is frozen and
+tested. Development failed mandatory gates and is complete; do not reopen
+validation/folds, tune V1, or start another experiment without a new user request.
+No operational activation or Portfolio Plan/Paper/broker mutation is authorized.
 
 Backend directory:
 backend/

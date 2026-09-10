@@ -80,7 +80,9 @@ export function DecisionTable({
             const approvedSell = isFinalApprovedSell(decision)
             const terminalReason = decision.terminal_reason ?? decision.reason
             const allocationLabel = approvedBuy ? 'Approved allocation' : 'Candidate allocation'
-            const finalActionLabel = decision.final_action.replaceAll('_', ' ')
+            const finalActionLabel = approvedBuy
+              ? 'APPROVED BUY'
+              : decision.final_action.replaceAll('_', ' ')
             return (
               <article className="decision-card" key={`${decision.ticker}-${decision.decision}`}>
                 <div className="decision-card__main">
@@ -102,6 +104,7 @@ export function DecisionTable({
                   <div><span className="field-label field-label--with-help">Terminal reason <InfoTooltip label="About terminal reason">The first authoritative hard gate that determines the final action.</InfoTooltip></span><strong>{humanizeReason(terminalReason)}</strong></div>
                 </div>
                 {terminalReason === 'LOSS_CONTROL_UNAVAILABLE' ? <p className="inline-note"><strong>LOSS CONTROL</strong><br />No approved numeric loss-control policy<br /><strong>Status: NOT ACTIONABLE</strong></p> : null}
+                {approvedBuy && decision.manual_stop_required ? <p className="inline-note inline-note--warning"><strong>MANUAL STOP REQUIRED</strong><br />No system stop — set and manage the protective stop manually.</p> : null}
                 {excluded ? <p className="inline-note">Excluded by you. Technical and historical evidence remains available.</p> : null}
                 {onExcludeTicker || onRestoreTicker ? <div className="table-actions">
                   {excluded ? <button className="button button--secondary button--small" type="button" disabled={preferencePending} onClick={() => onRestoreTicker?.(decision.ticker)}>Return to recommendation pool</button> : <button className="button button--secondary button--small" type="button" disabled={preferencePending} onClick={() => onExcludeTicker?.(decision.ticker)}>Exclude from future plans</button>}
@@ -109,7 +112,7 @@ export function DecisionTable({
                 {canApplyDecisions && decision.cash_after_decision !== null && ((approvedBuy && decision.proposed_shares > 0) || (approvedSell && decision.current_shares > 0)) ? (
                   <div className="decision-action">
                     {approvedBuy ? <>
-                      <div className="quantity-choice"><span>AlphaPilot research allocation: <strong>{decision.proposed_shares} shares</strong><small>{decision.execution_readiness === 'ACTIONABLE' ? 'Actionable stop evidence approved' : 'Research only · no approved protective stop'}</small></span><label><span>Shares to add</span><input aria-label={`Shares to add for ${decision.ticker}`} type="number" min="1" step="1" value={quantity} disabled={applied || pending} onChange={(event) => setQuantities((current) => ({ ...current, [quantityKey]: event.target.value }))} /></label></div>
+                      <div className="quantity-choice"><span>AlphaPilot research allocation: <strong>{decision.proposed_shares} shares</strong><small>{decision.manual_stop_required ? 'Manual stop required · no system stop' : decision.execution_readiness === 'ACTIONABLE' ? 'System loss-control evidence approved' : 'Research only · no approved protective stop'}</small></span><label><span>Shares to add</span><input aria-label={`Shares to add for ${decision.ticker}`} type="number" min="1" step="1" value={quantity} disabled={applied || pending} onChange={(event) => setQuantities((current) => ({ ...current, [quantityKey]: event.target.value }))} /></label></div>
                       <button className="button button--primary button--small" type="button" disabled={applied || pending || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0} onClick={() => void reviewBuy(decision)}>{applied ? 'Applied' : pending ? 'Validating…' : 'Review Add'}</button>
                     </> : <><p>Research portfolio update only — no broker order is sent.</p><button className="button button--primary button--small" type="button" disabled={applied || pending} onClick={() => applySell(decision)}>{applied ? 'Applied' : pending ? 'Applying…' : 'Apply Sell'}</button></>}
                   </div>
@@ -118,13 +121,13 @@ export function DecisionTable({
                   <summary>Decision details</summary>
                   <dl className="detail-grid">
                     <Detail label="Technical signal" help="The frozen strategy output; it does not itself authorize a portfolio action."><StatusBadge value={decision.signal} /></Detail>
-                    <Detail label="Portfolio candidate decision" help="The intermediate allocation-stage outcome before later safety and News gates."><StatusBadge value={decision.base_decision ?? decision.decision} /></Detail>
+                    <Detail label="Portfolio candidate decision" help="The intermediate allocation-stage outcome before final safety checks. News context has no approval authority."><StatusBadge value={decision.base_decision ?? decision.decision} /></Detail>
                     <Detail label="Allocation-stage outcome" help="Intermediate sizing/allocation evidence, preserved separately from final actionability.">{allocationOutcome(decision)}</Detail>
-                    <Detail label="News effect" help="The deterministic backend-owned effect of persisted, validated News evidence."><code>{decision.news_effect ?? 'NO_EFFECT'}</code></Detail>
+                    <Detail label={decision.news_advisory_only ? 'News advisory context' : 'News effect'} help="Persisted News assessment. When marked advisory-only by the backend, it cannot change the final action, allocation or terminal reason.">{decision.news_advisory_only ? <p>Advisory only — does not approve, block or change this decision.</p> : null}<code>{decision.news_effect ?? 'NO_EFFECT'}</code></Detail>
                     <Detail label="News coverage" help="Current provider and classifier readiness is separate from stored article history."><code>{decision.news_coverage ?? 'NEVER_REFRESHED'}</code></Detail>
                     <Detail label="Final AlphaPilot action" help="The single authoritative action after all hard gates."><StatusBadge value={decision.final_action} label={finalActionLabel} /></Detail>
                     <Detail label="Terminal reason" help="The first authoritative blocker, or approval reason for a final actionable decision."><code>{terminalReason}</code></Detail>
-                    <Detail label="News reason" help="The stored assessment reason; the AI classifier never supplies a trade action.">{decision.news_reason ?? 'No News-driven change'}</Detail>
+                    <Detail label="News reason" help="The stored assessment reason; the AI classifier never supplies a trade action.">{decision.news_reason ?? (decision.news_advisory_only ? 'Optional News context not evaluated' : 'No News-driven change')}</Detail>
                     <Detail label="News policy" help="The deterministic server policy version that produced the News effect."><code>{decision.news_policy_version ?? 'Not applicable'}</code></Detail>
                     <Detail label="Supporting News" help="Persisted article identifiers supporting the News assessment.">{decision.supporting_news_article_ids?.length ? decision.supporting_news_article_ids.join(', ') : 'None'}</Detail>
                     <Detail label="Candidate rank" help={METRIC_GLOSSARY.candidateRank}>{rankByTicker[decision.ticker] ?? 'Not ranked'}</Detail>
@@ -151,9 +154,10 @@ export function DecisionTable({
                     <Detail label="Current shares" help={METRIC_GLOSSARY.currentShares}>{decision.current_shares}</Detail>
                     <Detail label="Estimated proceeds" help={METRIC_GLOSSARY.estimatedProceeds}>{formatMoney(decision.estimated_proceeds)}</Detail>
                     <Detail label="Candidate reason" help="Intermediate allocation-stage reason; it is not the final actionability reason.">{allocationOutcome(decision)}</Detail>
-                    <Detail label="Execution readiness" help="Actionability requires an approved deterministic numeric loss-control boundary; it need not be an intraday broker stop.">{decision.execution_readiness ?? 'RESEARCH_ONLY'} · <code>{decision.execution_readiness_reason ?? 'NO_APPROVED_LOSS_CONTROL_POLICY'}</code></Detail>
-                    {decision.loss_control_active ? <Detail label="Loss-control boundary" help="Backend-owned numeric strategy boundary and exact trigger semantics.">{decision.loss_control_policy} · {formatMoney(decision.loss_control_boundary_price)} · {decision.loss_control_trigger} · broker stop: {decision.loss_control_broker_stop_order ? 'YES' : 'NONE'}</Detail> : <Detail label="Loss control" help="A new BUY cannot become final actionable without approved deterministic numeric loss control.">No approved numeric loss-control policy</Detail>}
-                    <Detail label="Approved protective stop" help="Null means no approved actionable stop; research references are not substituted.">{decision.approved_protective_stop_price === null || decision.approved_protective_stop_price === undefined ? 'None · research only' : formatMoney(decision.approved_protective_stop_price)}</Detail>
+                    <Detail label="Execution readiness" help="Micho requires approved system loss control. EMA20 may be approved under the explicit user-managed manual-stop policy after every other hard gate passes.">{decision.execution_readiness ?? 'RESEARCH_ONLY'} · <code>{decision.execution_readiness_reason ?? 'NO_APPROVED_LOSS_CONTROL_POLICY'}</code></Detail>
+                    <Detail label="Loss-control source" help="Whether an approved system policy supplies the boundary or the EMA20 stop must be chosen and managed by the user."><code>{decision.loss_control_source ?? 'NONE'}</code></Detail>
+                    {decision.loss_control_active ? <Detail label="Loss-control boundary" help="Backend-owned numeric strategy boundary and exact trigger semantics.">{decision.loss_control_policy} · {formatMoney(decision.loss_control_boundary_price)} · {decision.loss_control_trigger} · broker stop: {decision.loss_control_broker_stop_order ? 'YES' : 'NONE'}</Detail> : decision.manual_stop_required ? <Detail label="Loss control" help="AlphaPilot has not generated a protective boundary. The user is responsible for choosing and placing it.">MANUAL STOP REQUIRED · No system stop — set manually</Detail> : <Detail label="Loss control" help="No approved system or user-managed loss-control mode applies to this decision.">No approved numeric loss-control policy</Detail>}
+                    <Detail label="Approved protective stop" help="Null means AlphaPilot generated no automatic protective-stop price; research references are not substituted.">{decision.approved_protective_stop_price === null || decision.approved_protective_stop_price === undefined ? decision.manual_stop_required ? 'No system stop — set manually' : 'None · research only' : formatMoney(decision.approved_protective_stop_price)}</Detail>
                   </dl>
                   <ExitGuidance decision={decision} riskApplicable={riskApplicable} />
                 </details>

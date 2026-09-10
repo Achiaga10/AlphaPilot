@@ -15,6 +15,7 @@ export function NewsIntelligencePanel({ sentiments, articles, loading, error, re
   return <section className="panel news-intelligence" aria-labelledby="news-intelligence-title">
     <div className="section-heading"><div><p className="eyebrow">Persisted evidence · backend-owned policy</p><h2 id="news-intelligence-title">News Intelligence</h2></div><button className="button button--secondary button--small" disabled={refreshing} onClick={onRefresh}>{refreshing ? 'Refreshing…' : 'Refresh open holdings'}</button></div>
     <p className="inline-note">Compact ticker summaries are shown first. Adanos aggregate context, attributable Finnhub articles, and Gemini interpretation remain visibly separate. AI cannot issue BUY or SELL.</p>
+    <p className="inline-note">For Micho and EMA20 Pullback, all News is advisory only, including hard events. It cannot block a BUY or cause a SELL. Strategy safety, entry safety, numeric loss control and portfolio constraints remain mandatory.</p>
     {refreshResult ? <div className="inline-note" aria-label="News coverage status"><strong>Coverage:</strong> {refreshResult.coverage.map(([ticker, status]) => `${ticker} ${status}`).join(' · ')}. Stored articles do not imply current or complete coverage.</div> : null}
     {loading ? <p>Loading persisted news…</p> : null}
     {error ? <p className="inline-note inline-note--warning">News is currently unavailable. Stored portfolio and technical decisions remain available.</p> : null}

@@ -382,7 +382,7 @@ input[aria-invalid="true"] { border-color: var(--negative); }
 }
 
 .allocation-donut { width: min(100%, 320px); margin-inline: auto; overflow: visible; }
-.allocation-donut circle[tabindex]:focus { outline: none; stroke-width: 22; filter: drop-shadow(0 0 3px rgba(23, 48, 77, 0.45)); }
+.allocation-donut path[tabindex]:focus { outline: none; }
 .donut-center-label { font-size: 8px; font-weight: 700; fill: var(--text); }
 .donut-center-value { font-size: 5px; fill: var(--muted); }
 .allocation-legend { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; }

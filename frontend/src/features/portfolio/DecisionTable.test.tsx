@@ -3,6 +3,40 @@ import userEvent from '@testing-library/user-event'
 import { planFixture } from '../../test/fixtures'
 import { DecisionTable } from './DecisionTable'
 
+test.each([
+  ['EMA20 Pullback', 'NEWS_ASSESSMENT_UNAVAILABLE'],
+  ['EMA20 Pullback', 'BUY_BLOCKED'],
+  ['EMA20 Pullback', 'EXIT_REQUIRED'],
+  ['Micho', 'NEWS_ASSESSMENT_UNAVAILABLE'],
+  ['Micho', 'BUY_BLOCKED'],
+  ['Micho', 'EXIT_REQUIRED'],
+])('approved %s decision remains primary under advisory %s', async (_strategy, newsEffect) => {
+  const user = userEvent.setup()
+  const decision = { ...planFixture.decisions[0]!, news_advisory_only: true, news_effect: newsEffect, final_action: 'BUY' as const, terminal_reason: 'BUY_APPROVED' as const, is_final_actionable: true }
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" canApplyDecisions />)
+  expect(screen.getByText('Final action APPROVED BUY')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Review Add' })).toBeInTheDocument()
+  await user.click(screen.getByText('Decision details'))
+  expect(screen.getByText('News advisory context')).toBeInTheDocument()
+  expect(screen.getByText('Advisory only — does not approve, block or change this decision.')).toBeInTheDocument()
+  expect(screen.queryByText('NOT ACTIONABLE')).not.toBeInTheDocument()
+})
+
+test('candidate allocation is not labeled as an approved BUY', () => {
+  const decision = {
+    ...planFixture.decisions[0]!,
+    allocation_reason: 'BUY_APPROVED' as const,
+    terminal_reason: 'LOSS_CONTROL_UNAVAILABLE' as const,
+    final_action: 'NOT_ACTIONABLE' as const,
+    is_final_actionable: false,
+  }
+
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" />)
+
+  expect(screen.getAllByText('Candidate allocation')).toHaveLength(2)
+  expect(screen.queryByText(/APPROVED BUY/)).not.toBeInTheDocument()
+})
+
 test('equal-slot uses not-applicable risk semantics and exposes frozen exit guidance', async () => {
   const user = userEvent.setup()
   render(<DecisionTable decisions={[planFixture.decisions[0]!]} sizingPolicy="equal-slot" />)
@@ -86,6 +120,8 @@ test('allocation BUY without loss control is visibly non-actionable and cannot b
     execution_readiness: 'RESEARCH_ONLY' as const,
     execution_readiness_reason: 'NO_APPROVED_LOSS_CONTROL_POLICY' as const,
     loss_control_active: false,
+    loss_control_source: 'NONE' as const,
+    manual_stop_required: false,
     is_final_actionable: false,
   }
   render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" canApplyDecisions />)
@@ -97,6 +133,50 @@ test('allocation BUY without loss control is visibly non-actionable and cannot b
   expect(screen.getAllByText('No approved numeric loss-control policy')).toHaveLength(2)
   expect(screen.queryByText('Buy approved')).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Review Add' })).not.toBeInTheDocument()
+})
+
+test('approved EMA20 manual-stop BUY is actionable without a system boundary', async () => {
+  const user = userEvent.setup()
+  const decision = {
+    ...planFixture.decisions[0]!,
+    approved_protective_stop_price: null,
+    loss_control_boundary_price: null,
+    loss_control_trigger: null,
+    loss_control_active: false,
+    loss_control_source: 'USER_MANUAL' as const,
+    manual_stop_required: true,
+    execution_readiness: 'ACTIONABLE' as const,
+    execution_readiness_reason: 'MANUAL_STOP_REQUIRED' as const,
+  }
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" canApplyDecisions />)
+
+  expect(screen.getByText('Final action APPROVED BUY')).toBeInTheDocument()
+  expect(screen.getByText('MANUAL STOP REQUIRED')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Review Add' })).toBeInTheDocument()
+  await user.click(screen.getByText('Decision details'))
+  expect(screen.getByText('USER_MANUAL')).toBeInTheDocument()
+  expect(screen.getAllByText(/No system stop/).length).toBeGreaterThan(0)
+})
+
+test('approved system policy displays its numeric automatic stop without manual warning', async () => {
+  const user = userEvent.setup()
+  const decision = {
+    ...planFixture.decisions[0]!,
+    approved_protective_stop_price: '170',
+    loss_control_boundary_price: '170',
+    loss_control_trigger: 'AUTOMATIC_STOP',
+    loss_control_active: true,
+    loss_control_source: 'APPROVED_SYSTEM_POLICY' as const,
+    manual_stop_required: false,
+    execution_readiness: 'ACTIONABLE' as const,
+    execution_readiness_reason: 'LOSS_CONTROL_READY' as const,
+  }
+  render(<DecisionTable decisions={[decision]} sizingPolicy="equal-slot" canApplyDecisions />)
+
+  expect(screen.queryByText('MANUAL STOP REQUIRED')).not.toBeInTheDocument()
+  await user.click(screen.getByText('Decision details'))
+  expect(screen.getByText('APPROVED_SYSTEM_POLICY')).toBeInTheDocument()
+  expect(screen.getByText('$170.00')).toBeInTheDocument()
 })
 
 test('hard-gated BUY candidates show their terminal blocker instead of allocation approval', () => {
