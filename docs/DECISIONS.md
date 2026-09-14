@@ -1121,7 +1121,7 @@ This comes after strategy and portfolio validation.
 - Final classification is `NO_APPROVED_EMA20_LOSS_CONTROL_POLICY`. There is no fallback,
   winner integration, Strategy Profile change, ExecutionReadiness bypass, production
   BUY change, portfolio/Paper mutation, or broker action. Any next research direction
-  requires a separate user-approved protocol; Sprint 25 has not started.
+  requires a separate user-approved protocol; Sprint 25 had not started then.
 
 # Achia_strat_ema20 V1 research decisions
 
@@ -1146,7 +1146,7 @@ This comes after strategy and portfolio validation.
 - Research uses the verified immutable snapshot, read-only database transaction,
   $100k/10 equal slots/COST_LOW, RS20 for allocation only, and independent
   one-position ticker simulations for signal-level diagnostics. It never changes
-  current portfolio/Paper/News/candle/broker data. Sprint 25 is not started.
+  current portfolio/Paper/News/candle/broker data. Sprint 25 had not started then.
 - Development classification is REJECTED: Sharpe 0.3080, Calmar 0.1066, negative
   independent-ticker expectancy (-0.0969%), and maximum planned stop distance
   26.30% fail frozen screens. The machine-frozen zero-preparation-failure screen
@@ -1250,3 +1250,50 @@ hypothesis, no parameter search; failed development closes validation/folds.
   plus 4,990 artifacts verified. Results: `docs/research/SHAULI_STRAT_RESULTS.md`.
 - Retain V1 as rejected research evidence for user review. No production
   activation, application-data mutation, parameter search, commit or push.
+
+# Sprint 25 Micho Forward Portfolio decisions
+
+- Sprint 25 introduces automatic virtual execution only. A virtual fill is a modeled
+  AlphaPilot event, never evidence that Alpaca or another broker accepted or filled an
+  order. Real Alpaca execution remains manual and external; there is no broker read,
+  write, cancellation or reconciliation path in this domain.
+- The only Forward-execution strategy is frozen `micho-150-v1`, version 1, BOTH entry
+  mode, existing RS20 ranking, ATR-volatility-normalized sizing, ten-position cap and
+  existing 5 bps adverse fill convention. Micho technical, ranking, risk and allocation
+  rules were not retuned or versioned.
+- EMA20 remains Portfolio Plan recommendation-only. Its canonical approved BUY and
+  `USER_MANUAL` / `MANUAL STOP REQUIRED` policy are unchanged; a separate typed field
+  makes it Forward-ineligible with `SPRINT25_MICHO_ONLY`.
+- News remains advisory-only and is not called by the Forward lifecycle. News cannot
+  create, block, cancel, size or exit a Forward trade.
+- Forward economic state is isolated in `forward_portfolios`, `forward_cycles`,
+  `forward_orders`, `forward_positions`, `forward_trades`, `forward_events` and
+  `forward_equity_points`; it does not reuse ResearchPortfolio or Paper cash/trades.
+- Initialization requires explicit positive initial cash and an explicit start session.
+  The start cannot precede the latest already stored completed session, so history is
+  never retrospectively traded. Older candles may only warm indicators.
+- The existing America/New_York conservative completed-session policy (16:15 cutoff)
+  and stored SPY sessions remain authoritative. Signal T executes at the next available
+  stored session open; all marks use that session's stored completed close.
+- Micho loss control is exactly `SMA150_COMPLETED_CLOSE_EXIT` with trigger
+  `COMPLETED_DAILY_CLOSE_BELOW`. It is not an intraday protective stop: low touches,
+  entry-day lows and opening gaps do not independently exit. A completed close below
+  current SMA150 signals an exit for the next stored session open. Consequently
+  stop-touch activation and gap-through-stop logic are not applicable to Micho V1.
+- Opening exits are filled before opening entries, so already scheduled exit proceeds
+  may fund same-open entries. No later intraday proceeds are modeled or recycled.
+  Cash is Decimal-only, nonnegative and unlevered; equity equals cash plus open positions
+  marked at the current completed close.
+- ACTIVE portfolios admit new entries. PAUSED portfolios cancel/block new entries but
+  continue to mark and exit open positions. ARCHIVED portfolios are terminal. Forward
+  history is immutable/auditable and there is no destructive reset operation.
+- The lifecycle is restart-safe and incremental. Missing sessions are processed in
+  chronological order. `(portfolio_id, trading_session)` uniquely identifies a cycle;
+  source-signal order keys, partial unique pending-entry/open-position indexes, unique
+  trade-per-position, event keys and equity-session keys prevent duplicate economics.
+  PostgreSQL transaction advisory and row locks protect multiple workers.
+- Required missing or stale market data rolls the economic transaction back, records a
+  typed failure separately and leaves the session eligible for later retry. Scheduler
+  errors remain visible and the same service powers the manual recovery endpoint.
+- Migration `e9b2bc954dea` introduces the Forward tables on the real previous head
+  `d3f8a1b6c204`. Sprint 26 is not started.

@@ -8,9 +8,17 @@ from fastapi import FastAPI
 from alphapilot.core.config import settings
 from alphapilot.core.logging import configure_logging
 from alphapilot.services.daily_market_scheduler import DailyMarketSyncScheduler, DailySyncStatus
+from alphapilot.services.forward_portfolio_scheduler import (
+    ForwardPortfolioScheduler,
+    ForwardSchedulerRunStatus,
+)
 
 daily_market_scheduler = DailyMarketSyncScheduler(
     enabled=settings.DAILY_MARKET_SYNC_ENABLED,
+)
+forward_portfolio_scheduler = ForwardPortfolioScheduler(
+    enabled=settings.FORWARD_PORTFOLIO_SCHEDULER_ENABLED,
+    interval_seconds=settings.FORWARD_PORTFOLIO_SCHEDULER_INTERVAL_SECONDS,
 )
 
 
@@ -61,8 +69,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         daily_market_scheduler.job = scheduled_job
     daily_market_scheduler.start()
 
+    if forward_portfolio_scheduler.status.enabled:
+
+        async def forward_job() -> ForwardSchedulerRunStatus:
+            from alphapilot.database.session import AsyncSessionLocal
+            from alphapilot.portfolio.orchestration import PortfolioDecisionOrchestrator
+            from alphapilot.repositories.company import CompanyRepository
+            from alphapilot.repositories.daily_candle import DailyCandleRepository
+            from alphapilot.repositories.index_constituent import IndexConstituentRepository
+            from alphapilot.services.company import CompanyService
+            from alphapilot.services.daily_candle import DailyCandleService
+            from alphapilot.services.forward_portfolio import (
+                ForwardPortfolioService,
+                MichoForwardDecisionProvider,
+            )
+
+            async with AsyncSessionLocal() as session:
+                orchestrator = PortfolioDecisionOrchestrator(
+                    CompanyService(CompanyRepository(session)),
+                    DailyCandleService(DailyCandleRepository(session)),
+                    IndexConstituentRepository(session),
+                )
+                result = await ForwardPortfolioService(
+                    session, MichoForwardDecisionProvider(orchestrator)
+                ).run_pending()
+                if result.portfolio_id is None:
+                    return ForwardSchedulerRunStatus.NO_PORTFOLIO
+                if not result.processed_sessions:
+                    return ForwardSchedulerRunStatus.NO_NEW_SESSION
+                return ForwardSchedulerRunStatus.SUCCEEDED
+
+        forward_portfolio_scheduler.job = forward_job
+    forward_portfolio_scheduler.start()
+
     yield
 
+    await forward_portfolio_scheduler.stop()
     await daily_market_scheduler.stop()
 
     print("AlphaPilot stopped")

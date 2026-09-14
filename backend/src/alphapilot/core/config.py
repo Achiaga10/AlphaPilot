@@ -19,6 +19,9 @@ class Settings(BaseSettings):
 
     DAILY_MARKET_SYNC_ENABLED: bool = False
 
+    FORWARD_PORTFOLIO_SCHEDULER_ENABLED: bool = True
+    FORWARD_PORTFOLIO_SCHEDULER_INTERVAL_SECONDS: int = 3600
+
     AI_COPILOT_ENABLED: bool = False
     AI_PROVIDER: Literal["ollama"] = "ollama"
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"

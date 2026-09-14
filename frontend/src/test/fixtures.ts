@@ -97,6 +97,7 @@ export const planFixture: PortfolioPlan = {
       action_id: '1:BUY:NVDA', application_order: 1, depends_on_action_ids: [],
       allocation_reason: 'BUY_APPROVED', terminal_reason: 'BUY_APPROVED', final_action: 'BUY',
       is_final_actionable: true,
+      forward_execution_eligible: false, forward_execution_reason: 'SPRINT25_MICHO_ONLY',
       execution_readiness: 'ACTIONABLE', execution_readiness_reason: 'MANUAL_STOP_REQUIRED',
       approved_protective_stop_price: null, loss_control_policy: 'NONE',
       loss_control_boundary_price: null, loss_control_trigger: null,
@@ -130,6 +131,7 @@ export const planFixture: PortfolioPlan = {
       action_id: '2:SELL:JNJ', application_order: 2, depends_on_action_ids: [], exit_context: null,
       allocation_reason: 'SELL_APPROVED', terminal_reason: 'SELL_APPROVED', final_action: 'SELL',
       is_final_actionable: true,
+      forward_execution_eligible: false, forward_execution_reason: 'NOT_A_NEW_BUY',
     },
     {
       ticker: 'MSFT', signal: 'HOLD', decision: 'HOLD', reason: 'NO_ACTION',
@@ -142,6 +144,7 @@ export const planFixture: PortfolioPlan = {
       action_id: null, application_order: null, depends_on_action_ids: [], exit_context: null,
       allocation_reason: 'NO_ACTION', terminal_reason: 'NO_ACTION', final_action: 'HOLD',
       is_final_actionable: false,
+      forward_execution_eligible: false, forward_execution_reason: 'NOT_A_NEW_BUY',
     },
     {
       ticker: 'AAPL', signal: 'BUY', decision: 'SKIP', reason: 'SECTOR_LIMIT',
@@ -154,6 +157,7 @@ export const planFixture: PortfolioPlan = {
       action_id: null, application_order: null, depends_on_action_ids: [], exit_context: null,
       allocation_reason: 'SECTOR_LIMIT', terminal_reason: 'SECTOR_LIMIT', final_action: 'NOT_ACTIONABLE',
       is_final_actionable: false,
+      forward_execution_eligible: false, forward_execution_reason: 'NOT_FINAL_ACTIONABLE',
     },
   ],
   candidate_statuses: [

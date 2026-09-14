@@ -9,6 +9,7 @@ from alphapilot.portfolio.entry_safety import Ema20EntrySafety, Ema20EntrySafety
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
+    ForwardExecutionEligibilityReason,
     LossControlEvidence,
     LossControlSource,
     classify_new_buy,
@@ -137,6 +138,10 @@ class PortfolioDecision:
     supporting_news_article_ids: tuple[UUID, ...] = ()
     entry_safety: Ema20EntrySafety | None = None
     is_final_actionable: bool = False
+    forward_execution_eligible: bool = False
+    forward_execution_reason: ForwardExecutionEligibilityReason = (
+        ForwardExecutionEligibilityReason.NOT_FINAL_ACTIONABLE
+    )
 
     @property
     def is_approved_buy(self) -> bool:
@@ -611,6 +616,13 @@ class PortfolioDecisionEngine:
             final_action = PortfolioDecisionEngine._final_action(
                 decision, is_final_actionable=is_final_actionable
             )
+            forward_eligible, forward_reason = PortfolioDecisionEngine._forward_eligibility(
+                decision,
+                strategy_name=strategy_name,
+                evidence=evidence,
+                final_action=final_action,
+                is_final_actionable=is_final_actionable,
+            )
             terminal_reason = PortfolioDecisionEngine._terminal_reason(
                 decision,
                 loss_control_active=evidence is not None,
@@ -655,6 +667,8 @@ class PortfolioDecisionEngine:
                     terminal_reason=terminal_reason,
                     final_action=final_action,
                     is_final_actionable=is_final_actionable,
+                    forward_execution_eligible=forward_eligible,
+                    forward_execution_reason=forward_reason,
                 )
             )
         return tuple(enriched)
@@ -734,6 +748,26 @@ class PortfolioDecisionEngine:
             return value == "ema20-pullback"
         context = decision.exit_context
         return context is not None and context.strategy.value == "ema20-pullback"
+
+    @staticmethod
+    def _forward_eligibility(
+        decision: PortfolioDecision,
+        *,
+        strategy_name: StrategyName | str | None,
+        evidence: LossControlEvidence | None,
+        final_action: PortfolioFinalAction,
+        is_final_actionable: bool,
+    ) -> tuple[bool, ForwardExecutionEligibilityReason]:
+        if decision.signal is not Signal.BUY:
+            return False, ForwardExecutionEligibilityReason.NOT_A_NEW_BUY
+        if not is_final_actionable or final_action is not PortfolioFinalAction.BUY:
+            return False, ForwardExecutionEligibilityReason.NOT_FINAL_ACTIONABLE
+        strategy = getattr(strategy_name, "value", strategy_name)
+        if strategy == StrategyName.EMA20_PULLBACK.value:
+            return False, ForwardExecutionEligibilityReason.SPRINT25_MICHO_ONLY
+        if strategy != StrategyName.MICHO_150.value or evidence is None:
+            return False, ForwardExecutionEligibilityReason.SYSTEM_LOSS_CONTROL_REQUIRED
+        return True, ForwardExecutionEligibilityReason.MICHO_FORWARD_ELIGIBLE
 
     @staticmethod
     def _sector(value: str | None) -> str:

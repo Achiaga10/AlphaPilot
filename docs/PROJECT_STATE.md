@@ -2,8 +2,32 @@
 
 ## Current Phase
 
-Post-Sprint-24 EMA20 Manual-Stop Approved BUY Hotfix / Project Pause
-IMPLEMENTED LOCALLY — ALL CODE AND BROWSER GATES PASS
+Sprint 25 — Micho Forward Portfolio Operations & Trade Lifecycle
+IMPLEMENTED LOCALLY — AUTOMATIC VIRTUAL EXECUTION / MANUAL EXTERNAL BROKER
+
+AlphaPilot now owns a separate persistent `micho-150-v1` version 1 Forward Virtual
+Portfolio. It begins only at an explicit user-supplied start session and cash amount,
+processes newly stored completed SPY sessions chronologically, creates virtual pending
+entries only from canonical final-actionable Micho BUYs with approved SMA150 completed-
+close loss control, fills at the next available stored open with 5 bps adverse friction,
+marks at stored completed closes, and executes Micho close-below-SMA150 exits at the
+following stored open. Durable cycles, orders, positions, trades, events and equity
+points are isolated from ResearchPortfolio and Paper.
+
+The worker checks immediately on startup and hourly thereafter. PostgreSQL transaction
+advisory locking, row locks and unique constraints provide restart and multi-worker
+idempotency. Missing required market data rolls back the economic cycle, persists a
+typed visible failure, and retries the same session later. ACTIVE admits new entries;
+PAUSED cancels/blocks new entries while continuing existing exit management; ARCHIVED
+is terminal and has no processing.
+
+No real Alpaca automation exists. Broker execution is manual/external and virtual fills
+prove only modeled AlphaPilot execution. Forward execution is Micho-only. EMA20 retains
+its existing Portfolio Plan approval and manual-stop semantics but is explicitly
+ineligible with `SPRINT25_MICHO_ONLY`; News remains advisory-only. No strategy rules,
+research conclusions, ResearchPortfolio, Paper or News evidence changed. Migration:
+`e9b2bc954dea`. Full handoff: `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`. Sprint 26
+is not started.
 
 News Intelligence is advisory-only for both Micho and EMA20 Pullback, including
 severe/hard-event evidence. It cannot change signal, allocation, deterministic
@@ -38,8 +62,8 @@ build passed. Controlled Edge acceptance passed for both profiles, reconciled
 backend/UI counts and manual-stop labels, and verified unchanged Portfolio and Paper
 state with no broker action. No migration, research rerun, application-data write,
 commit or push occurred. Full evidence:
-`docs/hotfixes/EMA20_MANUAL_STOP_APPROVED_BUY.md`. Feature work is paused; Sprint 25
-is not started.
+`docs/hotfixes/EMA20_MANUAL_STOP_APPROVED_BUY.md`. That prior acceptance remains
+preserved.
 
 Previous task: Shauli DAILY V1 complete locally, REJECTED at Development;
 Validation/folds remain closed. The following records its completed evidence.
@@ -76,7 +100,7 @@ Validation/folds were not opened, and no source or parameter was changed after
 freeze. The new ambiguity exclusion had zero eligible observations, not proven
 economic benefit. All 4,990 artifact hashes and 66 frozen source hashes verified.
 Handoff: `docs/research/SHAULI_STRAT_RESULTS.md`. No operational activation,
-application-data mutation, commit, push or Sprint 25 work occurred. The existing
+application-data mutation, commit, push or Sprint 25 work occurred at that point. The existing
 source draft and unrelated work are preserved.
 
 Previous completed research: the user-defined new long-only `achia-strat-ema20-v1`, NOT a change
@@ -95,7 +119,7 @@ and folds are unopened. The unchanged EMA20 HYBRID 2% reference returned 80.15%
 with 26.43% drawdown. A post-run reporting-only Decimal-order correction fixed
 false invalid-boundary flags; original artifacts remain intact and no performance
 was rerun. Final backend gate: 516 tests, Ruff/formatting, mypy 194 source files.
-Handoff: `docs/research/ACHIA_STRAT_EMA20_RESULTS.md`. Sprint 25 is not started.
+Handoff: `docs/research/ACHIA_STRAT_EMA20_RESULTS.md`. Sprint 25 had not started then.
 
 Sprint 6 is complete, merged, and documented in `docs/SPRINT6_COMPLETION_REPORT.md`.
 
@@ -126,7 +150,7 @@ locally: it preserves base technical decisions, persists Adanos as the primary a
 sentiment/context layer, retains Finnhub for attributable and hard-event evidence, uses
 Gemini only for deterministically targeted deep interpretation, keeps Ollama disabled,
 and leaves all financial authority in the versioned backend decision overlay. Sprint 25
-is not started.
+had not started at that point.
 Final safety hardening is also complete locally: AI classification alone cannot produce a
 News exit; a narrow PRIMARY-source hard-event confirmation gate is mandatory. Per-ticker
 provider/classifier refresh coverage is durable and typed, actionable BUYs require current
@@ -137,7 +161,7 @@ AXON/FAST manual Paper incident review. It preserves the frozen EMA20 strategy s
 adds a separate current-actionability invariant: every new EMA20 Pullback BUY must pass
 fresh entry-price revalidation against the existing completed signal-session EMA20 1%
 upper proximity boundary. Extended or unavailable evidence is non-actionable; News and
-RS20 cannot override the result. Sprint 25 remains not started.
+RS20 cannot override the result. Sprint 25 had not started then.
 
 A second focused post-Sprint-24 hotfix is complete locally. Portfolio-plan summary
 counts and rows now share one post-News final-actionability invariant, with typed
@@ -148,7 +172,7 @@ never creates one automatically. The Dashboard now prioritizes required exits,
 approved buys, and attention; deferred reasons and News use compact progressive
 disclosure; Forward Paper evidence is collapsed and explicitly distinguished from
 authoritative current holdings. The current real plan and APO/UBER Paper lifecycles
-were audited read-only. Sprint 25 is still not started.
+were audited read-only. Sprint 25 had not started at that point.
 
 A third focused post-Sprint-24 audit/hotfix is complete locally. It corrected the
 candidate News workflow to the approved Adanos-first Option A architecture and added a
@@ -160,14 +184,14 @@ path and unavailable evidence remains explicit. The reproduced 2026-09-02 plan s
 has zero final BUYs for a justified earlier reason: all 65 technical BUYs stop before
 News (37 EMA20 entry-safety blocks, 2 already-held position constraints, and 26 without
 approved loss control). No News thresholds, strategy rules, or SELL protections changed.
-Sprint 25 remains not started.
+Sprint 25 had not started then.
 
 A final semantics follow-up is complete locally. Technical signal and candidate
 allocation remain auditable, but typed `final_action`, `terminal_reason`, and
 `is_final_actionable` are now the sole action authority. In the real 2026-09-03 plan,
 IBKR and EOG retain candidate allocations but correctly render `NOT_ACTIONABLE` with
 `LOSS_CONTROL_UNAVAILABLE`; Approved Buys remains zero. No financial threshold or safety
-policy changed. Sprint 25 remains not started.
+policy changed. Sprint 25 had not started then.
 
 The subsequent focused EMA20 numeric loss-control study is complete locally. The
 protocol, candidate identities, immutable snapshot, execution semantics, and gates
@@ -179,7 +203,7 @@ folds were not opened. The exact ATR14 2× reference was not rerun and retains i
 Sprint 20 rejection after validation drawdown worsened 1.62 percentage points against
 the 1.50-point cap. Final decision: `NO_APPROVED_EMA20_LOSS_CONTROL_POLICY`. Production
 BUY semantics and all persistent portfolio, Paper, News, and broker state remain
-unchanged. Sprint 25 remains not started.
+unchanged. Sprint 25 had not started then.
 
 Sprint 21 performance hardening is also complete locally. The Dashboard core and
 opportunity scan are separate reads; bulk valuation, Position Intelligence, freshness,

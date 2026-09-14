@@ -19,6 +19,7 @@ from alphapilot.portfolio.entry_safety import Ema20EntrySafety
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
+    ForwardExecutionEligibilityReason,
     LossControlSource,
 )
 from alphapilot.portfolio.exit_guidance import FixedTakeProfitPolicy, StrategyExitState
@@ -187,6 +188,10 @@ class PortfolioDecisionSchema(BaseModel):
     supporting_news_article_ids: list[UUID] = []
     entry_safety: Ema20EntrySafety | None = None
     is_final_actionable: bool = False
+    forward_execution_eligible: bool = False
+    forward_execution_reason: ForwardExecutionEligibilityReason = (
+        ForwardExecutionEligibilityReason.NOT_FINAL_ACTIONABLE
+    )
 
 
 class PortfolioPositionSummarySchema(BaseModel):
