@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,6 +14,7 @@ from alphapilot.database.models import (  # noqa: F401
     company,
     daily_candle,
     daily_candle_version,
+    forward_portfolio,
     index_constituent,
     market_data_ingestion,
     research_dataset,
@@ -21,9 +23,17 @@ from alphapilot.database.models import (  # noqa: F401
 
 config = context.config
 
+database_url = settings.DATABASE_URL
+if os.getenv("ALPHAPILOT_MIGRATION_USE_TEST_DATABASE") == "true":
+    if settings.TEST_DATABASE_URL is None:
+        raise RuntimeError("TEST_DATABASE_URL is required for isolated migration verification")
+    if settings.TEST_DATABASE_URL == settings.DATABASE_URL:
+        raise RuntimeError("Refusing to run test migration against the development database")
+    database_url = settings.TEST_DATABASE_URL
+
 config.set_main_option(
     "sqlalchemy.url",
-    settings.DATABASE_URL,
+    database_url,
 )
 
 if config.config_file_name is not None:
@@ -35,7 +45,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.DATABASE_URL,
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,

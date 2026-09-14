@@ -8,6 +8,7 @@ from alphapilot.api.routes.copilot import router as copilot_router
 from alphapilot.api.routes.daily_candles import (
     router as daily_candles_router,
 )
+from alphapilot.api.routes.forward_portfolio import router as forward_portfolio_router
 from alphapilot.api.routes.health import (
     router as health_router,
 )
@@ -56,6 +57,8 @@ router.include_router(
 )
 
 router.include_router(portfolio_router)
+
+router.include_router(forward_portfolio_router)
 
 router.include_router(news_router)
 

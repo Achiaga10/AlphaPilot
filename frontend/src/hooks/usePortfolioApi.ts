@@ -1,4 +1,18 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  getCurrentForwardPortfolio,
+  getForwardAnalytics,
+  getForwardEvents,
+  getForwardHealth,
+  getForwardOrders,
+  getForwardPositions,
+  getForwardTrades,
+  initializeForwardPortfolio,
+  pauseForwardPortfolio,
+  resumeForwardPortfolio,
+  runForwardCycles,
+} from '../api/forwardPortfolio'
+import type { ForwardPortfolio } from '../types/forwardPortfolio'
 import {
   applyManualSell,
   createPortfolioPlan,
@@ -60,6 +74,72 @@ export function useHealthQuery() {
     retryDelay: 100,
     refetchInterval: 30_000,
   })
+}
+
+export function useCurrentForwardPortfolioQuery() {
+  return useQuery({
+    queryKey: ['forward-portfolio'],
+    queryFn: ({ signal }) => getCurrentForwardPortfolio(signal),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useForwardPortfolioDetails(portfolioId: string | null) {
+  const enabled = Boolean(portfolioId)
+  return {
+    positions: useQuery({
+      queryKey: ['forward-positions', portfolioId],
+      queryFn: ({ signal }) => getForwardPositions(portfolioId ?? '', signal), enabled,
+    }),
+    orders: useQuery({
+      queryKey: ['forward-orders', portfolioId],
+      queryFn: ({ signal }) => getForwardOrders(portfolioId ?? '', signal), enabled,
+    }),
+    trades: useQuery({
+      queryKey: ['forward-trades', portfolioId],
+      queryFn: ({ signal }) => getForwardTrades(portfolioId ?? '', signal), enabled,
+    }),
+    events: useQuery({
+      queryKey: ['forward-events', portfolioId],
+      queryFn: ({ signal }) => getForwardEvents(portfolioId ?? '', signal), enabled,
+    }),
+    analytics: useQuery({
+      queryKey: ['forward-analytics', portfolioId],
+      queryFn: ({ signal }) => getForwardAnalytics(portfolioId ?? '', signal), enabled,
+    }),
+    health: useQuery({
+      queryKey: ['forward-health', portfolioId],
+      queryFn: ({ signal }) => getForwardHealth(portfolioId ?? '', signal), enabled,
+      refetchInterval: 60_000,
+    }),
+  }
+}
+
+export function useForwardPortfolioMutations() {
+  const client = useQueryClient()
+  const refresh = async () => {
+    await client.invalidateQueries({ queryKey: ['forward-portfolio'] })
+    await client.invalidateQueries({ predicate: (query) =>
+      String(query.queryKey[0]).startsWith('forward-') })
+  }
+  return {
+    initialize: useMutation({
+      mutationFn: initializeForwardPortfolio,
+      onSuccess: refresh,
+    }),
+    pause: useMutation({
+      mutationFn: (portfolio: ForwardPortfolio) => pauseForwardPortfolio(portfolio),
+      onSuccess: refresh,
+    }),
+    resume: useMutation({
+      mutationFn: (portfolio: ForwardPortfolio) => resumeForwardPortfolio(portfolio),
+      onSuccess: refresh,
+    }),
+    run: useMutation({
+      mutationFn: runForwardCycles,
+      onSuccess: refresh,
+    }),
+  }
 }
 
 export function useRiskConfigQuery() {

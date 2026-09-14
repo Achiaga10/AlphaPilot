@@ -92,6 +92,7 @@ export const dailyOpportunitiesFixture = {
 
 export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/health/`, () => HttpResponse.json({ status: 'ok', application: 'AlphaPilot' })),
+  http.get(`${API_BASE_URL}/api/v1/forward-portfolio/current`, () => HttpResponse.json(null)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/risk-config`, () => HttpResponse.json(riskConfigFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/strategy-profiles`, () => HttpResponse.json(strategyProfilesFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/current`, () => HttpResponse.json(researchPortfolioFixture)),

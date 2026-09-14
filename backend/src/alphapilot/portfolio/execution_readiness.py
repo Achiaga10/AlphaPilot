@@ -31,6 +31,14 @@ class LossControlSource(StrEnum):
     USER_MANUAL = "USER_MANUAL"
 
 
+class ForwardExecutionEligibilityReason(StrEnum):
+    MICHO_FORWARD_ELIGIBLE = "MICHO_FORWARD_ELIGIBLE"
+    SPRINT25_MICHO_ONLY = "SPRINT25_MICHO_ONLY"
+    NOT_FINAL_ACTIONABLE = "NOT_FINAL_ACTIONABLE"
+    NOT_A_NEW_BUY = "NOT_A_NEW_BUY"
+    SYSTEM_LOSS_CONTROL_REQUIRED = "SYSTEM_LOSS_CONTROL_REQUIRED"
+
+
 @dataclass(frozen=True, slots=True)
 class LossControlEvidence:
     policy_name: str

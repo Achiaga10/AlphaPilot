@@ -195,6 +195,8 @@ export interface PortfolioDecision {
   supporting_news_article_ids?: string[]
   entry_safety?: Ema20EntrySafety | null
   is_final_actionable: boolean
+  forward_execution_eligible: boolean
+  forward_execution_reason: 'MICHO_FORWARD_ELIGIBLE' | 'SPRINT25_MICHO_ONLY' | 'NOT_FINAL_ACTIONABLE' | 'NOT_A_NEW_BUY' | 'SYSTEM_LOSS_CONTROL_REQUIRED'
 }
 
 export interface Ema20EntrySafety {

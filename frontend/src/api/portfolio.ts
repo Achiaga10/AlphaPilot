@@ -63,6 +63,8 @@ function isPortfolioPlan(value: unknown): value is PortfolioPlan {
       isObject(decision) &&
       typeof decision.final_action === 'string' &&
       typeof decision.is_final_actionable === 'boolean' &&
+      typeof decision.forward_execution_eligible === 'boolean' &&
+      typeof decision.forward_execution_reason === 'string' &&
       (typeof decision.terminal_reason === 'string' || decision.terminal_reason === null)
     )) &&
     Array.isArray(value.candidate_statuses) &&

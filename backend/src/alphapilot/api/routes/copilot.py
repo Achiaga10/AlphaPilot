@@ -183,8 +183,9 @@ async def _answer_news_question(
 ) -> CopilotAnswerSchema:
     authority_note = (
         " For Micho and EMA20 Pullback, all News (including hard events) is advisory only; "
-        "it cannot block BUY or change the final decision. Numeric loss control "
-        "and entry safety remain mandatory."
+        "it cannot block BUY or change the final decision. Micho retains deterministic "
+        "system loss control; EMA20 may instead require an explicit user-managed manual stop. "
+        "Entry safety and all other non-News portfolio gates remain mandatory."
     )
     records = await news.list_portfolio_news(portfolio_id)
     tickers = sorted({article.ticker for article, _ in records})

@@ -3,6 +3,23 @@
 from .company import Company
 from .daily_candle import DailyCandle
 from .daily_candle_version import DailyCandleVersion
+from .forward_portfolio import (
+    ForwardBrokerExecutionMode,
+    ForwardCycle,
+    ForwardCycleStatus,
+    ForwardEquityPoint,
+    ForwardEvent,
+    ForwardEventType,
+    ForwardExecutionMode,
+    ForwardOrder,
+    ForwardOrderSide,
+    ForwardOrderStatus,
+    ForwardPortfolio,
+    ForwardPortfolioStatus,
+    ForwardPosition,
+    ForwardPositionStatus,
+    ForwardTrade,
+)
 from .market_data_ingestion import MarketDataIngestionBatch
 from .news import (
     ExternalNewsSentimentObservation,
@@ -36,6 +53,21 @@ __all__ = [
     "Company",
     "DailyCandle",
     "DailyCandleVersion",
+    "ForwardBrokerExecutionMode",
+    "ForwardCycle",
+    "ForwardCycleStatus",
+    "ForwardEquityPoint",
+    "ForwardEvent",
+    "ForwardEventType",
+    "ForwardExecutionMode",
+    "ForwardOrder",
+    "ForwardOrderSide",
+    "ForwardOrderStatus",
+    "ForwardPortfolio",
+    "ForwardPortfolioStatus",
+    "ForwardPosition",
+    "ForwardPositionStatus",
+    "ForwardTrade",
     "MarketDataIngestionBatch",
     "ExternalNewsSentimentObservation",
     "NewsArticle",

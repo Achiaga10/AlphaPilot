@@ -24,8 +24,25 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
-Post-Sprint-24 EMA20 Manual-Stop Approved BUY Hotfix / Project Pause
-(IMPLEMENTED LOCALLY — ALL CODE AND BROWSER GATES PASS)
+Sprint 25 — Micho Forward Portfolio Operations & Trade Lifecycle
+(IMPLEMENTED LOCALLY — AUTOMATIC VIRTUAL EXECUTION / MANUAL EXTERNAL BROKER)
+
+Sprint 25 adds a dedicated persistent Forward Portfolio for the frozen
+`micho-150-v1` version 1 profile. It processes stored completed sessions
+sequentially, models final-actionable Micho entries and exits at the next stored
+session open with the existing 5 bps adverse friction convention, marks open
+positions at completed closes, and persists exact cash/equity, orders, positions,
+trades, events, cycles and analytics. The hourly worker runs immediately at app
+startup and uses PostgreSQL transaction advisory locking plus durable unique
+constraints. It never calls a broker API.
+
+Forward execution is Micho-only. EMA20 Portfolio Plan approvals, including
+`USER_MANUAL` / `MANUAL STOP REQUIRED`, remain unchanged but have separate typed
+Forward eligibility `false` / `SPRINT25_MICHO_ONLY`. News remains advisory-only.
+ResearchPortfolio, Paper, News evidence, Alpaca, frozen strategies and historical
+research conclusions are not mutated. Migration `e9b2bc954dea` owns the separate
+Forward domain. See `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`. Sprint 26 is not
+started.
 
 News Intelligence is advisory-only for both Micho and EMA20 Pullback. It has no
 authority over signal, allocation, loss control, final actionability, counts,
@@ -52,8 +69,8 @@ zero candidates for both. Focused backend: 95 passed; full backend: Ruff/format,
 mypy 199 source files and 656 tests passed. Frontend: focused 24 passed; lint, 100
 tests and production build passed. Controlled Edge acceptance passed for both
 profiles and verified no Portfolio, Paper or broker mutation. See
-`docs/hotfixes/EMA20_MANUAL_STOP_APPROVED_BUY.md`. Feature work is paused; Sprint 25
-is not started.
+`docs/hotfixes/EMA20_MANUAL_STOP_APPROVED_BUY.md`. That prior acceptance remains
+preserved.
 
 Sprint 11 and all 11B/11C/11D hardening are complete and merged. Sprint 12 and
 Sprint 13 through Sprint 15 are complete, reviewed, and merged. Sprint 16 is
@@ -69,13 +86,13 @@ semantics. Sprint 23 added immutable forward Paper evidence and backend-owned
 execution/outcome analytics. Sprint 24 is complete locally: Adanos is the persisted
 primary aggregate News sentiment source, Finnhub remains attributable/hard-event evidence,
 Gemini is targeted deep interpretation only, Ollama is disabled, and the deterministic
-backend remains the sole financial decision authority. Sprint 25 has not started.
+backend remains the sole financial decision authority. At that point Sprint 25 had not started.
 The focused `fix/ema20-entry-safety` hotfix is complete locally and adds fresh backend-owned EMA20 entry
 revalidation without changing the frozen historical strategy. A technical EMA BUY
 signal is not sufficient for actionability: current entry price must be at/below or
 within the existing 1% upper proximity boundary of the fixed completed signal-session
 EMA20. Extended or unavailable/stale geometry fails closed. Ranking and News cannot
-override this gate. Sprint 25 has not started.
+override this gate. At that point Sprint 25 had not started.
 
 The focused `fix/portfolio-plan-consistency-ux` hotfix is complete locally. An
 approved BUY is now one final actionable BUY after entry safety, execution
@@ -93,14 +110,14 @@ can continue without routine Gemini completion; adverse or weak aggregate eviden
 requires bounded attributable review; missing/stale evidence remains explicit.
 Candidates stopped by EMA20 entry safety, user preference, loss-control readiness, or
 portfolio constraints consume no candidate News quota. No threshold, strategy,
-loss-control, or SELL-safety rule changed. Sprint 25 has not started.
+loss-control, or SELL-safety rule changed. At that point Sprint 25 had not started.
 
 The final BUY-semantics follow-up is complete locally. Technical signal, intermediate
 candidate allocation, and final portfolio action are distinct typed facts. A BUY is
 approved only when `final_action=BUY` and `is_final_actionable=true`; terminal blockers
 replace stale approval wording while allocation evidence remains auditable. Summary
 counts, UI filters/rendering, and the apply service all use that invariant. Sprint 25
-has not started.
+had not started at that point.
 
 The focused `research/ema20-loss-control` study is complete locally. Its candidate
 space and gates were frozen before results. The one new fixed signal-day EMA50
@@ -109,7 +126,7 @@ and maximum was 20.64% (20% cap), so validation and folds were not opened. The e
 prior ATR14 2× candidate was reused rather than rerun and retains its Sprint 20
 `NO_WINNER` result. The outcome is `NO_APPROVED_EMA20_LOSS_CONTROL_POLICY`; no
 Strategy Profile, ExecutionReadiness, Portfolio Plan, UI, Paper, or broker behavior
-changed. Sprint 25 has not started.
+changed. At that point Sprint 25 had not started.
 
 Final Sprint 24 hardening makes AI-only SEVERE insufficient for exit, requires
 PRIMARY-source deterministic hard-event confirmation, and requires current persisted
@@ -143,7 +160,8 @@ gate and strictly post-sweep three-bar FVG sequence prevent progression in this
 frozen implementation. No rule was relaxed or rerun after results. Full backend
 gate: 592 tests passed, Ruff/format passed, mypy 199 source files. Handoff:
 `docs/research/SHAULI_STRAT_RESULTS.md`. No operational activation or application-
-data mutation occurred. Achia remains separately rejected; Sprint 25 is not started.
+data mutation occurred. Achia remains separately rejected; at that point Sprint 25
+had not started.
 
 ## Development Environment
 
@@ -378,5 +396,5 @@ strong-source severe evidence may produce a backend-owned News risk exit.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT24_COMPLETION_REPORT.md`, stop. Do not begin
-Sprint 25.
+After creating `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`, stop. Do not begin
+Sprint 26.

@@ -18,6 +18,7 @@ from alphapilot.portfolio.entry_safety import (
 from alphapilot.portfolio.execution_readiness import (
     ExecutionReadiness,
     ExecutionReadinessReason,
+    ForwardExecutionEligibilityReason,
     LossControlEvidence,
     LossControlSource,
 )
@@ -139,6 +140,8 @@ def test_ema_manual_stop_policy_controlled_a_through_d_integration() -> None:
     assert manual.loss_control_boundary_price is None
     assert manual.approved_protective_stop_price is None
     assert not manual.loss_control_active
+    assert not manual.forward_execution_eligible
+    assert manual.forward_execution_reason is ForwardExecutionEligibilityReason.SPRINT25_MICHO_ONLY
 
     system = decisions["B"]
     assert system.is_approved_buy
