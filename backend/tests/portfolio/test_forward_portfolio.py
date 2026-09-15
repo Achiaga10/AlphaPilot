@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
+from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from alphapilot.database.models.company import Company
 from alphapilot.database.models.daily_candle import DailyCandle
+from alphapilot.database.models.external_execution import (
+    ExternalExecutionCase,
+    ExternalExecutionFill,
+)
 from alphapilot.database.models.forward_portfolio import (
     ForwardEventType,
     ForwardOrderSide,
@@ -35,8 +42,13 @@ from alphapilot.portfolio.sizing import PortfolioDecisionReason, PortfolioDecisi
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
+from alphapilot.schemas.external_execution import ExternalFillRequest, ExternalSkipReason
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
+from alphapilot.services.external_execution import (
+    ExternalExecutionConflictError,
+    ExternalExecutionService,
+)
 from alphapilot.services.forward_portfolio import (
     ForwardDecisionBatch,
     ForwardMarketDataError,
@@ -272,6 +284,13 @@ async def test_pause_blocks_new_entries_but_existing_exit_management_continues(
         and item.side == ForwardOrderSide.ENTRY.value
         for item in await service.orders(portfolio.id)
     )
+    external_actions = await ExternalExecutionService(db_session).list_actions(portfolio.id)
+    assert [(item.side, item.ticker) for item in external_actions] == [
+        ("SELL", "AAA"),
+        ("BUY", "AAA"),
+    ]
+    assert external_actions[0].source_signal_session == V
+    assert external_actions[0].status == "AWAITING_RECORD"
 
 
 @pytest.mark.asyncio
@@ -710,3 +729,359 @@ async def test_opening_exit_proceeds_can_fund_opening_entry(
     current = await service.repo.get(portfolio_id)
     assert current is not None
     assert current.cash_balance == Decimal("1074.6550")
+
+
+def external_fill(
+    key: str,
+    quantity: int,
+    price: str,
+    *,
+    side: str = "BUY",
+    fee: str | None = "0",
+    mark_complete: bool = True,
+    day: date = U,
+) -> ExternalFillRequest:
+    return ExternalFillRequest(
+        request_key=key,
+        side=side,
+        quantity=quantity,
+        price=Decimal(price),
+        executed_at=datetime(
+            day.year, day.month, day.day, 9, 35, tzinfo=ZoneInfo("America/New_York")
+        ),
+        fee=Decimal(fee) if fee is not None else None,
+        mark_complete=mark_complete,
+    )
+
+
+@pytest.mark.asyncio
+async def test_external_entry_partial_replay_correction_and_virtual_isolation(
+    db_session: AsyncSession,
+) -> None:
+    spy, stock = await seed_companies(db_session)
+    await add_session(db_session, spy.id, stock.id, T, stock_open="98", stock_close="100")
+    forward = ForwardPortfolioService(
+        db_session, ControlledDecisionProvider({T: (decision(Signal.BUY),)})
+    )
+    portfolio = await forward.initialize(initial_cash=Decimal("100000"), forward_start_session=T)
+    await forward.process_session(portfolio.id, T)
+    external = ExternalExecutionService(db_session)
+    actions = await external.list_actions(portfolio.id)
+    assert len(actions) == 1
+    action = actions[0]
+    assert (action.ticker, action.side, action.planned_shares) == ("AAA", "BUY", 100)
+    assert action.status == "AWAITING_ACTION"
+    assert action.source_signal_session == T
+    assert action.provenance == "MANUAL_USER_RECORDED"
+    assert action.weighted_fill_price is None
+    portfolio_id = portfolio.id
+    action_id = action.id
+    spy_id, stock_id = spy.id, stock.id
+
+    first = external_fill("partial-0001", 40, "100", mark_complete=False)
+    partial = await external.record_fill(portfolio.id, action.id, first)
+    assert partial.status == "PARTIALLY_RECORDED"
+    assert partial.recorded_shares == 40
+    replay = await external.record_fill(portfolio.id, action.id, first)
+    assert len(replay.fills) == 1
+    with pytest.raises(ExternalExecutionConflictError):
+        await external.record_fill(
+            portfolio_id, action_id, external_fill("partial-0001", 41, "100")
+        )
+    await db_session.rollback()
+
+    second = await external.record_fill(
+        portfolio_id,
+        action_id,
+        external_fill("partial-0002", 30, "100.10", fee="0.50", mark_complete=False),
+    )
+    assert second.recorded_shares == 70
+    completed = await external.record_fill(
+        portfolio_id, action_id, external_fill("partial-0003", 29, "100.20", fee="0.25")
+    )
+    assert completed.status == "RECORDED"
+    assert completed.recorded_shares == 99
+    assert completed.weighted_fill_price == Decimal("100.08888889")
+    assert completed.recorded_fees == Decimal("0.7500")
+    assert completed.share_variance_vs_planned == -1
+    assert completed.virtual_modeled_fill_price is None
+
+    second_fill_id = completed.fills[1].id
+    corrected = await external.void_fill(
+        portfolio_id,
+        second_fill_id,
+        reason="Correcting typed price",
+        request_key="void-partial-0002",
+    )
+    assert corrected.recorded_shares == 69
+    assert corrected.fills[1].voided_at is not None
+    assert any(event.event_type == "EXTERNAL_FILL_VOIDED" for event in corrected.events)
+    corrected = await external.record_fill(
+        portfolio_id, action_id, external_fill("partial-0004", 30, "100.15", fee="0.50")
+    )
+    assert corrected.recorded_shares == 99
+    assert len(corrected.fills) == 4
+    assert corrected.weighted_fill_price == Decimal("100.10404040")
+    current = await forward.repo.get(portfolio_id)
+    assert current is not None and current.cash_balance == Decimal("100000.0000")
+
+    await add_session(db_session, spy_id, stock_id, U, stock_open="100", stock_close="102")
+    await forward.process_session(portfolio_id, U)
+    after_virtual = await external.get_action(portfolio_id, action_id)
+    assert after_virtual.virtual_filled_shares == 99
+    assert after_virtual.reconciliation_status == "PRICE_DIVERGENCE"
+    assert after_virtual.price_difference_bps is not None
+    assert after_virtual.price_difference_bps > 0
+    current = await forward.repo.get(portfolio_id)
+    assert current is not None and current.cash_balance == Decimal("90095.0500")
+
+
+@pytest.mark.asyncio
+async def test_external_skipped_entry_does_not_block_virtual_exit(
+    db_session: AsyncSession,
+) -> None:
+    spy, stock = await seed_companies(db_session)
+    await add_session(db_session, spy.id, stock.id, T, stock_open="98", stock_close="100")
+    provider = ControlledDecisionProvider({T: (decision(Signal.BUY),), W: (decision(Signal.SELL),)})
+    forward = ForwardPortfolioService(db_session, provider)
+    portfolio = await forward.initialize(initial_cash=Decimal("100000"), forward_start_session=T)
+    await forward.process_session(portfolio.id, T)
+    external = ExternalExecutionService(db_session)
+    entry = (await external.list_actions(portfolio.id))[0]
+    skipped = await external.skip(portfolio.id, entry.id, ExternalSkipReason.MISSED_ENTRY)
+    assert skipped.status == "SKIPPED"
+    assert skipped.reconciliation_status == "SKIPPED"
+    portfolio_id = portfolio.id
+    spy_id, stock_id = spy.id, stock.id
+    with pytest.raises(ExternalExecutionConflictError):
+        await external.record_fill(portfolio_id, entry.id, external_fill("skipped-fill", 99, "100"))
+    await db_session.rollback()
+    await add_session(db_session, spy_id, stock_id, U, stock_open="100", stock_close="102")
+    await forward.process_session(portfolio_id, U)
+    await add_session(db_session, spy_id, stock_id, V, stock_open="104", stock_close="105")
+    await forward.process_session(portfolio_id, V)
+    await add_session(db_session, spy_id, stock_id, W, stock_open="95", stock_close="89")
+    await forward.process_session(portfolio_id, W)
+    exit_action = next(
+        item for item in await external.list_actions(portfolio_id) if item.side == "SELL"
+    )
+    assert exit_action.status == "AWAITING_ACTION"
+    assert exit_action.source_signal_session == W
+    assert exit_action.planned_shares == 99
+    await add_session(db_session, spy_id, stock_id, X, stock_open="110", stock_close="111")
+    await forward.process_session(portfolio_id, X)
+    comparison = (await external.trade_comparisons(portfolio_id))[0]
+    assert comparison.completeness == "SKIPPED"
+    assert comparison.recorded_execution_pnl is None
+    assert comparison.virtual_net_pnl == Decimal("979.6050")
+    current = await forward.repo.get(portfolio_id)
+    assert current is not None and current.cash_balance == Decimal("100979.6050")
+
+
+@pytest.mark.asyncio
+async def test_external_recorded_full_trade_reconciles_exact_decimal(
+    db_session: AsyncSession,
+) -> None:
+    spy, stock = await seed_companies(db_session)
+    await add_session(db_session, spy.id, stock.id, T, stock_open="98", stock_close="100")
+    forward = ForwardPortfolioService(
+        db_session,
+        ControlledDecisionProvider({T: (decision(Signal.BUY),), W: (decision(Signal.SELL),)}),
+    )
+    portfolio = await forward.initialize(initial_cash=Decimal("100000"), forward_start_session=T)
+    await forward.process_session(portfolio.id, T)
+    external = ExternalExecutionService(db_session)
+    entry = (await external.list_actions(portfolio.id))[0]
+    await external.record_fill(
+        portfolio.id, entry.id, external_fill("entry-fill-95", 95, "100.17", fee="1")
+    )
+    await add_session(db_session, spy.id, stock.id, U, stock_open="100", stock_close="102")
+    await forward.process_session(portfolio.id, U)
+    await add_session(db_session, spy.id, stock.id, V, stock_open="104", stock_close="105")
+    await forward.process_session(portfolio.id, V)
+    await add_session(db_session, spy.id, stock.id, W, stock_open="95", stock_close="89")
+    await forward.process_session(portfolio.id, W)
+    exit_action = next(
+        item for item in await external.list_actions(portfolio.id) if item.side == "SELL"
+    )
+    assert exit_action.status == "AWAITING_ACTION"
+    await add_session(db_session, spy.id, stock.id, X, stock_open="110", stock_close="111")
+    await forward.process_session(portfolio.id, X)
+    missing_exit = (await external.trade_comparisons(portfolio.id))[0]
+    assert missing_exit.completeness == "MISSING_EXIT"
+    assert missing_exit.recorded_execution_pnl is None
+    await external.record_fill(
+        portfolio.id,
+        exit_action.id,
+        external_fill("exit-fill-95", 95, "109.90", side="SELL", fee="1", day=X),
+    )
+    comparison = (await external.trade_comparisons(portfolio.id))[0]
+    assert comparison.completeness == "COMPLETE"
+    assert comparison.virtual_shares == 99
+    assert comparison.recorded_entry_shares == 95
+    assert comparison.recorded_exit_shares == 95
+    assert comparison.recorded_gross_pnl == Decimal("924.3500")
+    assert comparison.recorded_execution_pnl == Decimal("922.3500")
+    assert comparison.pnl_difference == Decimal("-57.2550")
+    analytics = await external.analytics(portfolio.id)
+    assert analytics.completed_fully_reconciled_trades == 1
+    assert analytics.matched_virtual_pnl == Decimal("979.6050")
+    assert analytics.matched_recorded_execution_pnl == Decimal("922.3500")
+
+
+@pytest.mark.asyncio
+async def test_external_action_virtual_cancel_and_concurrent_request_replay(
+    db_session: AsyncSession,
+) -> None:
+    spy, stock = await seed_companies(db_session)
+    await add_session(db_session, spy.id, stock.id, T, stock_open="98", stock_close="100")
+    forward = ForwardPortfolioService(
+        db_session, ControlledDecisionProvider({T: (decision(Signal.BUY),)})
+    )
+    portfolio = await forward.initialize(initial_cash=Decimal("100000"), forward_start_session=T)
+    await forward.process_session(portfolio.id, T)
+    external = ExternalExecutionService(db_session)
+    case_id = (await external.list_actions(portfolio.id))[0].id
+    session_factory = async_sessionmaker(
+        bind=db_session.bind, class_=AsyncSession, expire_on_commit=False
+    )
+    async with session_factory() as first_session, session_factory() as second_session:
+        first = ExternalExecutionService(first_session)
+        second = ExternalExecutionService(second_session)
+        outcomes = await asyncio.gather(
+            first.record_fill(
+                portfolio.id, case_id, external_fill("concurrent-fill", 95, "100.20")
+            ),
+            second.record_fill(
+                portfolio.id, case_id, external_fill("concurrent-fill", 95, "100.20")
+            ),
+        )
+    assert all(item.recorded_shares == 95 for item in outcomes)
+    assert len((await external.get_action(portfolio.id, case_id)).fills) == 1
+    current = await forward.repo.get(portfolio.id)
+    assert current is not None
+    await forward.pause(portfolio.id, expected_revision=current.revision)
+    cancelled = await external.get_action(portfolio.id, case_id)
+    assert cancelled.virtual_order_status == "CANCELLED"
+    assert cancelled.reconciliation_status == "EXECUTED_AFTER_VIRTUAL_CANCEL"
+    assert cancelled.recorded_shares == 95
+
+
+@pytest.mark.asyncio
+async def test_external_execution_api_validation_replay_and_observational_state(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    spy, stock = await seed_companies(db_session)
+    await add_session(db_session, spy.id, stock.id, T, stock_open="98", stock_close="100")
+    forward = ForwardPortfolioService(
+        db_session, ControlledDecisionProvider({T: (decision(Signal.BUY),)})
+    )
+    portfolio = await forward.initialize(initial_cash=Decimal("100000"), forward_start_session=T)
+    await forward.process_session(portfolio.id, T)
+    root = f"/api/v1/forward-portfolio/{portfolio.id}"
+    actions = await client.get(f"{root}/external-actions")
+    assert actions.status_code == 200
+    case_id = actions.json()[0]["id"]
+    assert actions.json()[0]["status"] == "AWAITING_ACTION"
+    single = await client.get(f"{root}/external-actions/{case_id}")
+    assert single.status_code == 200
+    assert single.json()["forward_order_id"] == actions.json()[0]["forward_order_id"]
+
+    fill_url = f"{root}/external-actions/{case_id}/fills"
+    payload = external_fill("api-fill-0001", 95, "100.17", fee=None).model_dump(mode="json")
+    for invalid in (
+        {**payload, "quantity": 0},
+        {**payload, "price": "0"},
+        {**payload, "price": "NaN"},
+        {**payload, "price": "Infinity"},
+        {**payload, "fee": "-1"},
+        {**payload, "executed_at": "not-a-date"},
+    ):
+        assert (await client.post(fill_url, json=invalid)).status_code == 422
+    wrong_side = await client.post(fill_url, json={**payload, "side": "SELL"})
+    assert wrong_side.status_code == 422
+    recorded = await client.post(fill_url, json=payload)
+    assert recorded.status_code == 200
+    assert recorded.json()["recorded_shares"] == 95
+    assert recorded.json()["status"] == "RECORDED"
+    assert recorded.json()["recorded_fees"] is None
+    replay = await client.post(fill_url, json=payload)
+    assert replay.status_code == 200
+    assert len(replay.json()["fills"]) == 1
+    conflict = await client.post(fill_url, json={**payload, "quantity": 96})
+    assert conflict.status_code == 409
+
+    skip_url = f"{root}/external-actions/{case_id}/skip"
+    assert (
+        await client.post(skip_url, json={"confirmed": False, "reason": "USER_SKIPPED"})
+    ).status_code == 422
+    assert (
+        await client.post(skip_url, json={"confirmed": True, "reason": "USER_SKIPPED"})
+    ).status_code == 409
+    fill_id = recorded.json()["fills"][0]["id"]
+    void_url = f"{root}/external-fills/{fill_id}/void"
+    void_payload = {
+        "confirmed": True,
+        "request_key": "api-void-0001",
+        "reason": "Correct user-entered fill",
+    }
+    assert (
+        await client.post(void_url, json={**void_payload, "confirmed": False})
+    ).status_code == 422
+    voided = await client.post(void_url, json=void_payload)
+    assert voided.status_code == 200
+    assert voided.json()["fills"][0]["void_reason"] == "Correct user-entered fill"
+    assert (await client.post(void_url, json=void_payload)).status_code == 200
+    assert (await client.get(f"{root}/reconciliation")).json() == []
+    analytics = await client.get(f"{root}/execution-analytics")
+    assert analytics.status_code == 200
+    assert analytics.json()["expected_actions"] == 1
+    current = await forward.repo.get(portfolio.id)
+    assert current is not None and current.cash_balance == Decimal("100000.0000")
+
+
+@pytest.mark.asyncio
+async def test_external_execution_database_constraints_are_durable(
+    db_session: AsyncSession,
+) -> None:
+    spy, stock = await seed_companies(db_session)
+    await add_session(db_session, spy.id, stock.id, T, stock_open="98", stock_close="100")
+    forward = ForwardPortfolioService(
+        db_session, ControlledDecisionProvider({T: (decision(Signal.BUY),)})
+    )
+    portfolio = await forward.initialize(initial_cash=Decimal("100000"), forward_start_session=T)
+    await forward.process_session(portfolio.id, T)
+    case = (await ExternalExecutionService(db_session).list_actions(portfolio.id))[0]
+    with pytest.raises(IntegrityError):
+        async with db_session.begin_nested():
+            db_session.add(
+                ExternalExecutionCase(
+                    portfolio_id=portfolio.id,
+                    forward_order_id=case.forward_order_id,
+                    broker="ALPACA",
+                    provenance="MANUAL_USER_RECORDED",
+                )
+            )
+            await db_session.flush()
+    for key, quantity, price, fee in (
+        ("bad-quantity", 0, "100", "0"),
+        ("bad-price", 1, "0", "0"),
+        ("bad-fee", 1, "100", "-1"),
+    ):
+        with pytest.raises(IntegrityError):
+            async with db_session.begin_nested():
+                db_session.add(
+                    ExternalExecutionFill(
+                        case_id=case.id,
+                        request_key=key,
+                        side="BUY",
+                        quantity=quantity,
+                        price=Decimal(price),
+                        executed_at=datetime.now(UTC),
+                        fee=Decimal(fee),
+                        mark_complete=True,
+                        source="MANUAL_USER_RECORDED",
+                        created_at=datetime.now(UTC),
+                    )
+                )
+                await db_session.flush()

@@ -1,5 +1,32 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 26 manual broker execution and reconciliation
+
+- No Alpaca order submission, automatic fill read/sync, broker account inference,
+  external-position sync or notification automation is authorized. Broker label
+  `ALPACA` means only `MANUAL_USER_RECORDED` observations.
+- The canonical controlled Micho experiment remains the Sprint 25 Forward Virtual
+  Portfolio. The Sprint 26 external journal is an observational downstream domain;
+  missing, skipped, partial or different real execution never blocks or rewrites a
+  Forward cycle, modeled fill, cash, position, exit or P&L.
+- Each Micho Forward order has at most one execution case. The case is created with
+  the order, including before next-open modeled execution. Partial fills are
+  individually stored with exact Decimal quantity/price/optional fee and aware
+  timestamp. User-entered facts are not broker-verified.
+- Fill corrections void an original with reason/source/time and append a new fill;
+  the original and events remain auditable. Skip is explicit and cannot cancel the
+  virtual trade. Durable request-key uniqueness, advisory locking and case row
+  locking protect replay and concurrent writes.
+- Backend-only reconciliation compares exact quantity/price/notional and reports
+  missing/partial/diverged/cancelled states without quality thresholds. Unknown fees
+  or missing external entry/exit make net recorded-execution P&L unavailable (`null`),
+  never zero by assumption. Only Forward-linked completed records are measured;
+  no Alpaca account cash/equity/P&L is claimed.
+- EMA20 is excluded because it has no Sprint 25 Forward order. News stays
+  advisory-only. No strategy research, optimization, ResearchPortfolio or Paper
+  behavior changes. Migration `f650e3a238a0` was verified only on the test DB;
+  Sprint 27 is not started.
+
 ## EMA20 user-managed manual-stop approval — frozen hotfix scope
 
 - EMA20 Pullback may produce `APPROVED BUY` without an approved automatic

@@ -24,8 +24,21 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
+Sprint 26 — Forward Operations Console & Manual Broker Reconciliation
+(IMPLEMENTED LOCALLY — OBSERVATIONAL USER-RECORDED EXECUTION)
+
+Sprint 26 adds one durable manual external-execution case per Micho Forward order,
+partial user-recorded fills, skip and audited void/correct workflows, a pre-execution
+BUY/SELL action queue, backend Decimal reconciliation and complete-only recorded-
+execution P&L. The journal is observational: it cannot change Micho decisions,
+Forward virtual cash, positions, fills, exits, allocation or P&L. There is no Alpaca
+order submission or read/sync. EMA20 remains recommendation-only and News remains
+advisory-only. The separate migration is `f650e3a238a0`, descended from
+`e9b2bc954dea`; it was verified only against TEST_DATABASE_URL. See
+`docs/sprints/SPRINT_26_MANUAL_EXECUTION_RECONCILIATION.md`. Sprint 27 is not started.
+
 Sprint 25 — Micho Forward Portfolio Operations & Trade Lifecycle
-(IMPLEMENTED LOCALLY — AUTOMATIC VIRTUAL EXECUTION / MANUAL EXTERNAL BROKER)
+(PRESERVED BASELINE — AUTOMATIC VIRTUAL EXECUTION / MANUAL EXTERNAL BROKER)
 
 Sprint 25 adds a dedicated persistent Forward Portfolio for the frozen
 `micho-150-v1` version 1 profile. It processes stored completed sessions
@@ -41,8 +54,7 @@ Forward execution is Micho-only. EMA20 Portfolio Plan approvals, including
 Forward eligibility `false` / `SPRINT25_MICHO_ONLY`. News remains advisory-only.
 ResearchPortfolio, Paper, News evidence, Alpaca, frozen strategies and historical
 research conclusions are not mutated. Migration `e9b2bc954dea` owns the separate
-Forward domain. See `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`. Sprint 26 is not
-started.
+Forward domain. See `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`.
 
 News Intelligence is advisory-only for both Micho and EMA20 Pullback. It has no
 authority over signal, allocation, loss control, final actionability, counts,
@@ -396,5 +408,5 @@ strong-source severe evidence may produce a backend-owned News risk exit.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`, stop. Do not begin
-Sprint 26.
+After creating `docs/sprints/SPRINT_26_MANUAL_EXECUTION_RECONCILIATION.md`, stop.
+Do not begin Sprint 27.

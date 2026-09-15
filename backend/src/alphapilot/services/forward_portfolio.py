@@ -13,6 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphapilot.backtesting.candidate_selection import SelectionPolicyName
+from alphapilot.database.models.external_execution import (
+    ExternalExecutionCase,
+    ExternalExecutionEvent,
+    ExternalExecutionEventType,
+)
 from alphapilot.database.models.forward_portfolio import (
     ForwardBrokerExecutionMode,
     ForwardCycle,
@@ -757,6 +762,7 @@ class ForwardPortfolioService:
                 )
                 self.repo.add(order)
                 await self.repo.flush()
+                await self._external_action_ready(portfolio, order)
                 for event_type in (
                     ForwardEventType.STRATEGY_EXIT_SIGNALLED,
                     ForwardEventType.EXIT_PLANNED,
@@ -861,6 +867,7 @@ class ForwardPortfolioService:
             )
             self.repo.add(order)
             await self.repo.flush()
+            await self._external_action_ready(portfolio, order)
             pending_entries[decision.ticker] = order
             self._event(
                 portfolio,
@@ -883,6 +890,33 @@ class ForwardPortfolioService:
                 key=f"order:{order.id}:planned",
                 facts={"loss_control_boundary": str(boundary)},
             )
+
+    async def _external_action_ready(
+        self, portfolio: ForwardPortfolio, order: ForwardOrder
+    ) -> None:
+        """Attach observational manual-broker work without changing virtual decisions."""
+        created_at = self.now_provider()
+        case = ExternalExecutionCase(
+            portfolio_id=portfolio.id,
+            forward_order_id=order.id,
+            broker="ALPACA",
+            provenance="MANUAL_USER_RECORDED",
+            recording_complete=False,
+        )
+        self.repo.add(case)
+        await self.repo.flush()
+        self.repo.add(
+            ExternalExecutionEvent(
+                portfolio_id=portfolio.id,
+                case_id=case.id,
+                event_type=ExternalExecutionEventType.EXTERNAL_ACTION_READY.value,
+                idempotency_key="action:ready",
+                reason_code="FORWARD_ORDER_CREATED",
+                source="SYSTEM_DERIVED",
+                facts={"forward_order_id": str(order.id), "side": order.side},
+                created_at=created_at,
+            )
+        )
 
     async def _entry_order(self, position: ForwardPosition) -> ForwardOrder:
         orders = await self.repo.orders(position.portfolio_id)

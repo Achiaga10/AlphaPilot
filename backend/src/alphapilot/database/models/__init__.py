@@ -3,6 +3,14 @@
 from .company import Company
 from .daily_candle import DailyCandle
 from .daily_candle_version import DailyCandleVersion
+from .external_execution import (
+    ExternalActionStatus,
+    ExternalExecutionCase,
+    ExternalExecutionEvent,
+    ExternalExecutionEventType,
+    ExternalExecutionFill,
+    ExternalReconciliationStatus,
+)
 from .forward_portfolio import (
     ForwardBrokerExecutionMode,
     ForwardCycle,
@@ -53,6 +61,12 @@ __all__ = [
     "Company",
     "DailyCandle",
     "DailyCandleVersion",
+    "ExternalActionStatus",
+    "ExternalExecutionCase",
+    "ExternalExecutionEvent",
+    "ExternalExecutionEventType",
+    "ExternalExecutionFill",
+    "ExternalReconciliationStatus",
     "ForwardBrokerExecutionMode",
     "ForwardCycle",
     "ForwardCycleStatus",

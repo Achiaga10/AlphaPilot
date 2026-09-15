@@ -8,6 +8,10 @@ import type {
   ForwardPortfolio,
   ForwardPosition,
   ForwardTrade,
+  ExternalAction,
+  ExternalExecutionAnalytics,
+  ExternalFillInput,
+  ExternalTradeComparison,
 } from '../types/forwardPortfolio'
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -115,4 +119,53 @@ export function getForwardAnalytics(portfolioId: string, signal?: AbortSignal): 
 
 export function getForwardHealth(portfolioId: string, signal?: AbortSignal): Promise<ForwardHealth> {
   return requestJson(`/api/v1/forward-portfolio/${portfolioId}/health`, { signal }, isForwardHealth)
+}
+
+const isExternalAction = (value: unknown): value is ExternalAction =>
+  isObject(value) && typeof value.id === 'string' && typeof value.forward_order_id === 'string' &&
+  typeof value.ticker === 'string' && (value.side === 'BUY' || value.side === 'SELL') &&
+  typeof value.status === 'string' && typeof value.reconciliation_status === 'string' &&
+  typeof value.planned_shares === 'number' && typeof value.recorded_shares === 'number' &&
+  Array.isArray(value.fills) && Array.isArray(value.events)
+
+const isExternalActions = (value: unknown): value is ExternalAction[] =>
+  Array.isArray(value) && value.every(isExternalAction)
+
+const isExternalComparisons = (value: unknown): value is ExternalTradeComparison[] =>
+  Array.isArray(value) && value.every((item) => isObject(item) &&
+    typeof item.forward_trade_id === 'string' && typeof item.virtual_net_pnl === 'string' &&
+    typeof item.completeness === 'string')
+
+const isExternalAnalytics = (value: unknown): value is ExternalExecutionAnalytics =>
+  isObject(value) && typeof value.expected_actions === 'number' &&
+  typeof value.recorded_actions === 'number' && typeof value.skipped_actions === 'number'
+
+export function getExternalActions(portfolioId: string, signal?: AbortSignal): Promise<ExternalAction[]> {
+  return requestJson(`/api/v1/forward-portfolio/${portfolioId}/external-actions`, { signal }, isExternalActions)
+}
+
+export function recordExternalFill(portfolioId: string, caseId: string, fill: ExternalFillInput): Promise<ExternalAction> {
+  return requestJson(`/api/v1/forward-portfolio/${portfolioId}/external-actions/${caseId}/fills`, {
+    method: 'POST', body: JSON.stringify(fill),
+  }, isExternalAction)
+}
+
+export function skipExternalAction(portfolioId: string, caseId: string, reason: string): Promise<ExternalAction> {
+  return requestJson(`/api/v1/forward-portfolio/${portfolioId}/external-actions/${caseId}/skip`, {
+    method: 'POST', body: JSON.stringify({ confirmed: true, reason }),
+  }, isExternalAction)
+}
+
+export function voidExternalFill(portfolioId: string, fillId: string, reason: string, requestKey: string): Promise<ExternalAction> {
+  return requestJson(`/api/v1/forward-portfolio/${portfolioId}/external-fills/${fillId}/void`, {
+    method: 'POST', body: JSON.stringify({ confirmed: true, request_key: requestKey, reason }),
+  }, isExternalAction)
+}
+
+export function getExternalReconciliation(portfolioId: string, signal?: AbortSignal): Promise<ExternalTradeComparison[]> {
+  return requestJson(`/api/v1/forward-portfolio/${portfolioId}/reconciliation`, { signal }, isExternalComparisons)
+}
+
+export function getExternalExecutionAnalytics(portfolioId: string, signal?: AbortSignal): Promise<ExternalExecutionAnalytics> {
+  return requestJson(`/api/v1/forward-portfolio/${portfolioId}/execution-analytics`, { signal }, isExternalAnalytics)
 }
