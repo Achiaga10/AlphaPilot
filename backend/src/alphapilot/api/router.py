@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from alphapilot.api.routes.admin_data import router as admin_data_router
+from alphapilot.api.routes.broker_alpaca import router as broker_alpaca_router
 from alphapilot.api.routes.companies import (
     router as companies_router,
 )
@@ -59,6 +60,8 @@ router.include_router(
 router.include_router(portfolio_router)
 
 router.include_router(forward_portfolio_router)
+
+router.include_router(broker_alpaca_router)
 
 router.include_router(news_router)
 

@@ -1002,7 +1002,7 @@ async def test_external_execution_api_validation_replay_and_observational_state(
     assert wrong_side.status_code == 422
     recorded = await client.post(fill_url, json=payload)
     assert recorded.status_code == 200
-    assert recorded.json()["recorded_shares"] == 95
+    assert Decimal(recorded.json()["recorded_shares"]) == Decimal("95")
     assert recorded.json()["status"] == "RECORDED"
     assert recorded.json()["recorded_fees"] is None
     replay = await client.post(fill_url, json=payload)

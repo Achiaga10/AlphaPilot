@@ -107,5 +107,5 @@ test('skip is explicit and does not claim broker execution', async () => {
   await waitFor(() => expect(screen.getByRole('article', { name: 'AAA external BUY action' })).toHaveTextContent('User skipped: MISSED ENTRY'))
   const skippedCard = screen.getByRole('article', { name: 'AAA external BUY action' })
   expect(within(skippedCard).getByText(/virtual Forward lifecycle remains independent/)).toBeInTheDocument()
-  expect(screen.getByText(/not Alpaca-synced data/)).toBeInTheDocument()
+  expect(screen.getByText(/OBSERVATIONAL ONLY/)).toBeInTheDocument()
 })

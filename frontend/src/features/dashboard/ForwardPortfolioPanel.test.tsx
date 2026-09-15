@@ -75,7 +75,7 @@ function installForwardHandlers() {
 test('shows deliberate initialization and the broker boundary when no Forward portfolio exists', async () => {
   renderApp('/')
   expect(await screen.findByRole('heading', { name: 'Micho Forward Portfolio' })).toBeInTheDocument()
-  expect(screen.getByText(/does not connect to or read your Alpaca balance/i)).toBeInTheDocument()
+  expect(screen.getByText(/optional Alpaca integration is read-only/i)).toBeInTheDocument()
   expect(screen.getByLabelText('Initial virtual cash')).toHaveValue(null)
   expect(screen.getByLabelText('Forward start session')).toBeRequired()
   expect(screen.getByText(/Forward automation is not enabled for EMA20/i)).toBeInTheDocument()

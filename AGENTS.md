@@ -24,8 +24,23 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
+Sprint 27 — Alpaca Read-Only Broker Synchronization
+(IMPLEMENTED LOCALLY — BROKER OBSERVATION / ZERO TRADING AUTHORITY)
+
+Sprint 27 adds an optional, disabled-by-default Alpaca observation domain. The
+adapter exposes GET-only account, position, order, fill-activity and clock reads;
+PAPER is the default and credentials remain backend-only. Durable sync runs,
+snapshots, broker-native order/execution deduplication, conservative Micho Forward
+matching, audited manual link/unlink/ignore, conflict preservation and separate
+five-minute scheduling are implemented. Broker evidence may populate the external
+execution journal but can never submit/cancel/replace/close an Alpaca order or
+change Micho decisions, Forward virtual economics, Portfolio Plan, EMA20, News,
+ResearchPortfolio or Paper. Migration `fa4edd0b0ef8` descends from
+`f650e3a238a0` and was verified only against `TEST_DATABASE_URL`. See
+`docs/sprints/SPRINT_27_ALPACA_READ_ONLY_SYNC.md`. Sprint 28 is not started.
+
 Sprint 26 — Forward Operations Console & Manual Broker Reconciliation
-(IMPLEMENTED LOCALLY — OBSERVATIONAL USER-RECORDED EXECUTION)
+(PRESERVED BASELINE — OBSERVATIONAL USER-RECORDED EXECUTION)
 
 Sprint 26 adds one durable manual external-execution case per Micho Forward order,
 partial user-recorded fills, skip and audited void/correct workflows, a pre-execution
@@ -408,5 +423,5 @@ strong-source severe evidence may produce a backend-owned News risk exit.
 
 ## End-of-Task Rule
 
-After creating `docs/sprints/SPRINT_26_MANUAL_EXECUTION_RECONCILIATION.md`, stop.
-Do not begin Sprint 27.
+After creating `docs/sprints/SPRINT_27_ALPACA_READ_ONLY_SYNC.md`, stop.
+Do not begin Sprint 28.

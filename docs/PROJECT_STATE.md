@@ -2,8 +2,42 @@
 
 ## Current Phase
 
+Sprint 27 — Alpaca Read-Only Broker Synchronization
+IMPLEMENTED LOCALLY — BROKER TRUTH LAYER / ZERO TRADING AUTHORITY
+
+AlphaPilot now has an optional Alpaca observation domain whose public broker
+adapter can perform GET requests only. It reads PAPER account, positions, recent
+orders and FILL activities, persists durable sync health and snapshots, deduplicates
+orders/executions by environment plus broker-native identity, and polls immediately
+at startup then every five minutes when explicitly enabled. The initial bounded
+lookback is 14 days with a 10-minute overlap. Disabled or missing configuration does
+not affect application startup, Forward processing or the manual execution journal;
+provider failures retain the last successful snapshot.
+
+Broker fills are matched only to one broker-order group and one same-symbol,
+same-side Micho external case on the
+exact expected New York execution date, and only that unique pairing is auto-linked.
+Ambiguous and outside-Forward activity remain explicit. Manual link, unlink/rematch
+and ignore decisions require confirmation/reason/request key and append audit events.
+Alpaca facts become canonical only for external-execution reporting; user-entered
+facts remain retained, disagreements become `CONFLICT` / `BROKER_CONFLICT`, and
+unknown fees remain null. Quantities/prices/notional/fees use Decimal, including
+fractional broker quantities.
+
+The broker layer has no submit, cancel, replace, close or liquidation capability and
+cannot change Forward virtual cash, positions, orders, fills, exits, P&L or analytics.
+Micho, EMA20, News, Portfolio Plan, ResearchPortfolio and Paper semantics are
+unchanged. Migration `fa4edd0b0ef8`, descended from `f650e3a238a0`, passed a
+TEST-only downgrade/upgrade verification. Full backend validation passed Ruff,
+format, mypy across 215 source files and 695 tests. Frontend lint, 106 tests across
+19 files and production build passed; controlled Edge acceptance and a count-only
+Alpaca PAPER GET smoke passed without any broker mutation. Full handoff:
+`docs/sprints/SPRINT_27_ALPACA_READ_ONLY_SYNC.md`. Sprint 28 is not started.
+
+## Preserved Sprint 26 baseline
+
 Sprint 26 — Forward Operations Console & Manual Broker Reconciliation
-IMPLEMENTED LOCALLY — USER-RECORDED, OBSERVATIONAL EXTERNAL EXECUTION
+USER-RECORDED, OBSERVATIONAL EXTERNAL EXECUTION
 
 The Micho-only Forward domain now creates one durable external-execution case with
 each Forward ENTRY/EXIT order. The operations console exposes pending BUY/SELL
@@ -21,7 +55,7 @@ account cash/equity/P&L. No broker API submit/read/sync exists. Recorded executi
 never feeds back into Micho, Forward cash/positions/trades, Portfolio Plan, EMA20,
 News, ResearchPortfolio or Paper. The test-only migration upgrade/downgrade/upgrade
 was verified at `f650e3a238a0`; development database was not migrated. Full handoff:
-`docs/sprints/SPRINT_26_MANUAL_EXECUTION_RECONCILIATION.md`. Sprint 27 is not started.
+`docs/sprints/SPRINT_26_MANUAL_EXECUTION_RECONCILIATION.md`.
 
 ## Preserved Sprint 25 baseline
 

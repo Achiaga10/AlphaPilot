@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from alphapilot.core.config import settings
 from alphapilot.core.logging import configure_logging
+from alphapilot.services.broker_sync_scheduler import BrokerSyncScheduler
 from alphapilot.services.daily_market_scheduler import DailyMarketSyncScheduler, DailySyncStatus
 from alphapilot.services.forward_portfolio_scheduler import (
     ForwardPortfolioScheduler,
@@ -19,6 +20,10 @@ daily_market_scheduler = DailyMarketSyncScheduler(
 forward_portfolio_scheduler = ForwardPortfolioScheduler(
     enabled=settings.FORWARD_PORTFOLIO_SCHEDULER_ENABLED,
     interval_seconds=settings.FORWARD_PORTFOLIO_SCHEDULER_INTERVAL_SECONDS,
+)
+broker_sync_scheduler = BrokerSyncScheduler(
+    enabled=settings.ALPACA_SYNC_ENABLED,
+    interval_seconds=settings.ALPACA_SYNC_INTERVAL_SECONDS,
 )
 
 
@@ -102,8 +107,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         forward_portfolio_scheduler.job = forward_job
     forward_portfolio_scheduler.start()
 
+    if broker_sync_scheduler.status.enabled:
+
+        async def broker_job() -> bool:
+            from alphapilot.database.session import AsyncSessionLocal
+            from alphapilot.services.broker_sync import AlpacaBrokerSyncService
+
+            async with AsyncSessionLocal() as session:
+                result = await AlpacaBrokerSyncService(session, scheduler_running=True).sync_now()
+                return result.status == "SUCCEEDED"
+
+        broker_sync_scheduler.job = broker_job
+    broker_sync_scheduler.start()
+
     yield
 
+    await broker_sync_scheduler.stop()
     await forward_portfolio_scheduler.stop()
     await daily_market_scheduler.stop()
 

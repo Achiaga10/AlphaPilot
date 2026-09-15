@@ -1,5 +1,45 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 27 Alpaca read-only synchronization
+
+- Alpaca is an optional observational source with zero trading authority. The
+  dedicated adapter exposes GET-only reads and no submit, cancel, replace, close or
+  liquidation operation. Configuration defaults to disabled and `PAPER`; `LIVE`
+  requires an explicit value, environment identity is always returned and displayed,
+  and credentials never leave backend configuration.
+- Broker sync is a separate scheduler: immediate startup read and 300-second polling
+  only when enabled/configured. The first import is bounded to 14 days; later imports
+  use the last successful high watermark minus a 10-minute overlap. Environment plus
+  Alpaca order/activity ID is the durable deduplication identity. Provider failures
+  are recorded and retain the last successful snapshots without affecting Forward.
+- Automatic matching is deterministic and conservative: exact symbol, BUY/SELL side
+  and exact actual/planned execution date in `America/New_York`; exactly one broker-
+  order group and one eligible Sprint 26 case are required, with no different order
+  already linked. Multiple plausible broker groups/cases become `AMBIGUOUS`; no case
+  becomes `UNMATCHED` / `OUTSIDE_FORWARD_OR_EXECUTION_WINDOW`. Neither state creates
+  a Forward order or trade.
+- Match states are `UNMATCHED`, `AUTO_MATCHED`, `AMBIGUOUS`, `MANUAL_MATCHED`,
+  `IGNORED_EXTERNAL` and `CONFLICT`. Confirmed manual link, unlink/rematch and ignore
+  operations require a reason and idempotency key and retain immutable audit events.
+- `ALPACA_READ_ONLY_SYNC` is canonical for what Alpaca reports; existing
+  `MANUAL_USER_RECORDED` fills remain immutable fallback evidence. Matching manual and
+  broker facts are not double-counted. Differences preserve both sources and surface
+  `CONFLICT` / `BROKER_CONFLICT`; broker facts are never blended with manual facts.
+- Broker order status determines whether linked evidence is partial or complete.
+  Rejected/canceled zero-fill orders remain order observations and create no execution.
+  All broker financial values and quantities are Decimal, fractional quantities are
+  preserved, weighted price is broker-fill quantity weighted, and unavailable fees
+  are null. Net external P&L remains null until both linked sides are complete,
+  quantities match and every fee is known.
+- Broker account/position/order/execution facts and reconciliation analytics are
+  observational. They cannot alter Micho signals or rules, Forward lifecycle or
+  economics, Portfolio Plan, EMA20, News, ResearchPortfolio or Paper, and execution
+  divergence cannot retune any strategy. EMA20 creates no Sprint 27 cases because it
+  has no Forward orders. Manual real trading remains the user's responsibility.
+- Migration `fa4edd0b0ef8` descends from Sprint 26 `f650e3a238a0` and was verified
+  only with `TEST_DATABASE_URL`. No development database, current Forward evidence,
+  ResearchPortfolio or Paper evidence was mutated. Sprint 28 is not started.
+
 ## Sprint 26 manual broker execution and reconciliation
 
 - No Alpaca order submission, automatic fill read/sync, broker account inference,

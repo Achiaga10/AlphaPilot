@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     ALPACA_API_KEY: str = ""
     ALPACA_SECRET_KEY: str = ""
     ALPACA_DATA_FEED: Literal["iex", "sip"] = "iex"
+    ALPACA_SYNC_ENABLED: bool = False
+    ALPACA_ENVIRONMENT: Literal["PAPER", "LIVE"] = "PAPER"
+    ALPACA_SYNC_INTERVAL_SECONDS: int = 300
+    ALPACA_SYNC_INITIAL_LOOKBACK_DAYS: int = 14
+    ALPACA_SYNC_OVERLAP_MINUTES: int = 10
+    ALPACA_SYNC_TIMEOUT_SECONDS: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file=".env",
