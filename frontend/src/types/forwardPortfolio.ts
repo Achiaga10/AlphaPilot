@@ -171,3 +171,116 @@ export interface ForwardCycleResult {
   processed_sessions: string[]
   skipped_sessions: string[]
 }
+
+export type ExternalActionStatus = 'AWAITING_ACTION' | 'AWAITING_RECORD' | 'PARTIALLY_RECORDED' | 'RECORDED' | 'SKIPPED' | 'VIRTUAL_CANCELLED'
+export type ExternalReconciliationStatus = 'MISSING_RECORD' | 'INCOMPLETE' | 'PARTIAL' | 'ALIGNED' | 'PRICE_DIVERGENCE' | 'QUANTITY_DIVERGENCE' | 'PRICE_AND_QUANTITY_DIVERGENCE' | 'SKIPPED' | 'VIRTUAL_CANCELLED' | 'EXECUTED_AFTER_VIRTUAL_CANCEL'
+
+export interface ExternalFill {
+  id: string
+  side: 'BUY' | 'SELL'
+  quantity: number
+  price: string
+  executed_at: string
+  fee: string | null
+  mark_complete: boolean
+  source: string
+  voided_at: string | null
+  void_reason: string | null
+}
+
+export interface ExternalEvent {
+  id: string
+  event_type: string
+  reason_code: string
+  source: string
+  facts: Record<string, unknown>
+  created_at: string
+}
+
+export interface ExternalAction {
+  id: string
+  forward_portfolio_id: string
+  forward_order_id: string
+  position_id: string | null
+  ticker: string
+  side: 'BUY' | 'SELL'
+  strategy_id: string
+  strategy_version: number
+  broker: string
+  provenance: string
+  source_signal_session: string
+  planned_execution_session: string | null
+  actual_virtual_execution_session: string | null
+  expected_timing: string
+  planned_shares: number
+  virtual_filled_shares: number | null
+  virtual_order_status: ForwardOrderStatus
+  virtual_modeled_fill_price: string | null
+  loss_control_policy: string
+  loss_control_boundary: string | null
+  decision_reason: string
+  created_at: string
+  status: ExternalActionStatus
+  reconciliation_status: ExternalReconciliationStatus
+  due_status: string
+  recorded_shares: number
+  weighted_fill_price: string | null
+  recorded_notional: string | null
+  recorded_fees: string | null
+  fee_coverage_complete: boolean
+  share_variance_vs_planned: number | null
+  share_variance_vs_virtual: number | null
+  price_difference_per_share: string | null
+  price_difference_bps: string | null
+  virtual_notional: string | null
+  notional_variance: string | null
+  timing_difference_seconds: number | null
+  skip_reason: string | null
+  fills: ExternalFill[]
+  events: ExternalEvent[]
+}
+
+export interface ExternalFillInput {
+  request_key: string
+  side: 'BUY' | 'SELL'
+  quantity: number
+  price: string
+  executed_at: string
+  fee: string | null
+  mark_complete: boolean
+}
+
+export interface ExternalTradeComparison {
+  forward_trade_id: string
+  ticker: string
+  completeness: string
+  virtual_shares: number
+  recorded_entry_shares: number | null
+  recorded_exit_shares: number | null
+  virtual_entry_price: string
+  recorded_entry_price: string | null
+  virtual_exit_price: string
+  recorded_exit_price: string | null
+  virtual_net_pnl: string
+  recorded_gross_pnl: string | null
+  recorded_execution_pnl: string | null
+  pnl_difference: string | null
+  recorded_fees: string | null
+  quantity_variance: number | null
+}
+
+export interface ExternalExecutionAnalytics {
+  expected_actions: number
+  recorded_actions: number
+  skipped_actions: number
+  missing_records: number
+  partial_actions: number
+  actions_awaiting_execution: number
+  actions_awaiting_recording: number
+  diverged_actions: number
+  recording_rate_pct: string | null
+  completed_fully_reconciled_trades: number
+  matched_virtual_pnl: string | null
+  matched_recorded_execution_pnl: string | null
+  matched_pnl_difference: string | null
+}

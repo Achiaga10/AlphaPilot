@@ -2,8 +2,31 @@
 
 ## Current Phase
 
+Sprint 26 — Forward Operations Console & Manual Broker Reconciliation
+IMPLEMENTED LOCALLY — USER-RECORDED, OBSERVATIONAL EXTERNAL EXECUTION
+
+The Micho-only Forward domain now creates one durable external-execution case with
+each Forward ENTRY/EXIT order. The operations console exposes pending BUY/SELL
+actions before modeled next-open execution, then distinguishes awaiting record,
+partial, recorded, skipped and virtual-cancelled cases. Users can record multiple
+timestamped Decimal fills and optional fees, explicitly skip, or void a mistyped
+fill with retained audit history before adding a correction. Each request has a
+durable idempotency key and portfolio advisory/row locks protect concurrent writes.
+
+Backend reconciliation compares user-entered weighted price, shares, notional,
+fees and timing with the unchanged virtual order. A closed trade has a recorded-
+execution P&L only when both sides are complete, quantities match and all fees are
+known; otherwise unknown values are null. This is neither Alpaca-confirmed data nor
+account cash/equity/P&L. No broker API submit/read/sync exists. Recorded execution
+never feeds back into Micho, Forward cash/positions/trades, Portfolio Plan, EMA20,
+News, ResearchPortfolio or Paper. The test-only migration upgrade/downgrade/upgrade
+was verified at `f650e3a238a0`; development database was not migrated. Full handoff:
+`docs/sprints/SPRINT_26_MANUAL_EXECUTION_RECONCILIATION.md`. Sprint 27 is not started.
+
+## Preserved Sprint 25 baseline
+
 Sprint 25 — Micho Forward Portfolio Operations & Trade Lifecycle
-IMPLEMENTED LOCALLY — AUTOMATIC VIRTUAL EXECUTION / MANUAL EXTERNAL BROKER
+AUTOMATIC VIRTUAL EXECUTION / MANUAL EXTERNAL BROKER
 
 AlphaPilot now owns a separate persistent `micho-150-v1` version 1 Forward Virtual
 Portfolio. It begins only at an explicit user-supplied start session and cash amount,
@@ -26,8 +49,7 @@ prove only modeled AlphaPilot execution. Forward execution is Micho-only. EMA20 
 its existing Portfolio Plan approval and manual-stop semantics but is explicitly
 ineligible with `SPRINT25_MICHO_ONLY`; News remains advisory-only. No strategy rules,
 research conclusions, ResearchPortfolio, Paper or News evidence changed. Migration:
-`e9b2bc954dea`. Full handoff: `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`. Sprint 26
-is not started.
+`e9b2bc954dea`. Full handoff: `docs/sprints/SPRINT_25_FORWARD_PORTFOLIO.md`.
 
 News Intelligence is advisory-only for both Micho and EMA20 Pullback, including
 severe/hard-event evidence. It cannot change signal, allocation, deterministic

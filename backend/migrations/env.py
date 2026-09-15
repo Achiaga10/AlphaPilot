@@ -14,6 +14,7 @@ from alphapilot.database.models import (  # noqa: F401
     company,
     daily_candle,
     daily_candle_version,
+    external_execution,
     forward_portfolio,
     index_constituent,
     market_data_ingestion,

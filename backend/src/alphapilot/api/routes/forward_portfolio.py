@@ -15,6 +15,14 @@ from alphapilot.portfolio.orchestration import PortfolioDecisionOrchestrator
 from alphapilot.repositories.company import CompanyRepository
 from alphapilot.repositories.daily_candle import DailyCandleRepository
 from alphapilot.repositories.index_constituent import IndexConstituentRepository
+from alphapilot.schemas.external_execution import (
+    ExternalActionSchema,
+    ExternalExecutionAnalyticsSchema,
+    ExternalFillRequest,
+    ExternalSkipRequest,
+    ExternalTradeComparisonSchema,
+    ExternalVoidRequest,
+)
 from alphapilot.schemas.forward_portfolio import (
     ForwardAnalyticsSchema,
     ForwardCycleTriggerResultSchema,
@@ -29,6 +37,11 @@ from alphapilot.schemas.forward_portfolio import (
 )
 from alphapilot.services.company import CompanyService
 from alphapilot.services.daily_candle import DailyCandleService
+from alphapilot.services.external_execution import (
+    ExternalExecutionConflictError,
+    ExternalExecutionNotFoundError,
+    ExternalExecutionService,
+)
 from alphapilot.services.forward_portfolio import (
     ForwardPortfolioConflictError,
     ForwardPortfolioService,
@@ -47,6 +60,12 @@ def get_forward_portfolio_service(
         IndexConstituentRepository(session),
     )
     return ForwardPortfolioService(session, MichoForwardDecisionProvider(orchestrator))
+
+
+def get_external_execution_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> ExternalExecutionService:
+    return ExternalExecutionService(session)
 
 
 def _not_found() -> HTTPException:
@@ -221,3 +240,103 @@ async def get_forward_health(
         last_error=portfolio.last_error or scheduler.last_error,
         latest_cycle_status=(ForwardCycleStatus(cycle.status) if cycle else None),
     )
+
+
+@router.get("/{portfolio_id}/external-actions", response_model=list[ExternalActionSchema])
+async def list_external_actions(
+    portfolio_id: UUID,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> list[ExternalActionSchema]:
+    try:
+        return await service.list_actions(portfolio_id)
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{portfolio_id}/external-actions/{case_id}", response_model=ExternalActionSchema)
+async def get_external_action(
+    portfolio_id: UUID,
+    case_id: UUID,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> ExternalActionSchema:
+    try:
+        return await service.get_action(portfolio_id, case_id)
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{portfolio_id}/external-actions/{case_id}/fills", response_model=ExternalActionSchema
+)
+async def record_external_fill(
+    portfolio_id: UUID,
+    case_id: UUID,
+    request: ExternalFillRequest,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> ExternalActionSchema:
+    try:
+        return await service.record_fill(portfolio_id, case_id, request)
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExternalExecutionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{portfolio_id}/external-actions/{case_id}/skip", response_model=ExternalActionSchema)
+async def skip_external_action(
+    portfolio_id: UUID,
+    case_id: UUID,
+    request: ExternalSkipRequest,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> ExternalActionSchema:
+    if not request.confirmed:
+        raise HTTPException(status_code=422, detail="Explicit skip confirmation is required")
+    try:
+        return await service.skip(portfolio_id, case_id, request.reason)
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExternalExecutionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{portfolio_id}/external-fills/{fill_id}/void", response_model=ExternalActionSchema)
+async def void_external_fill(
+    portfolio_id: UUID,
+    fill_id: UUID,
+    request: ExternalVoidRequest,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> ExternalActionSchema:
+    if not request.confirmed:
+        raise HTTPException(status_code=422, detail="Explicit correction confirmation is required")
+    try:
+        return await service.void_fill(
+            portfolio_id, fill_id, reason=request.reason, request_key=request.request_key
+        )
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExternalExecutionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{portfolio_id}/reconciliation", response_model=list[ExternalTradeComparisonSchema])
+async def get_external_reconciliation(
+    portfolio_id: UUID,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> list[ExternalTradeComparisonSchema]:
+    try:
+        return await service.trade_comparisons(portfolio_id)
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{portfolio_id}/execution-analytics", response_model=ExternalExecutionAnalyticsSchema)
+async def get_external_execution_analytics(
+    portfolio_id: UUID,
+    service: Annotated[ExternalExecutionService, Depends(get_external_execution_service)],
+) -> ExternalExecutionAnalyticsSchema:
+    try:
+        return await service.analytics(portfolio_id)
+    except ExternalExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

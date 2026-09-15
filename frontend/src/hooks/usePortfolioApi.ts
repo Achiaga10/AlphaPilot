@@ -11,8 +11,14 @@ import {
   pauseForwardPortfolio,
   resumeForwardPortfolio,
   runForwardCycles,
+  getExternalActions,
+  getExternalReconciliation,
+  getExternalExecutionAnalytics,
+  recordExternalFill,
+  skipExternalAction,
+  voidExternalFill,
 } from '../api/forwardPortfolio'
-import type { ForwardPortfolio } from '../types/forwardPortfolio'
+import type { ExternalFillInput, ForwardPortfolio } from '../types/forwardPortfolio'
 import {
   applyManualSell,
   createPortfolioPlan,
@@ -138,6 +144,45 @@ export function useForwardPortfolioMutations() {
     run: useMutation({
       mutationFn: runForwardCycles,
       onSuccess: refresh,
+    }),
+  }
+}
+
+export function useExternalExecution(portfolioId: string | null) {
+  const client = useQueryClient()
+  const enabled = Boolean(portfolioId)
+  const refresh = async () => {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ['forward-external-actions', portfolioId] }),
+      client.invalidateQueries({ queryKey: ['forward-external-reconciliation', portfolioId] }),
+      client.invalidateQueries({ queryKey: ['forward-external-analytics', portfolioId] }),
+    ])
+  }
+  return {
+    actions: useQuery({
+      queryKey: ['forward-external-actions', portfolioId],
+      queryFn: ({ signal }) => getExternalActions(portfolioId ?? '', signal), enabled,
+      refetchInterval: 60_000,
+    }),
+    comparisons: useQuery({
+      queryKey: ['forward-external-reconciliation', portfolioId],
+      queryFn: ({ signal }) => getExternalReconciliation(portfolioId ?? '', signal), enabled,
+    }),
+    analytics: useQuery({
+      queryKey: ['forward-external-analytics', portfolioId],
+      queryFn: ({ signal }) => getExternalExecutionAnalytics(portfolioId ?? '', signal), enabled,
+    }),
+    record: useMutation({
+      mutationFn: ({ caseId, fill }: { caseId: string; fill: ExternalFillInput }) =>
+        recordExternalFill(portfolioId ?? '', caseId, fill), onSuccess: refresh,
+    }),
+    skip: useMutation({
+      mutationFn: ({ caseId, reason }: { caseId: string; reason: string }) =>
+        skipExternalAction(portfolioId ?? '', caseId, reason), onSuccess: refresh,
+    }),
+    voidFill: useMutation({
+      mutationFn: ({ fillId, reason, requestKey }: { fillId: string; reason: string; requestKey: string }) =>
+        voidExternalFill(portfolioId ?? '', fillId, reason, requestKey), onSuccess: refresh,
     }),
   }
 }

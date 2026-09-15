@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ExternalExecutionPanel } from './ExternalExecutionPanel'
 import { formatMoney, formatPercent } from '../../utils/format'
 import {
   useCurrentForwardPortfolioQuery,
@@ -98,5 +99,6 @@ export function ForwardPortfolioPanel() {
 
     <div className="inline-note"><strong>Forward Engine Health:</strong> {health?.scheduler_running ? 'Scheduler running' : 'Scheduler not running'} · {health?.scheduler_status ?? 'N/A'} · pending sessions {health?.pending_sessions ?? 'N/A'} · data {health?.data_ready ? 'ready' : 'not ready'}{health?.last_error ? ` · ${health.last_error}` : ''}</div>
     <p className="inline-note">EMA20 remains recommendation-only: approved EMA20 BUYs and MANUAL STOP REQUIRED behavior are preserved, but <strong>Forward automation is not enabled for EMA20.</strong></p>
+    <ExternalExecutionPanel portfolioId={portfolio.id} />
   </section>
 }
