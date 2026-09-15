@@ -64,7 +64,10 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
         await session.execute(
             text(
-                "TRUNCATE TABLE external_execution_events, external_execution_fills, "
+                "TRUNCATE TABLE broker_execution_match_events, broker_executions, "
+                "broker_order_observations, broker_position_snapshots, "
+                "broker_account_snapshots, broker_sync_runs, "
+                "external_execution_events, external_execution_fills, "
                 "external_execution_cases, forward_equity_points, forward_events, forward_trades, "
                 "forward_positions, forward_orders, forward_cycles, forward_portfolios, "
                 "external_news_sentiment_observations, news_refresh_coverage, "
@@ -83,7 +86,10 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
         await session.execute(
             text(
-                "TRUNCATE TABLE external_execution_events, external_execution_fills, "
+                "TRUNCATE TABLE broker_execution_match_events, broker_executions, "
+                "broker_order_observations, broker_position_snapshots, "
+                "broker_account_snapshots, broker_sync_runs, "
+                "external_execution_events, external_execution_fills, "
                 "external_execution_cases, forward_equity_points, forward_events, forward_trades, "
                 "forward_positions, forward_orders, forward_cycles, forward_portfolios, "
                 "external_news_sentiment_observations, news_refresh_coverage, "

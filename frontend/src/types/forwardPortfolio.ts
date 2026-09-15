@@ -173,7 +173,8 @@ export interface ForwardCycleResult {
 }
 
 export type ExternalActionStatus = 'AWAITING_ACTION' | 'AWAITING_RECORD' | 'PARTIALLY_RECORDED' | 'RECORDED' | 'SKIPPED' | 'VIRTUAL_CANCELLED'
-export type ExternalReconciliationStatus = 'MISSING_RECORD' | 'INCOMPLETE' | 'PARTIAL' | 'ALIGNED' | 'PRICE_DIVERGENCE' | 'QUANTITY_DIVERGENCE' | 'PRICE_AND_QUANTITY_DIVERGENCE' | 'SKIPPED' | 'VIRTUAL_CANCELLED' | 'EXECUTED_AFTER_VIRTUAL_CANCEL'
+export type ExternalReconciliationStatus = 'MISSING_RECORD' | 'INCOMPLETE' | 'PARTIAL' | 'ALIGNED' | 'PRICE_DIVERGENCE' | 'QUANTITY_DIVERGENCE' | 'PRICE_AND_QUANTITY_DIVERGENCE' | 'SKIPPED' | 'VIRTUAL_CANCELLED' | 'EXECUTED_AFTER_VIRTUAL_CANCEL' | 'BROKER_CONFLICT'
+export type BrokerMatchState = 'UNMATCHED' | 'AUTO_MATCHED' | 'AMBIGUOUS' | 'MANUAL_MATCHED' | 'IGNORED_EXTERNAL' | 'CONFLICT'
 
 export interface ExternalFill {
   id: string
@@ -208,6 +209,8 @@ export interface ExternalAction {
   strategy_version: number
   broker: string
   provenance: string
+  canonical_execution_source: 'NONE' | 'MANUAL_USER_RECORDED' | 'ALPACA_READ_ONLY_SYNC'
+  broker_match_state: BrokerMatchState | null
   source_signal_session: string
   planned_execution_session: string | null
   actual_virtual_execution_session: string | null
@@ -223,13 +226,13 @@ export interface ExternalAction {
   status: ExternalActionStatus
   reconciliation_status: ExternalReconciliationStatus
   due_status: string
-  recorded_shares: number
+  recorded_shares: number | string
   weighted_fill_price: string | null
   recorded_notional: string | null
   recorded_fees: string | null
   fee_coverage_complete: boolean
-  share_variance_vs_planned: number | null
-  share_variance_vs_virtual: number | null
+  share_variance_vs_planned: number | string | null
+  share_variance_vs_virtual: number | string | null
   price_difference_per_share: string | null
   price_difference_bps: string | null
   virtual_notional: string | null
@@ -237,6 +240,7 @@ export interface ExternalAction {
   timing_difference_seconds: number | null
   skip_reason: string | null
   fills: ExternalFill[]
+  broker_executions: BrokerExecution[]
   events: ExternalEvent[]
 }
 
@@ -255,8 +259,8 @@ export interface ExternalTradeComparison {
   ticker: string
   completeness: string
   virtual_shares: number
-  recorded_entry_shares: number | null
-  recorded_exit_shares: number | null
+  recorded_entry_shares: number | string | null
+  recorded_exit_shares: number | string | null
   virtual_entry_price: string
   recorded_entry_price: string | null
   virtual_exit_price: string
@@ -266,7 +270,7 @@ export interface ExternalTradeComparison {
   recorded_execution_pnl: string | null
   pnl_difference: string | null
   recorded_fees: string | null
-  quantity_variance: number | null
+  quantity_variance: number | string | null
 }
 
 export interface ExternalExecutionAnalytics {
@@ -283,4 +287,85 @@ export interface ExternalExecutionAnalytics {
   matched_virtual_pnl: string | null
   matched_recorded_execution_pnl: string | null
   matched_pnl_difference: string | null
+  manual_actions: number
+  broker_actions: number
+  conflict_actions: number
+}
+
+export interface AlpacaSyncStatus {
+  enabled: boolean
+  configured: boolean
+  environment: 'PAPER' | 'LIVE'
+  scheduler_running: boolean
+  status: string
+  last_attempt_at: string | null
+  last_success_at: string | null
+  last_error: string | null
+  data_age_seconds: number | null
+  account_snapshots: number
+  positions: number
+  orders: number
+  executions: number
+  unmatched_executions: number
+  interval_seconds: number
+  initial_lookback_days: number
+  overlap_minutes: number
+  provenance: 'ALPACA_READ_ONLY_SYNC'
+}
+
+export interface BrokerAccount {
+  environment: 'PAPER' | 'LIVE'
+  status: string
+  currency: string
+  cash: string
+  equity: string
+  buying_power: string
+  observed_at: string
+}
+
+export interface BrokerPosition {
+  environment: 'PAPER' | 'LIVE'
+  symbol: string
+  side: string
+  quantity: string
+  average_entry_price: string | null
+  current_price: string | null
+  market_value: string | null
+  unrealized_pnl: string | null
+  observed_at: string
+}
+
+export interface BrokerOrder {
+  id: string
+  environment: 'PAPER' | 'LIVE'
+  broker_order_id: string
+  client_order_id: string | null
+  symbol: string
+  side: string
+  status: string
+  order_type: string
+  quantity: string | null
+  filled_quantity: string
+  filled_average_price: string | null
+  submitted_at: string | null
+  broker_updated_at: string | null
+}
+
+export interface BrokerExecution {
+  id: string
+  provenance: 'ALPACA_READ_ONLY_SYNC'
+  environment: 'PAPER' | 'LIVE'
+  broker_activity_id: string
+  broker_order_id: string | null
+  symbol: string
+  side: 'BUY' | 'SELL'
+  quantity: string
+  price: string
+  fee: string | null
+  executed_at: string
+  match_state: BrokerMatchState
+  match_reason: string
+  external_case_id: string | null
+  matched_at: string | null
+  ignored_reason: string | null
 }

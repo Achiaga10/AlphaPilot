@@ -15,6 +15,7 @@ from alphapilot.database.models.external_execution import (
     ExternalReconciliationStatus,
 )
 from alphapilot.database.models.forward_portfolio import ForwardOrderStatus
+from alphapilot.schemas.broker_sync import BrokerExecutionSchema, BrokerMatchStateValue
 
 
 class ExternalSkipReason(StrEnum):
@@ -87,6 +88,8 @@ class ExternalActionSchema(BaseModel):
     strategy_version: int
     broker: str
     provenance: str
+    canonical_execution_source: Literal["NONE", "MANUAL_USER_RECORDED", "ALPACA_READ_ONLY_SYNC"]
+    broker_match_state: BrokerMatchStateValue | None
     source_signal_session: date
     planned_execution_session: date | None
     actual_virtual_execution_session: date | None
@@ -102,13 +105,13 @@ class ExternalActionSchema(BaseModel):
     status: ExternalActionStatus
     reconciliation_status: ExternalReconciliationStatus
     due_status: Literal["UPCOMING", "AWAITING_RECORD", "OVERDUE_RECORDING", "DONE", "CANCELLED"]
-    recorded_shares: int
+    recorded_shares: Decimal
     weighted_fill_price: Decimal | None
     recorded_notional: Decimal | None
     recorded_fees: Decimal | None
     fee_coverage_complete: bool
-    share_variance_vs_planned: int | None
-    share_variance_vs_virtual: int | None
+    share_variance_vs_planned: Decimal | None
+    share_variance_vs_virtual: Decimal | None
     price_difference_per_share: Decimal | None
     price_difference_bps: Decimal | None
     virtual_notional: Decimal | None
@@ -117,6 +120,7 @@ class ExternalActionSchema(BaseModel):
     timing_difference_seconds: int | None
     skip_reason: str | None
     fills: list[ExternalFillSchema]
+    broker_executions: list[BrokerExecutionSchema]
     events: list[ExternalEventSchema]
 
 
@@ -135,8 +139,8 @@ class ExternalTradeComparisonSchema(BaseModel):
         "SKIPPED",
     ]
     virtual_shares: int
-    recorded_entry_shares: int | None
-    recorded_exit_shares: int | None
+    recorded_entry_shares: Decimal | None
+    recorded_exit_shares: Decimal | None
     virtual_entry_price: Decimal
     recorded_entry_price: Decimal | None
     virtual_exit_price: Decimal
@@ -148,7 +152,7 @@ class ExternalTradeComparisonSchema(BaseModel):
     recorded_fees: Decimal | None
     entry_price_difference: Decimal | None
     exit_price_difference: Decimal | None
-    quantity_variance: int | None
+    quantity_variance: Decimal | None
 
 
 class ExternalExecutionAnalyticsSchema(BaseModel):
@@ -171,3 +175,6 @@ class ExternalExecutionAnalyticsSchema(BaseModel):
     matched_virtual_pnl: Decimal | None
     matched_recorded_execution_pnl: Decimal | None
     matched_pnl_difference: Decimal | None
+    manual_actions: int = 0
+    broker_actions: int = 0
+    conflict_actions: int = 0

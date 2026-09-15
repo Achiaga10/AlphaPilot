@@ -92,6 +92,12 @@ export const dailyOpportunitiesFixture = {
 
 export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/health/`, () => HttpResponse.json({ status: 'ok', application: 'AlphaPilot' })),
+  http.get(`${API_BASE_URL}/api/v1/broker/alpaca/status`, () => HttpResponse.json({ enabled: false, configured: false, environment: 'PAPER', scheduler_running: false, status: 'DISABLED', last_attempt_at: null, last_success_at: null, last_error: null, data_age_seconds: null, account_snapshots: 0, positions: 0, orders: 0, executions: 0, unmatched_executions: 0, interval_seconds: 300, initial_lookback_days: 14, overlap_minutes: 10, provenance: 'ALPACA_READ_ONLY_SYNC' })),
+  http.get(`${API_BASE_URL}/api/v1/broker/alpaca/account`, () => HttpResponse.json(null)),
+  http.get(`${API_BASE_URL}/api/v1/broker/alpaca/positions`, () => HttpResponse.json([])),
+  http.get(`${API_BASE_URL}/api/v1/broker/alpaca/orders`, () => HttpResponse.json([])),
+  http.get(`${API_BASE_URL}/api/v1/broker/alpaca/activity`, () => HttpResponse.json([])),
+  http.get(`${API_BASE_URL}/api/v1/broker/alpaca/unmatched`, () => HttpResponse.json([])),
   http.get(`${API_BASE_URL}/api/v1/forward-portfolio/current`, () => HttpResponse.json(null)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/risk-config`, () => HttpResponse.json(riskConfigFixture)),
   http.get(`${API_BASE_URL}/api/v1/portfolio/strategy-profiles`, () => HttpResponse.json(strategyProfilesFixture)),

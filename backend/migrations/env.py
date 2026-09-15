@@ -11,6 +11,7 @@ from alphapilot.database.base import Base
 
 # Import all models here so Alembic can discover them
 from alphapilot.database.models import (  # noqa: F401
+    broker_sync,
     company,
     daily_candle,
     daily_candle_version,

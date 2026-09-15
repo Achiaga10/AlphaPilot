@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ExternalExecutionPanel } from './ExternalExecutionPanel'
+import { AlpacaReadOnlyPanel } from './AlpacaReadOnlyPanel'
 import { formatMoney, formatPercent } from '../../utils/format'
 import {
   useCurrentForwardPortfolioQuery,
@@ -31,7 +32,7 @@ export function ForwardPortfolioPanel() {
       <p className="eyebrow">Sprint 25 · Micho only</p>
       <h2 id="forward-title">Micho Forward Portfolio</h2>
       <p className="forward-boundary"><strong>VIRTUAL FORWARD PORTFOLIO.</strong> AlphaPilot will model Micho trades automatically. Broker execution remains manual and external.</p>
-      <p>This does not connect to or read your Alpaca balance. It creates a separate, persistent AlphaPilot Forward Portfolio and never backfills trades before its explicit start session.</p>
+      <p>The optional Alpaca integration is read-only and separately configured. The Forward Portfolio remains virtual and never backfills trades before its explicit start session.</p>
       <form className="forward-initialize" onSubmit={(event) => {
         event.preventDefault()
         actions.initialize.mutate({ initial_cash: initialCash, forward_start_session: startSession })
@@ -99,6 +100,7 @@ export function ForwardPortfolioPanel() {
 
     <div className="inline-note"><strong>Forward Engine Health:</strong> {health?.scheduler_running ? 'Scheduler running' : 'Scheduler not running'} · {health?.scheduler_status ?? 'N/A'} · pending sessions {health?.pending_sessions ?? 'N/A'} · data {health?.data_ready ? 'ready' : 'not ready'}{health?.last_error ? ` · ${health.last_error}` : ''}</div>
     <p className="inline-note">EMA20 remains recommendation-only: approved EMA20 BUYs and MANUAL STOP REQUIRED behavior are preserved, but <strong>Forward automation is not enabled for EMA20.</strong></p>
+    <AlpacaReadOnlyPanel portfolioId={portfolio.id} forwardPositions={positions} />
     <ExternalExecutionPanel portfolioId={portfolio.id} />
   </section>
 }

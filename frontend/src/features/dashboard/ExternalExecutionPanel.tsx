@@ -34,7 +34,7 @@ function ActionCard({
 
   return <article className="daily-card" aria-label={`${action.ticker} external ${action.side} action`}>
     <div className="section-heading"><div><strong>{action.ticker} · EXTERNAL {action.side} EXPECTED</strong><p>{action.strategy_id} v{action.strategy_version} · {action.broker} · {action.provenance}</p></div><span className="badge badge--neutral">{label(action.status)}</span></div>
-    <p className="inline-note">This is an informational manual broker action. AlphaPilot does not submit or verify an Alpaca order.</p>
+    <p className="inline-note">This is an informational external action. AlphaPilot never submits an Alpaca order; execution evidence may be user-recorded or read-only broker-synced.</p>
     <dl className="daily-card__facts">
       <div><dt>Signal session</dt><dd>{action.source_signal_session}</dd></div>
       <div><dt>Expected timing</dt><dd>{action.planned_execution_session ?? 'Next eligible stored session'} open</dd></div>
@@ -44,8 +44,10 @@ function ActionCard({
       <div><dt>Loss control</dt><dd>{action.loss_control_policy} · {money(action.loss_control_boundary)}</dd></div>
       <div><dt>Due</dt><dd>{label(action.due_status)}</dd></div>
       <div><dt>Reconciliation</dt><dd>{label(action.reconciliation_status)}</dd></div>
-      <div><dt>User-recorded shares</dt><dd>{action.recorded_shares}</dd></div>
-      <div><dt>User-recorded weighted price</dt><dd>{money(action.weighted_fill_price)}</dd></div>
+      <div><dt>Canonical execution source</dt><dd>{label(action.canonical_execution_source ?? action.provenance)}</dd></div>
+      <div><dt>Match state</dt><dd>{action.broker_match_state ? label(action.broker_match_state) : 'Manual / unavailable'}</dd></div>
+      <div><dt>Recorded shares</dt><dd>{action.recorded_shares}</dd></div>
+      <div><dt>Recorded weighted price</dt><dd>{money(action.weighted_fill_price)}</dd></div>
       <div><dt>Virtual modeled price</dt><dd>{money(action.virtual_modeled_fill_price)}</dd></div>
       <div><dt>Price difference / share</dt><dd>{money(action.price_difference_per_share)} · {action.price_difference_bps ?? 'Unavailable'} bps</dd></div>
       <div><dt>Share variance vs virtual</dt><dd>{action.share_variance_vs_virtual ?? 'Unavailable'}</dd></div>
@@ -70,7 +72,7 @@ function ActionCard({
       </form>
       <p className="inline-note">For partial fills, uncheck “Final fill” until the last fill. Fees left blank remain unknown, not zero.</p>
     </details> : null}
-    {action.status !== 'SKIPPED' && action.recorded_shares === 0 && action.virtual_order_status !== 'CANCELLED' ? <div className="table-actions"><button className="button button--secondary" disabled={busy} onClick={() => setConfirmSkip(true)}>Mark external action skipped</button></div> : null}
+    {action.status !== 'SKIPPED' && Number(action.recorded_shares) === 0 && action.virtual_order_status !== 'CANCELLED' ? <div className="table-actions"><button className="button button--secondary" disabled={busy} onClick={() => setConfirmSkip(true)}>Mark external action skipped</button></div> : null}
     {confirmSkip ? <div className="inline-note inline-note--warning" role="alertdialog" aria-label={`Confirm skip ${action.ticker}`}><label>Reason<select aria-label={`${action.ticker} skip reason`} value={skipReason} onChange={(event) => setSkipReason(event.target.value)}><option value="USER_SKIPPED">User skipped</option><option value="MISSED_ENTRY">Missed entry</option><option value="BROKER_UNAVAILABLE">Broker unavailable</option><option value="MANUAL_RISK_DECISION">Manual risk decision</option><option value="OTHER">Other</option></select></label><div className="table-actions"><button className="button button--primary" disabled={busy} onClick={() => { onSkip(action, skipReason); setConfirmSkip(false) }}>Confirm skip</button><button className="button button--secondary" onClick={() => setConfirmSkip(false)}>Cancel</button></div></div> : null}
     {action.fills.length ? <details><summary>User-recorded fills and correction audit ({action.fills.length})</summary><ol className="forward-activity">{action.fills.map((fill) => <li key={fill.id}><strong>{fill.voided_at ? 'VOIDED' : 'ACTIVE'} · {fill.side} {fill.quantity} @ {formatMoney(fill.price)}</strong><span>{exchangeTime(fill.executed_at)} · fee {money(fill.fee)} · {fill.source}{fill.void_reason ? ` · correction: ${fill.void_reason}` : ''}</span>{!fill.voided_at ? <button className="button button--secondary" disabled={busy} onClick={() => { setVoidingFill(fill.id); setVoidReason(''); setVoidRequestKey(crypto.randomUUID()) }}>Void / correct fill</button> : null}{voidingFill === fill.id ? <div role="alertdialog" aria-label="Confirm fill correction"><label>Correction reason<input aria-label="Correction reason" minLength={3} maxLength={200} required value={voidReason} onChange={(event) => { setVoidReason(event.target.value); setVoidRequestKey(crypto.randomUUID()) }} /></label><button className="button button--primary" disabled={busy || voidReason.trim().length < 3} onClick={() => { void onVoid(fill.id, voidReason.trim(), voidRequestKey).then(() => setVoidingFill(null)).catch(() => { /* Keep the same key for retry. */ }) }}>Confirm void</button><button className="button button--secondary" onClick={() => setVoidingFill(null)}>Cancel</button></div> : null}</li>)}</ol><ol className="forward-activity">{action.events.map((item) => <li key={item.id}>{label(item.event_type)} · {exchangeTime(item.created_at)} · {item.reason_code}</li>)}</ol></details> : null}
   </article>
@@ -93,8 +95,8 @@ export function ExternalExecutionPanel({ portfolioId }: { portfolioId: string })
   }
 
   return <section className="forward-external" aria-labelledby="forward-external-title">
-    <h3 id="forward-external-title">Manual broker operations &amp; reconciliation</h3>
-    <p className="forward-boundary"><strong>USER-RECORDED broker facts, not Alpaca-synced data.</strong> The queue is informational. Record actions you execute manually at Alpaca; these entries never change virtual Forward cash, positions, decisions, or P&amp;L.</p>
+    <h3 id="forward-external-title">External execution journal &amp; reconciliation</h3>
+    <p className="forward-boundary"><strong>OBSERVATIONAL ONLY.</strong> Manual entries remain available when broker evidence is absent. Linked Alpaca fills use ALPACA_READ_ONLY_SYNC provenance; conflicts preserve both sources and never blend them. Neither source changes virtual Forward cash, positions, decisions, or P&amp;L.</p>
     {journal.actions.isError ? <p role="alert">External action queue unavailable.</p> : null}
     {error ? <p className="inline-note inline-note--warning" role="alert">Could not save journal entry: {error.message}</p> : null}
     {journal.record.isSuccess || journal.skip.isSuccess || journal.voidFill.isSuccess ? <p role="status">Manual execution journal updated.</p> : null}
@@ -102,6 +104,6 @@ export function ExternalExecutionPanel({ portfolioId }: { portfolioId: string })
     <details open><summary>External action needed ({needed.length})</summary>{needed.length ? <div className="daily-grid">{needed.map((action) => <ActionCard key={action.id} action={action} onRecord={record} onSkip={(item, reason) => journal.skip.mutate({ caseId: item.id, reason })} onVoid={voidFill} busy={busy} />)}</div> : <p className="empty-inline">No external action currently awaiting manual execution or recording.</p>}</details>
     <details><summary>Recorded, skipped &amp; cancelled action history ({history.length})</summary>{history.length ? <div className="daily-grid">{history.map((action) => <ActionCard key={action.id} action={action} onRecord={record} onSkip={(item, reason) => journal.skip.mutate({ caseId: item.id, reason })} onVoid={voidFill} busy={busy} />)}</div> : <p className="empty-inline">No external action history yet.</p>}</details>
     <details><summary>Closed-trade execution comparison ({comparisons.length})</summary>{comparisons.length ? <div className="table-shell"><table><thead><tr><th>Ticker</th><th>Completeness</th><th>Virtual shares</th><th>Recorded entry / exit shares</th><th>Virtual entry / exit</th><th>Recorded entry / exit</th><th>Virtual net P&amp;L</th><th>Recorded execution P&amp;L</th><th>Difference</th></tr></thead><tbody>{comparisons.map((item) => <tr key={item.forward_trade_id}><td>{item.ticker}</td><td>{label(item.completeness)}</td><td>{item.virtual_shares}</td><td>{item.recorded_entry_shares ?? 'Unavailable'} / {item.recorded_exit_shares ?? 'Unavailable'}</td><td>{formatMoney(item.virtual_entry_price)} / {formatMoney(item.virtual_exit_price)}</td><td>{money(item.recorded_entry_price)} / {money(item.recorded_exit_price)}</td><td>{formatMoney(item.virtual_net_pnl)}</td><td>{money(item.recorded_execution_pnl)}</td><td>{money(item.pnl_difference)}</td></tr>)}</tbody></table></div> : <p className="empty-inline">No closed Forward trades to compare.</p>}</details>
-    <p className="inline-note">Recorded execution P&amp;L covers only complete user-entered Forward-linked entry and exit fills with known fees. It is not Alpaca account equity or verified broker P&amp;L.</p>
+    <p className="inline-note">Recorded execution P&amp;L covers only complete canonical Forward-linked entry and exit fills with known fees. Missing Alpaca fees keep net P&amp;L unavailable. This remains separate from Forward strategy analytics and Alpaca account equity.</p>
   </section>
 }

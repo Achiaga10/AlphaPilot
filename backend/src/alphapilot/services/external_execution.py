@@ -10,9 +10,14 @@ from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from alphapilot.database.models.broker_sync import (
+    BrokerExecution,
+    BrokerMatchState,
+    BrokerOrderObservation,
+)
 from alphapilot.database.models.external_execution import (
     ExternalActionStatus,
     ExternalExecutionCase,
@@ -29,6 +34,7 @@ from alphapilot.database.models.forward_portfolio import (
     ForwardTrade,
 )
 from alphapilot.repositories.forward_portfolio import ForwardPortfolioRepository
+from alphapilot.schemas.broker_sync import BrokerExecutionSchema
 from alphapilot.schemas.external_execution import (
     ExternalActionSchema,
     ExternalEventSchema,
@@ -85,25 +91,79 @@ class ExternalExecutionService:
             .where(ExternalExecutionEvent.case_id.in_(case_ids))
             .order_by(ExternalExecutionEvent.created_at, ExternalExecutionEvent.id)
         )
+        broker_result = await self.session.execute(
+            select(BrokerExecution)
+            .where(BrokerExecution.external_case_id.in_(case_ids))
+            .order_by(BrokerExecution.executed_at, BrokerExecution.id)
+        )
+        broker_rows = list(broker_result.scalars())
+        broker_order_ids = {
+            item.broker_order_id for item in broker_rows if item.broker_order_id is not None
+        }
+        broker_orders: dict[str, BrokerOrderObservation] = {}
+        if broker_order_ids:
+            order_result = await self.session.execute(
+                select(BrokerOrderObservation).where(
+                    BrokerOrderObservation.broker_order_id.in_(broker_order_ids)
+                )
+            )
+            broker_orders = {item.broker_order_id: item for item in order_result.scalars()}
         fills: dict[UUID, list[ExternalExecutionFill]] = defaultdict(list)
         events: dict[UUID, list[ExternalExecutionEvent]] = defaultdict(list)
+        broker: dict[UUID, list[BrokerExecution]] = defaultdict(list)
         for fill in fill_result.scalars():
             fills[fill.case_id].append(fill)
         for event in event_result.scalars():
             events[event.case_id].append(event)
+        for execution in broker_rows:
+            if execution.external_case_id is not None:
+                broker[execution.external_case_id].append(execution)
         return [
-            self._project(case, order, fills[case.id], events[case.id]) for case, order in pairs
+            self._project(
+                case,
+                order,
+                fills[case.id],
+                events[case.id],
+                broker[case.id],
+                broker_orders,
+            )
+            for case, order in pairs
         ]
 
     async def get_action(self, portfolio_id: UUID, case_id: UUID) -> ExternalActionSchema:
         case, order = await self._case_order(portfolio_id, case_id)
         fills = await self._fills(case.id)
         events = await self._events(case.id)
-        return self._project(case, order, fills, events)
+        broker = list(
+            (
+                await self.session.execute(
+                    select(BrokerExecution)
+                    .where(BrokerExecution.external_case_id == case.id)
+                    .order_by(BrokerExecution.executed_at, BrokerExecution.id)
+                )
+            ).scalars()
+        )
+        order_ids = {item.broker_order_id for item in broker if item.broker_order_id}
+        broker_orders = (
+            {
+                item.broker_order_id: item
+                for item in (
+                    await self.session.execute(
+                        select(BrokerOrderObservation).where(
+                            BrokerOrderObservation.broker_order_id.in_(order_ids)
+                        )
+                    )
+                ).scalars()
+            }
+            if order_ids
+            else {}
+        )
+        return self._project(case, order, fills, events, broker, broker_orders)
 
     async def record_fill(
         self, portfolio_id: UUID, case_id: UUID, request: ExternalFillRequest
     ) -> ExternalActionSchema:
+        await self.session.execute(text("SELECT pg_advisory_xact_lock(2727, 1)"))
         await self.forward_repo.advisory_lock(portfolio_id)
         case, order = await self._case_order(portfolio_id, case_id, for_update=True)
         expected_side = self._side(order)
@@ -180,12 +240,15 @@ class ExternalExecutionService:
             reason="FILL_CHANGED",
             facts={"fill_id": str(fill.id)},
         )
+        await self.session.flush()
+        await self._refresh_broker_conflict(case.id)
         await self.session.commit()
         return await self.get_action(portfolio_id, case_id)
 
     async def skip(
         self, portfolio_id: UUID, case_id: UUID, reason: ExternalSkipReason
     ) -> ExternalActionSchema:
+        await self.session.execute(text("SELECT pg_advisory_xact_lock(2727, 1)"))
         await self.forward_repo.advisory_lock(portfolio_id)
         case, _ = await self._case_order(portfolio_id, case_id, for_update=True)
         if case.skipped_at is not None:
@@ -196,6 +259,12 @@ class ExternalExecutionService:
         if any(fill.voided_at is None for fill in await self._fills(case.id)):
             raise ExternalExecutionConflictError(
                 "Void recorded fills before marking action skipped"
+            )
+        if await self.session.scalar(
+            select(BrokerExecution.id).where(BrokerExecution.external_case_id == case.id).limit(1)
+        ):
+            raise ExternalExecutionConflictError(
+                "Actions with linked broker execution evidence cannot be skipped"
             )
         case.skipped_at = self.now_provider()
         case.skip_reason = reason.value
@@ -221,6 +290,7 @@ class ExternalExecutionService:
             raise ExternalExecutionNotFoundError("External fill not found")
         case_id = case.id
         await self.session.rollback()
+        await self.session.execute(text("SELECT pg_advisory_xact_lock(2727, 1)"))
         await self.forward_repo.advisory_lock(portfolio_id)
         case, _ = await self._case_order(portfolio_id, case_id, for_update=True)
         fill = await self.session.get(ExternalExecutionFill, fill_id, with_for_update=True)
@@ -260,6 +330,8 @@ class ExternalExecutionService:
             reason="FILL_VOIDED",
             facts={"fill_id": str(fill.id)},
         )
+        await self.session.flush()
+        await self._refresh_broker_conflict(case.id)
         await self.session.commit()
         return await self.get_action(portfolio_id, case.id)
 
@@ -362,6 +434,15 @@ class ExternalExecutionService:
             matched_virtual_pnl=self._money(virtual_pnl) if matched else None,
             matched_recorded_execution_pnl=self._money(recorded_pnl) if matched else None,
             matched_pnl_difference=self._money(recorded_pnl - virtual_pnl) if matched else None,
+            manual_actions=sum(
+                item.canonical_execution_source == MANUAL_SOURCE for item in expected
+            ),
+            broker_actions=sum(
+                item.canonical_execution_source == "ALPACA_READ_ONLY_SYNC" for item in expected
+            ),
+            conflict_actions=sum(
+                item.broker_match_state == BrokerMatchState.CONFLICT.value for item in expected
+            ),
         )
 
     async def _portfolio_exists(self, portfolio_id: UUID) -> None:
@@ -408,14 +489,28 @@ class ExternalExecutionService:
         order: ForwardOrder,
         fills: list[ExternalExecutionFill],
         events: list[ExternalExecutionEvent],
+        broker_executions: list[BrokerExecution],
+        broker_orders: dict[str, BrokerOrderObservation],
     ) -> ExternalActionSchema:
-        active = [item for item in fills if item.voided_at is None]
-        shares = sum(item.quantity for item in active)
+        manual_active = [item for item in fills if item.voided_at is None]
+        broker_active = [
+            item
+            for item in broker_executions
+            if item.match_state
+            in {
+                BrokerMatchState.AUTO_MATCHED.value,
+                BrokerMatchState.MANUAL_MATCHED.value,
+                BrokerMatchState.CONFLICT.value,
+            }
+        ]
+        use_broker = bool(broker_active)
+        active = broker_active if use_broker else manual_active
+        shares = sum((Decimal(item.quantity) for item in active), Decimal("0"))
         notional = sum(
             (Decimal(item.quantity) * Decimal(item.price) for item in active), Decimal("0")
         )
         weighted = (
-            (notional / Decimal(shares)).quantize(PRICE_PRECISION, rounding=ROUND_HALF_UP)
+            (notional / shares).quantize(PRICE_PRECISION, rounding=ROUND_HALF_UP)
             if shares
             else None
         )
@@ -425,7 +520,14 @@ class ExternalExecutionService:
             if fee_known
             else None
         )
-        status = self._action_status(case, order, bool(active))
+        broker_complete = bool(broker_active) and all(
+            item.broker_order_id is not None
+            and item.broker_order_id in broker_orders
+            and broker_orders[item.broker_order_id].status == "FILLED"
+            for item in broker_active
+        )
+        recording_complete = broker_complete if use_broker else case.recording_complete
+        status = self._action_status(case, order, bool(active), recording_complete)
         virtual_shares = order.filled_shares
         virtual_price = (
             Decimal(order.modeled_fill_price) if order.modeled_fill_price is not None else None
@@ -460,6 +562,18 @@ class ExternalExecutionService:
         reconciliation = self._reconciliation(
             status, order, shares, weighted, virtual_shares, virtual_price
         )
+        match_state = self._broker_match_state(broker_active)
+        if broker_active and manual_active and self._facts_differ(broker_active, manual_active):
+            match_state = BrokerMatchState.CONFLICT
+        if match_state == BrokerMatchState.CONFLICT:
+            reconciliation = ExternalReconciliationStatus.BROKER_CONFLICT
+        canonical_source: Literal["NONE", "MANUAL_USER_RECORDED", "ALPACA_READ_ONLY_SYNC"] = (
+            "ALPACA_READ_ONLY_SYNC"
+            if use_broker
+            else "MANUAL_USER_RECORDED"
+            if manual_active
+            else "NONE"
+        )
         return ExternalActionSchema(
             id=case.id,
             forward_portfolio_id=case.portfolio_id,
@@ -470,7 +584,9 @@ class ExternalExecutionService:
             strategy_id=order.strategy_id,
             strategy_version=order.strategy_version,
             broker=case.broker,
-            provenance=case.provenance,
+            provenance="ALPACA_READ_ONLY_SYNC" if use_broker else case.provenance,
+            canonical_execution_source=canonical_source,
+            broker_match_state=match_state.value if match_state else None,
             source_signal_session=order.source_signal_session,
             planned_execution_session=order.planned_execution_session,
             actual_virtual_execution_session=order.actual_execution_session,
@@ -491,8 +607,8 @@ class ExternalExecutionService:
             recorded_notional=self._money(notional) if active else None,
             recorded_fees=self._money(fees) if fees is not None else None,
             fee_coverage_complete=fee_known,
-            share_variance_vs_planned=shares - order.planned_shares if active else None,
-            share_variance_vs_virtual=shares - virtual_shares
+            share_variance_vs_planned=shares - Decimal(order.planned_shares) if active else None,
+            share_variance_vs_virtual=shares - Decimal(virtual_shares)
             if active and virtual_shares is not None
             else None,
             price_difference_per_share=price_difference,
@@ -505,18 +621,28 @@ class ExternalExecutionService:
             timing_difference_seconds=timing_seconds,
             skip_reason=case.skip_reason,
             fills=[ExternalFillSchema.model_validate(item) for item in fills],
+            broker_executions=[
+                BrokerExecutionSchema.model_validate(item) for item in broker_executions
+            ],
             events=[ExternalEventSchema.model_validate(item) for item in events],
         )
 
     def _action_status(
-        self, case: ExternalExecutionCase, order: ForwardOrder, has_fills: bool
+        self,
+        case: ExternalExecutionCase,
+        order: ForwardOrder,
+        has_fills: bool,
+        recording_complete: bool | None = None,
     ) -> ExternalActionStatus:
         if case.skipped_at is not None:
             return ExternalActionStatus.SKIPPED
         if has_fills:
+            is_complete = (
+                recording_complete if recording_complete is not None else case.recording_complete
+            )
             return (
                 ExternalActionStatus.RECORDED
-                if case.recording_complete
+                if is_complete
                 else ExternalActionStatus.PARTIALLY_RECORDED
             )
         if order.status == ForwardOrderStatus.CANCELLED.value:
@@ -550,7 +676,7 @@ class ExternalExecutionService:
     def _reconciliation(
         status: ExternalActionStatus,
         order: ForwardOrder,
-        shares: int,
+        shares: Decimal,
         weighted: Decimal | None,
         virtual_shares: int | None,
         virtual_price: Decimal | None,
@@ -573,7 +699,7 @@ class ExternalExecutionService:
             )
         if virtual_shares is None or virtual_price is None or weighted is None:
             return ExternalReconciliationStatus.INCOMPLETE
-        quantity_differs = shares != virtual_shares
+        quantity_differs = shares != Decimal(virtual_shares)
         price_differs = weighted != virtual_price
         if quantity_differs and price_differs:
             return ExternalReconciliationStatus.PRICE_AND_QUANTITY_DIVERGENCE
@@ -582,6 +708,52 @@ class ExternalExecutionService:
         if price_differs:
             return ExternalReconciliationStatus.PRICE_DIVERGENCE
         return ExternalReconciliationStatus.ALIGNED
+
+    @staticmethod
+    def _broker_match_state(
+        executions: list[BrokerExecution],
+    ) -> BrokerMatchState | None:
+        states = {BrokerMatchState(item.match_state) for item in executions}
+        for state in (
+            BrokerMatchState.CONFLICT,
+            BrokerMatchState.MANUAL_MATCHED,
+            BrokerMatchState.AUTO_MATCHED,
+        ):
+            if state in states:
+                return state
+        return None
+
+    async def _refresh_broker_conflict(self, case_id: UUID) -> None:
+        broker = list(
+            (
+                await self.session.execute(
+                    select(BrokerExecution).where(BrokerExecution.external_case_id == case_id)
+                )
+            ).scalars()
+        )
+        manual = [item for item in await self._fills(case_id) if item.voided_at is None]
+        if not broker or not manual:
+            return
+        differs = self._facts_differ(broker, manual)
+        for execution in broker:
+            if differs:
+                execution.match_state = BrokerMatchState.CONFLICT.value
+                execution.match_reason = "MANUAL_AND_BROKER_FACTS_DIFFER"
+            elif execution.match_state == BrokerMatchState.CONFLICT.value:
+                execution.match_state = BrokerMatchState.AUTO_MATCHED.value
+                execution.match_reason = "MANUAL_AND_BROKER_FACTS_AGREE"
+
+    @staticmethod
+    def _facts_differ(broker: list[BrokerExecution], manual: list[ExternalExecutionFill]) -> bool:
+        broker_quantity = sum((Decimal(item.quantity) for item in broker), Decimal("0"))
+        manual_quantity = sum((Decimal(item.quantity) for item in manual), Decimal("0"))
+        broker_notional = sum(
+            (Decimal(item.quantity) * Decimal(item.price) for item in broker), Decimal("0")
+        )
+        manual_notional = sum(
+            (Decimal(item.quantity) * Decimal(item.price) for item in manual), Decimal("0")
+        )
+        return broker_quantity != manual_quantity or broker_notional != manual_notional
 
     def _trade_comparison(
         self,
@@ -661,7 +833,9 @@ class ExternalExecutionService:
             recorded_fees=fees,
             entry_price_difference=entry.price_difference_per_share if entry else None,
             exit_price_difference=exit_action.price_difference_per_share if exit_action else None,
-            quantity_variance=entry_shares - trade.shares if entry_shares is not None else None,
+            quantity_variance=(
+                entry_shares - Decimal(trade.shares) if entry_shares is not None else None
+            ),
         )
 
     def _event(

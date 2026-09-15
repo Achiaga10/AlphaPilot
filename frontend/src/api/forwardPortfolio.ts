@@ -12,6 +12,11 @@ import type {
   ExternalExecutionAnalytics,
   ExternalFillInput,
   ExternalTradeComparison,
+  AlpacaSyncStatus,
+  BrokerAccount,
+  BrokerExecution,
+  BrokerOrder,
+  BrokerPosition,
 } from '../types/forwardPortfolio'
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -125,7 +130,8 @@ const isExternalAction = (value: unknown): value is ExternalAction =>
   isObject(value) && typeof value.id === 'string' && typeof value.forward_order_id === 'string' &&
   typeof value.ticker === 'string' && (value.side === 'BUY' || value.side === 'SELL') &&
   typeof value.status === 'string' && typeof value.reconciliation_status === 'string' &&
-  typeof value.planned_shares === 'number' && typeof value.recorded_shares === 'number' &&
+  typeof value.planned_shares === 'number' &&
+  (typeof value.recorded_shares === 'number' || typeof value.recorded_shares === 'string') &&
   Array.isArray(value.fills) && Array.isArray(value.events)
 
 const isExternalActions = (value: unknown): value is ExternalAction[] =>
@@ -168,4 +174,78 @@ export function getExternalReconciliation(portfolioId: string, signal?: AbortSig
 
 export function getExternalExecutionAnalytics(portfolioId: string, signal?: AbortSignal): Promise<ExternalExecutionAnalytics> {
   return requestJson(`/api/v1/forward-portfolio/${portfolioId}/execution-analytics`, { signal }, isExternalAnalytics)
+}
+
+const isAlpacaStatus = (value: unknown): value is AlpacaSyncStatus =>
+  isObject(value) && typeof value.enabled === 'boolean' && typeof value.configured === 'boolean' &&
+  (value.environment === 'PAPER' || value.environment === 'LIVE') && typeof value.status === 'string' &&
+  typeof value.executions === 'number' && value.provenance === 'ALPACA_READ_ONLY_SYNC'
+
+const isBrokerAccount = (value: unknown): value is BrokerAccount =>
+  isObject(value) && typeof value.equity === 'string' && typeof value.cash === 'string' &&
+  typeof value.observed_at === 'string'
+
+const isBrokerPositions = (value: unknown): value is BrokerPosition[] =>
+  Array.isArray(value) && value.every((item) => isObject(item) && typeof item.symbol === 'string' &&
+    typeof item.quantity === 'string' && typeof item.observed_at === 'string')
+
+const isBrokerOrders = (value: unknown): value is BrokerOrder[] =>
+  Array.isArray(value) && value.every((item) => isObject(item) && typeof item.broker_order_id === 'string' &&
+    typeof item.symbol === 'string' && typeof item.status === 'string')
+
+const isBrokerExecutions = (value: unknown): value is BrokerExecution[] =>
+  Array.isArray(value) && value.every((item) => isObject(item) && typeof item.id === 'string' &&
+    typeof item.symbol === 'string' && typeof item.match_state === 'string' &&
+    item.provenance === 'ALPACA_READ_ONLY_SYNC')
+
+export function getAlpacaSyncStatus(signal?: AbortSignal): Promise<AlpacaSyncStatus> {
+  return requestJson('/api/v1/broker/alpaca/status', { signal }, isAlpacaStatus)
+}
+
+export function triggerAlpacaReadOnlySync(): Promise<AlpacaSyncStatus> {
+  return requestJson('/api/v1/broker/alpaca/sync', { method: 'POST' }, isAlpacaStatus)
+}
+
+export function getAlpacaAccount(signal?: AbortSignal): Promise<BrokerAccount | null> {
+  return requestJson('/api/v1/broker/alpaca/account', { signal },
+    (value): value is BrokerAccount | null => value === null || isBrokerAccount(value))
+}
+
+export function getAlpacaPositions(signal?: AbortSignal): Promise<BrokerPosition[]> {
+  return requestJson('/api/v1/broker/alpaca/positions', { signal }, isBrokerPositions)
+}
+
+export function getAlpacaOrders(signal?: AbortSignal): Promise<BrokerOrder[]> {
+  return requestJson('/api/v1/broker/alpaca/orders', { signal }, isBrokerOrders)
+}
+
+export function getAlpacaActivity(signal?: AbortSignal): Promise<BrokerExecution[]> {
+  return requestJson('/api/v1/broker/alpaca/activity', { signal }, isBrokerExecutions)
+}
+
+export function getAlpacaUnmatched(signal?: AbortSignal): Promise<BrokerExecution[]> {
+  return requestJson('/api/v1/broker/alpaca/unmatched', { signal }, isBrokerExecutions)
+}
+
+function brokerActivityMutation(path: string, body: Record<string, unknown>): Promise<BrokerExecution> {
+  return requestJson(path, { method: 'POST', body: JSON.stringify(body) },
+    (value): value is BrokerExecution => isBrokerExecutions([value]))
+}
+
+export function matchAlpacaExecution(executionId: string, caseId: string, reason: string, requestKey: string): Promise<BrokerExecution> {
+  return brokerActivityMutation(`/api/v1/broker/alpaca/activity/${executionId}/manual-match`, {
+    confirmed: true, external_case_id: caseId, reason, request_key: requestKey,
+  })
+}
+
+export function unlinkAlpacaExecution(executionId: string, reason: string, requestKey: string): Promise<BrokerExecution> {
+  return brokerActivityMutation(`/api/v1/broker/alpaca/activity/${executionId}/unlink`, {
+    confirmed: true, reason, request_key: requestKey,
+  })
+}
+
+export function ignoreAlpacaExecution(executionId: string, reason: string, requestKey: string): Promise<BrokerExecution> {
+  return brokerActivityMutation(`/api/v1/broker/alpaca/activity/${executionId}/ignore`, {
+    confirmed: true, reason, request_key: requestKey,
+  })
 }

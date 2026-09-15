@@ -17,6 +17,16 @@ import {
   recordExternalFill,
   skipExternalAction,
   voidExternalFill,
+  getAlpacaSyncStatus,
+  triggerAlpacaReadOnlySync,
+  getAlpacaAccount,
+  getAlpacaPositions,
+  getAlpacaOrders,
+  getAlpacaActivity,
+  getAlpacaUnmatched,
+  matchAlpacaExecution,
+  unlinkAlpacaExecution,
+  ignoreAlpacaExecution,
 } from '../api/forwardPortfolio'
 import type { ExternalFillInput, ForwardPortfolio } from '../types/forwardPortfolio'
 import {
@@ -184,6 +194,27 @@ export function useExternalExecution(portfolioId: string | null) {
       mutationFn: ({ fillId, reason, requestKey }: { fillId: string; reason: string; requestKey: string }) =>
         voidExternalFill(portfolioId ?? '', fillId, reason, requestKey), onSuccess: refresh,
     }),
+  }
+}
+
+export function useAlpacaReadOnly() {
+  const client = useQueryClient()
+  const refresh = async () => {
+    await client.invalidateQueries({ predicate: (query) =>
+      String(query.queryKey[0]).startsWith('alpaca-read-only') ||
+      String(query.queryKey[0]).startsWith('forward-external') })
+  }
+  return {
+    status: useQuery({ queryKey: ['alpaca-read-only-status'], queryFn: ({ signal }) => getAlpacaSyncStatus(signal), refetchInterval: 60_000 }),
+    account: useQuery({ queryKey: ['alpaca-read-only-account'], queryFn: ({ signal }) => getAlpacaAccount(signal), refetchInterval: 60_000 }),
+    positions: useQuery({ queryKey: ['alpaca-read-only-positions'], queryFn: ({ signal }) => getAlpacaPositions(signal), refetchInterval: 60_000 }),
+    orders: useQuery({ queryKey: ['alpaca-read-only-orders'], queryFn: ({ signal }) => getAlpacaOrders(signal) }),
+    activity: useQuery({ queryKey: ['alpaca-read-only-activity'], queryFn: ({ signal }) => getAlpacaActivity(signal) }),
+    unmatched: useQuery({ queryKey: ['alpaca-read-only-unmatched'], queryFn: ({ signal }) => getAlpacaUnmatched(signal), refetchInterval: 60_000 }),
+    sync: useMutation({ mutationFn: triggerAlpacaReadOnlySync, onSuccess: refresh }),
+    match: useMutation({ mutationFn: ({ executionId, caseId, reason, requestKey }: { executionId: string; caseId: string; reason: string; requestKey: string }) => matchAlpacaExecution(executionId, caseId, reason, requestKey), onSuccess: refresh }),
+    unlink: useMutation({ mutationFn: ({ executionId, reason, requestKey }: { executionId: string; reason: string; requestKey: string }) => unlinkAlpacaExecution(executionId, reason, requestKey), onSuccess: refresh }),
+    ignore: useMutation({ mutationFn: ({ executionId, reason, requestKey }: { executionId: string; reason: string; requestKey: string }) => ignoreAlpacaExecution(executionId, reason, requestKey), onSuccess: refresh }),
   }
 }
 
