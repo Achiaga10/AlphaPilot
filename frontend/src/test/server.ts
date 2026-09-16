@@ -90,8 +90,22 @@ export const dailyOpportunitiesFixture = {
   research_only_limit: 10,
 }
 
+export const operationsHealthFixture = {
+  overall_health: 'HEALTHY', critical_count: 0, warning_count: 0, info_count: 1,
+  evaluated_at: '2026-09-15T17:00:00Z', monitor_running: true, monitor_status: 'SUCCEEDED',
+  active_incidents: [{ id: 'op-disabled', incident_type: 'BROKER_SYNC_DISABLED', severity: 'INFO', status: 'OPEN', source_domain: 'BROKER', source_identity: 'ALPACA', deduplication_key: 'BROKER_SYNC_DISABLED:BROKER:ALPACA', occurrence: 1, opened_at: '2026-09-15T17:00:00Z', last_observed_at: '2026-09-15T17:00:00Z', acknowledged_at: null, resolved_at: null, summary: 'Alpaca read-only synchronization is intentionally disabled', evidence: { environment: 'PAPER' }, events: [] }],
+  forward: { status: 'NOT_INITIALIZED', scheduler_status: 'NO_PORTFOLIO', scheduler_running: true, cash: null, equity: null, open_positions: 0, pending_sessions: 0, latest_processed_session: null, latest_completed_market_session: '2026-09-14' },
+  broker: { enabled: false, configured: false, environment: 'PAPER', status: 'DISABLED', last_success_at: null, data_age_seconds: null, snapshot_authoritative: false },
+  position_drifts: [],
+  startup: { database_reachable: true, schema_compatible: true, expected_schema_revision: 'c28a0f1b2d3e', observed_schema_revision: 'c28a0f1b2d3e', forward_scheduler_initialized: true, broker_configuration_state: 'DISABLED', operations_monitor_initialized: true },
+}
+
 export const handlers = [
   http.get(`${API_BASE_URL}/api/v1/health/`, () => HttpResponse.json({ status: 'ok', application: 'AlphaPilot' })),
+  http.get(`${API_BASE_URL}/api/v1/operations/health`, () => HttpResponse.json(operationsHealthFixture)),
+  http.get(`${API_BASE_URL}/api/v1/operations/incidents`, () => HttpResponse.json([])),
+  http.post(`${API_BASE_URL}/api/v1/operations/evaluate`, () => HttpResponse.json({ evaluated_at: '2026-09-15T17:00:00Z', opened: 0, updated: 0, resolved: 0, overall_health: 'HEALTHY' })),
+  http.post(`${API_BASE_URL}/api/v1/operations/incidents/:incidentId/acknowledge`, ({ params }) => HttpResponse.json({ ...operationsHealthFixture.active_incidents[0], id: String(params.incidentId), status: 'ACKNOWLEDGED', acknowledged_at: '2026-09-15T17:01:00Z' })),
   http.get(`${API_BASE_URL}/api/v1/broker/alpaca/status`, () => HttpResponse.json({ enabled: false, configured: false, environment: 'PAPER', scheduler_running: false, status: 'DISABLED', last_attempt_at: null, last_success_at: null, last_error: null, data_age_seconds: null, account_snapshots: 0, positions: 0, orders: 0, executions: 0, unmatched_executions: 0, interval_seconds: 300, initial_lookback_days: 14, overlap_minutes: 10, provenance: 'ALPACA_READ_ONLY_SYNC' })),
   http.get(`${API_BASE_URL}/api/v1/broker/alpaca/account`, () => HttpResponse.json(null)),
   http.get(`${API_BASE_URL}/api/v1/broker/alpaca/positions`, () => HttpResponse.json([])),

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     FORWARD_PORTFOLIO_SCHEDULER_ENABLED: bool = True
     FORWARD_PORTFOLIO_SCHEDULER_INTERVAL_SECONDS: int = 3600
 
+    OPERATIONS_MONITOR_ENABLED: bool = True
+    OPERATIONS_MONITOR_INTERVAL_SECONDS: int = 300
+
     AI_COPILOT_ENABLED: bool = False
     AI_PROVIDER: Literal["ollama"] = "ollama"
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"

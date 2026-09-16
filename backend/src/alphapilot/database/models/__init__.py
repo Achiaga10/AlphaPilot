@@ -46,6 +46,16 @@ from .news import (
     NewsClassification,
     NewsRefreshCoverage,
 )
+from .operations import (
+    OperationalEventType,
+    OperationalHealth,
+    OperationalIncident,
+    OperationalIncidentEvent,
+    OperationalIncidentStatus,
+    OperationalIncidentType,
+    OperationalSeverity,
+    OperationalSourceDomain,
+)
 from .research_dataset import (
     ResearchDatasetCandleMember,
     ResearchDatasetSnapshot,
@@ -107,6 +117,14 @@ __all__ = [
     "NewsArticle",
     "NewsClassification",
     "NewsRefreshCoverage",
+    "OperationalEventType",
+    "OperationalHealth",
+    "OperationalIncident",
+    "OperationalIncidentEvent",
+    "OperationalIncidentStatus",
+    "OperationalIncidentType",
+    "OperationalSeverity",
+    "OperationalSourceDomain",
     "ResearchDatasetCandleMember",
     "ResearchDatasetSnapshot",
     "ResearchDatasetUniverseMember",

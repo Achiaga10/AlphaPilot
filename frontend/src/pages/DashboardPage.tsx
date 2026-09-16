@@ -3,6 +3,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/AsyncState'
 import { DailyPortfolioManager } from '../features/dashboard/DailyPortfolioManager'
 import { ForwardPortfolioPanel } from '../features/dashboard/ForwardPortfolioPanel'
 import { NewsIntelligencePanel } from '../features/dashboard/NewsIntelligencePanel'
+import { OperationsCenter } from '../features/dashboard/OperationsCenter'
 import { usePortfolioWorkspace } from '../features/portfolio/PortfolioWorkspace'
 import { useDailyBriefOpportunitiesQuery, useDailyPortfolioBriefQuery, useLivePortfolioRefreshMutation, usePortfolioNewsQuery, usePortfolioNewsRefreshMutation, usePortfolioNewsSentimentQuery } from '../hooks/usePortfolioApi'
 
@@ -28,6 +29,7 @@ export function DashboardPage() {
         </div>
         <span className="research-label">RESEARCH / DEVELOPMENT</span>
       </header>
+      <OperationsCenter />
       <ForwardPortfolioPanel />
       {portfolioPending ? <LoadingState label="Loading research portfolio…" /> : null}
       {!portfolioPending && !portfolio ? <EmptyState title="Research portfolio unavailable">Initialize the persistent research portfolio before generating a Daily Brief.</EmptyState> : null}

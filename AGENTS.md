@@ -24,6 +24,20 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
+Sprint 28 — Production Operations, Health & Alerting
+(IMPLEMENTED LOCALLY — DETERMINISTIC OBSERVATION / ZERO TRADING AUTHORITY)
+
+Sprint 28 adds durable operational incidents and audit events, deterministic
+INFO/WARNING/CRITICAL severity, OPEN/ACKNOWLEDGED/RESOLVED lifecycle, stable active
+deduplication with recurrence history, a backend-owned HEALTHY/ATTENTION/DEGRADED
+summary, trading-session-aware manual-action deadlines, fresh-snapshot-only relevant-
+Micho position drift, startup self-checks, a separate contained five-minute monitor,
+typed APIs and a Dashboard Operations Center. It is in-app only and cannot submit,
+cancel, replace or close broker orders or change Micho decisions, Forward economics,
+Portfolio Plan, EMA20, News, ResearchPortfolio or Paper. Migration `c28a0f1b2d3e`
+descends from `fa4edd0b0ef8` and was verified only against `TEST_DATABASE_URL`. See
+`docs/sprints/SPRINT_28_PRODUCTION_OPERATIONS.md`. Sprint 29 is not started.
+
 Sprint 27 — Alpaca Read-Only Broker Synchronization
 (IMPLEMENTED LOCALLY — BROKER OBSERVATION / ZERO TRADING AUTHORITY)
 

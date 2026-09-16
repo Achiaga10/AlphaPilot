@@ -1,5 +1,44 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 28 production operations, health and alerting
+
+- Operations is a deterministic observational domain with no financial authority.
+  It may read market, Forward, external-execution and broker evidence and may write
+  only operational incidents/events. It cannot submit/cancel/replace/close an order,
+  change Micho decisions or Forward economics, or affect EMA20, News, Portfolio Plan,
+  ResearchPortfolio or Paper.
+- Incident status is `OPEN`, `ACKNOWLEDGED` or `RESOLVED`; severity is `INFO`,
+  `WARNING` or `CRITICAL`. Overall health is `DEGRADED` for active CRITICAL,
+  `ATTENTION` for active WARNING, otherwise `HEALTHY`. INFO is visible but does not
+  degrade health.
+- Active identity is `incident_type + source_domain + source_identity`, enforced by
+  a database unique key and PostgreSQL advisory lock `(2828, 1)`. Repeated unchanged
+  evaluation updates observation time without duplicate rows/events. Acknowledgement
+  is audited and remains acknowledged while active. Clearing resolves the occurrence;
+  recurrence creates a new row with incremented occurrence rather than reopening history.
+- Manual BUY/SELL deadlines use the latest authoritative stored completed session.
+  Upcoming BUY is INFO, overdue BUY is WARNING, required manual exit is WARNING, and
+  an exit still unresolved when its expected session is completed is CRITICAL.
+- Alpaca-disabled is INFO and never CRITICAL. Enabled/incomplete configuration,
+  failed/stale sync and non-authoritative evidence are explicit. Environment mismatch
+  is CRITICAL. Position quantity drift is evaluated only from a fresh successful
+  snapshot, treats an absent relevant symbol as zero only in that snapshot, ignores
+  unrelated user positions, and is unknown when broker evidence is stale/failed.
+  Forward zero/broker positive after a closed position is CRITICAL; ordinary quantity
+  drift is WARNING.
+- Broker conflict is WARNING for entry evidence and CRITICAL for exit/exposure evidence.
+  Ambiguous matching is WARNING, unmatched outside activity defaults to INFO, executed-
+  after-virtual-cancel is CRITICAL, and price divergence becomes an incident only at
+  an absolute 25 bps or greater difference to avoid noise.
+- The Operations monitor runs independently at startup and every 300 seconds. Failures
+  are contained. Startup self-checks do not auto-migrate. `SCHEMA_MIGRATION_REQUIRED`
+  is CRITICAL where the incident tables are available; if they are absent, monitor
+  scheduler failure and structured logs remain the practical signal until deployment
+  applies the migration.
+- Alert delivery is in-app only. The Dashboard Operations Center has no broker-control
+  surface and never claims that it is safe to trade. Migration `c28a0f1b2d3e` was
+  verified only on `TEST_DATABASE_URL`. Sprint 29 is not started.
+
 ## Sprint 27 Alpaca read-only synchronization
 
 - Alpaca is an optional observational source with zero trading authority. The
