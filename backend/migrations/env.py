@@ -19,6 +19,7 @@ from alphapilot.database.models import (  # noqa: F401
     forward_portfolio,
     index_constituent,
     market_data_ingestion,
+    operations,
     research_dataset,
     research_portfolio,
 )

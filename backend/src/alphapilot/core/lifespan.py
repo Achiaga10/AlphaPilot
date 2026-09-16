@@ -13,6 +13,7 @@ from alphapilot.services.forward_portfolio_scheduler import (
     ForwardPortfolioScheduler,
     ForwardSchedulerRunStatus,
 )
+from alphapilot.services.operations_scheduler import OperationsMonitorScheduler
 
 daily_market_scheduler = DailyMarketSyncScheduler(
     enabled=settings.DAILY_MARKET_SYNC_ENABLED,
@@ -25,6 +26,25 @@ broker_sync_scheduler = BrokerSyncScheduler(
     enabled=settings.ALPACA_SYNC_ENABLED,
     interval_seconds=settings.ALPACA_SYNC_INTERVAL_SECONDS,
 )
+operations_monitor_scheduler = OperationsMonitorScheduler(
+    enabled=settings.OPERATIONS_MONITOR_ENABLED,
+    interval_seconds=settings.OPERATIONS_MONITOR_INTERVAL_SECONDS,
+)
+
+
+def operations_scheduler_context() -> dict[str, object]:
+    return {
+        "market_status": daily_market_scheduler.status.last_status.value,
+        "market_last_completed": (
+            daily_market_scheduler.status.last_successful_completed_market_session
+        ),
+        "forward_initialized": True,
+        "forward_running": forward_portfolio_scheduler.status.scheduler_running,
+        "forward_status": forward_portfolio_scheduler.status.last_status.value,
+        "broker_running": broker_sync_scheduler.status.scheduler_running,
+        "operations_initialized": True,
+        "operations_status": operations_monitor_scheduler.status.last_status.value,
+    }
 
 
 @asynccontextmanager
@@ -120,8 +140,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         broker_sync_scheduler.job = broker_job
     broker_sync_scheduler.start()
 
+    if operations_monitor_scheduler.status.enabled:
+
+        async def operations_job() -> None:
+            from alphapilot.database.session import AsyncSessionLocal
+            from alphapilot.services.operations_monitor import OperationsMonitor
+
+            async with AsyncSessionLocal() as session:
+                await OperationsMonitor(
+                    session,
+                    scheduler_context=operations_scheduler_context,
+                    monitor_running=True,
+                ).evaluate()
+
+        operations_monitor_scheduler.job = operations_job
+    operations_monitor_scheduler.start()
+
     yield
 
+    await operations_monitor_scheduler.stop()
     await broker_sync_scheduler.stop()
     await forward_portfolio_scheduler.stop()
     await daily_market_scheduler.stop()

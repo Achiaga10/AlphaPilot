@@ -2,6 +2,39 @@
 
 ## Current Phase
 
+Sprint 28 — Production Operations, Health & Alerting
+IMPLEMENTED LOCALLY — DETERMINISTIC IN-APP OBSERVATION / ZERO TRADING AUTHORITY
+
+AlphaPilot now has a persistent backend-owned Operations incident domain. Fixed
+deterministic rules observe market-data, Micho Forward, manual external execution,
+Alpaca read-only reconciliation, and relevant-position quantity facts. Incidents use
+INFO/WARNING/CRITICAL severity and OPEN/ACKNOWLEDGED/RESOLVED lifecycle. One active
+row is allowed per type/source identity; repeated evaluation refreshes that row without
+event spam, acknowledgement does not resolve it, clearing resolves it, and recurrence
+creates a new retained occurrence. Overall health is DEGRADED for any active CRITICAL,
+ATTENTION for any active WARNING, otherwise HEALTHY; INFO never degrades health.
+
+The monitor runs separately at startup and every five minutes with PostgreSQL advisory
+locking and contained failures. Manual action overdue logic uses the latest stored
+completed trading session rather than calendar midnight/weekends. Position drift is
+evaluated only from a fresh successful Alpaca snapshot and only for Micho Forward-linked
+symbols; stale/failed evidence makes drift unknown. A Forward-closed but broker-open
+position is CRITICAL. Startup checks expose database, migration-head, scheduler, broker
+configuration and monitor initialization facts without applying migrations.
+
+Typed health, incident, detail, acknowledgement, daily-summary and manual-evaluation
+APIs back a compact Dashboard Operations Center with critical-first attention, Forward
+and Alpaca read-only health, evidence, drift and resolved history. Alerting is in-app
+only. It cannot trade or modify any financial/strategy domain. Migration `c28a0f1b2d3e`
+descends from `fa4edd0b0ef8` and passed TEST-only downgrade/upgrade plus schema-drift
+verification. Full backend validation passed Ruff/format, mypy across 220 source files,
+and 715 tests. Frontend lint, 109 tests across 20 files and production build passed.
+Controlled Edge acceptance demonstrated DEGRADED, WARNING, acknowledgement, HEALTHY
+recovery and retained resolved history against TEST_DATABASE_URL. Full handoff:
+`docs/sprints/SPRINT_28_PRODUCTION_OPERATIONS.md`. Sprint 29 is not started.
+
+## Preserved Sprint 27 baseline
+
 Sprint 27 — Alpaca Read-Only Broker Synchronization
 IMPLEMENTED LOCALLY — BROKER TRUTH LAYER / ZERO TRADING AUTHORITY
 

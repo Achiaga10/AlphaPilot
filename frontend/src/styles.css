@@ -167,6 +167,7 @@ tbody th { font-weight: 800; }
 .badge--negative { color: #943d3d; background: #fceded; border-color: #f1cccc; }
 .badge--warning { color: #805814; background: #fff4dd; border-color: #f1deb1; }
 .badge--neutral { color: #53625e; background: #eef2f0; border-color: #dbe2df; }
+.badge--danger { color: #8f2929; background: #fdeaea; border-color: #efc1c1; }
 
 .config-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; margin: 0; }
 .config-grid div { background: var(--surface-soft); padding: .8rem; border-radius: .55rem; }
@@ -523,3 +524,27 @@ input[aria-invalid="true"] { border-color: var(--negative); }
   color: var(--muted);
   font-size: 0.88rem;
 }
+.operations-center {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.operations-counts,
+.operations-health-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.operations-counts .button { margin-left: auto; }
+.operations-health-grid > article { flex: 1 1 22rem; }
+.operations-priority > ol { display: grid; gap: .75rem; padding: 0; list-style: none; }
+.operations-incident { border-left: .3rem solid var(--line); padding: .8rem 1rem; background: var(--surface-muted); }
+.operations-incident--critical { border-left-color: #c53b3b; }
+.operations-incident--warning { border-left-color: #c98913; }
+.operations-evidence { overflow: auto; max-height: 14rem; white-space: pre-wrap; font-size: .78rem; }
