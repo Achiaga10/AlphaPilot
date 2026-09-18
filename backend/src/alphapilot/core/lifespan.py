@@ -13,6 +13,7 @@ from alphapilot.services.forward_portfolio_scheduler import (
     ForwardPortfolioScheduler,
     ForwardSchedulerRunStatus,
 )
+from alphapilot.services.notification_scheduler import NotificationScheduler
 from alphapilot.services.operations_scheduler import OperationsMonitorScheduler
 
 daily_market_scheduler = DailyMarketSyncScheduler(
@@ -29,6 +30,10 @@ broker_sync_scheduler = BrokerSyncScheduler(
 operations_monitor_scheduler = OperationsMonitorScheduler(
     enabled=settings.OPERATIONS_MONITOR_ENABLED,
     interval_seconds=settings.OPERATIONS_MONITOR_INTERVAL_SECONDS,
+)
+notification_scheduler = NotificationScheduler(
+    enabled=settings.NOTIFICATIONS_ENABLED,
+    interval_seconds=settings.NOTIFICATION_WORKER_INTERVAL_SECONDS,
 )
 
 
@@ -156,8 +161,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         operations_monitor_scheduler.job = operations_job
     operations_monitor_scheduler.start()
 
+    if notification_scheduler.status.enabled:
+
+        async def notification_job() -> None:
+            from alphapilot.database.session import AsyncSessionLocal
+            from alphapilot.notifications.email import SMTPEmailProvider
+            from alphapilot.services.notifications import (
+                NotificationDeliveryWorker,
+                NotificationService,
+            )
+            from alphapilot.services.operations_monitor import OperationsMonitor
+
+            async with AsyncSessionLocal() as session:
+                service = NotificationService(
+                    session,
+                    worker_running=True,
+                )
+                await service.plan_active_incidents()
+                await service.plan_critical_reminders()
+                preference = await service.preference()
+                if preference.daily_summary_enabled:
+                    summary = await OperationsMonitor(
+                        session,
+                        scheduler_context=operations_scheduler_context,
+                        monitor_running=operations_monitor_scheduler.status.scheduler_running,
+                    ).daily_summary()
+                    await service.plan_daily_summary(summary)
+                await NotificationDeliveryWorker(
+                    session,
+                    SMTPEmailProvider(),
+                ).run_pending()
+
+        notification_scheduler.job = notification_job
+    notification_scheduler.start()
+
     yield
 
+    await notification_scheduler.stop()
     await operations_monitor_scheduler.stop()
     await broker_sync_scheduler.stop()
     await forward_portfolio_scheduler.stop()

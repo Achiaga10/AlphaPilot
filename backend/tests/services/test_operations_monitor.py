@@ -20,6 +20,7 @@ from alphapilot.database.models.external_execution import (
     ExternalActionStatus,
     ExternalReconciliationStatus,
 )
+from alphapilot.database.models.notifications import Notification
 from alphapilot.database.models.operations import (
     OperationalEventType,
     OperationalHealth,
@@ -31,11 +32,13 @@ from alphapilot.database.models.operations import (
     OperationalSourceDomain,
 )
 from alphapilot.schemas.external_execution import ExternalActionSchema
+from alphapilot.schemas.notifications import NotificationPreferenceUpdate
 from alphapilot.schemas.operations import (
     BrokerOperationsSchema,
     ForwardOperationsSchema,
     StartupCheckSchema,
 )
+from alphapilot.services.notifications import NotificationService
 from alphapilot.services.operations_monitor import (
     IncidentCondition,
     OperationsIncidentConflictError,
@@ -164,6 +167,81 @@ async def test_material_change_adds_one_update_event(db_session, monkeypatch) ->
         OperationalEventType.OPENED,
         OperationalEventType.UPDATED,
     ]
+
+
+@pytest.mark.asyncio
+async def test_incident_transition_creates_durable_notification_in_same_commit(
+    db_session, monkeypatch
+) -> None:
+    config = Settings(
+        DEBUG=False,
+        NOTIFICATIONS_ENABLED=True,
+        NOTIFICATION_EMAIL_ENABLED=True,
+        SMTP_HOST="smtp.test",
+        SMTP_USERNAME="operator",
+        SMTP_PASSWORD="test-secret",
+        NOTIFICATION_FROM_EMAIL="alphapilot@example.com",
+    )
+    await NotificationService(db_session, config=config).update_preference(
+        NotificationPreferenceUpdate(
+            notifications_enabled=True,
+            email_enabled=True,
+            recipient="operator@example.com",
+            warning_enabled=True,
+            critical_enabled=True,
+            recovery_enabled=True,
+            daily_summary_enabled=False,
+        )
+    )
+    monitor = OperationsMonitor(db_session, config=config, now_provider=lambda: NOW)
+    current = snapshot(condition())
+    monkeypatch.setattr(monitor, "_snapshot", lambda: asyncio.sleep(0, result=current))
+    await monitor.evaluate()
+    notification = await db_session.scalar(select(Notification))
+    assert notification is not None
+    assert notification.transition == "OPENED"
+    assert notification.incident_id is not None
+
+
+@pytest.mark.asyncio
+async def test_notification_failure_incident_is_in_app_only_without_recursion(db_session) -> None:
+    config = Settings(
+        DEBUG=False,
+        NOTIFICATIONS_ENABLED=True,
+        NOTIFICATION_EMAIL_ENABLED=True,
+        SMTP_HOST="smtp.test",
+        SMTP_USERNAME="operator",
+        SMTP_PASSWORD="test-secret",
+        NOTIFICATION_FROM_EMAIL="alphapilot@example.com",
+    )
+    service = NotificationService(db_session, config=config, now_provider=lambda: NOW)
+    await service.update_preference(
+        NotificationPreferenceUpdate(
+            notifications_enabled=True,
+            email_enabled=True,
+            recipient="operator@example.com",
+            warning_enabled=True,
+            critical_enabled=True,
+            recovery_enabled=True,
+            daily_summary_enabled=False,
+        )
+    )
+    failed = await service.create_test()
+    row = await db_session.get(Notification, failed.id)
+    assert row is not None
+    row.status = "FAILED"
+    row.failure_category = "CONNECTION"
+    await db_session.commit()
+
+    await OperationsMonitor(db_session, config=config, now_provider=lambda: NOW).evaluate()
+    notification_incident = await db_session.scalar(
+        select(OperationalIncident).where(
+            OperationalIncident.incident_type == "NOTIFICATION_DELIVERY_FAILED"
+        )
+    )
+    assert notification_incident is not None
+    assert notification_incident.source_domain == "NOTIFICATION"
+    assert await db_session.scalar(select(func.count()).select_from(Notification)) == 1
 
 
 @pytest.mark.asyncio

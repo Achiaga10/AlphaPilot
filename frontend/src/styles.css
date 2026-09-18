@@ -548,3 +548,7 @@ input[aria-invalid="true"] { border-color: var(--negative); }
 .operations-incident--critical { border-left-color: #c53b3b; }
 .operations-incident--warning { border-left-color: #c98913; }
 .operations-evidence { overflow: auto; max-height: 14rem; white-space: pre-wrap; font-size: .78rem; }
+.notification-settings { border: 1px solid var(--line); border-radius: .7rem; padding: .8rem 1rem; }
+.notification-preferences { display: grid; gap: .8rem; margin-top: .8rem; }
+.notification-toggle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .55rem; }
+.notification-toggle-grid label { display: flex; align-items: center; gap: .45rem; }

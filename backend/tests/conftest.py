@@ -64,7 +64,8 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
         await session.execute(
             text(
-                "TRUNCATE TABLE operational_incident_events, operational_incidents, "
+                "TRUNCATE TABLE notification_delivery_attempts, notifications, "
+                "notification_preferences, operational_incident_events, operational_incidents, "
                 "broker_execution_match_events, broker_executions, "
                 "broker_order_observations, broker_position_snapshots, "
                 "broker_account_snapshots, broker_sync_runs, "
@@ -87,7 +88,8 @@ async def clean_test_database() -> AsyncGenerator[None, None]:
     async with TestSessionLocal() as session:
         await session.execute(
             text(
-                "TRUNCATE TABLE operational_incident_events, operational_incidents, "
+                "TRUNCATE TABLE notification_delivery_attempts, notifications, "
+                "notification_preferences, operational_incident_events, operational_incidents, "
                 "broker_execution_match_events, broker_executions, "
                 "broker_order_observations, broker_position_snapshots, "
                 "broker_account_snapshots, broker_sync_runs, "

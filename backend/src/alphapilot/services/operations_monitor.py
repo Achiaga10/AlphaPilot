@@ -26,6 +26,7 @@ from alphapilot.database.models.forward_portfolio import (
     ForwardPosition,
     ForwardPositionStatus,
 )
+from alphapilot.database.models.notifications import Notification, NotificationStatus
 from alphapilot.database.models.operations import (
     OperationalEventType,
     OperationalHealth,
@@ -52,8 +53,9 @@ from alphapilot.schemas.operations import (
 )
 from alphapilot.services.broker_sync import AlpacaBrokerSyncService
 from alphapilot.services.external_execution import ExternalExecutionService
+from alphapilot.services.notifications import NotificationService, notification_system_configured
 
-EXPECTED_SCHEMA_REVISION = "c28a0f1b2d3e"
+EXPECTED_SCHEMA_REVISION = "3a3f0c993c27"
 logger = logging.getLogger(__name__)
 
 
@@ -134,6 +136,9 @@ class OperationsMonitor:
         active = {row.deduplication_key: row for row in active_rows}
         observed = {condition.key: condition for condition in snapshot.conditions}
         opened = updated = resolved = 0
+        notification_service = NotificationService(
+            self.session, config=self.config, now_provider=self.now_provider
+        )
 
         for key, condition in observed.items():
             row = active.get(key)
@@ -162,7 +167,7 @@ class OperationsMonitor:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                self._event(
+                event = self._event(
                     row,
                     OperationalEventType.OPENED,
                     None,
@@ -171,6 +176,8 @@ class OperationsMonitor:
                     condition.evidence,
                     snapshot.evaluated_at,
                 )
+                await self.session.flush()
+                await notification_service.plan_incident_transition(row, event, transition="OPENED")
                 opened += 1
                 logger.warning(
                     "operational_incident_opened type=%s severity=%s source=%s",
@@ -185,12 +192,13 @@ class OperationsMonitor:
                 or row.evidence != condition.evidence
             )
             previous_status = OperationalIncidentStatus(row.status)
+            previous_severity = OperationalSeverity(row.severity)
             row.last_observed_at = snapshot.evaluated_at
             row.severity = condition.severity.value
             row.summary = condition.summary
             row.evidence = condition.evidence
             if changed:
-                self._event(
+                event = self._event(
                     row,
                     OperationalEventType.UPDATED,
                     previous_status,
@@ -199,6 +207,16 @@ class OperationsMonitor:
                     condition.evidence,
                     snapshot.evaluated_at,
                 )
+                await self.session.flush()
+                severity_rank = {
+                    OperationalSeverity.INFO: 0,
+                    OperationalSeverity.WARNING: 1,
+                    OperationalSeverity.CRITICAL: 2,
+                }
+                if severity_rank[condition.severity] > severity_rank[previous_severity]:
+                    await notification_service.plan_incident_transition(
+                        row, event, transition="ESCALATED", generation=None
+                    )
                 updated += 1
 
         for key, row in active.items():
@@ -208,7 +226,8 @@ class OperationsMonitor:
             row.status = OperationalIncidentStatus.RESOLVED.value
             row.resolved_at = snapshot.evaluated_at
             row.active_deduplication_key = None
-            self._event(
+            await notification_service.cancel_pending_for_incident(row.id, reminders_only=False)
+            event = self._event(
                 row,
                 OperationalEventType.RESOLVED,
                 previous_status,
@@ -217,6 +236,8 @@ class OperationsMonitor:
                 row.evidence,
                 snapshot.evaluated_at,
             )
+            await self.session.flush()
+            await notification_service.plan_incident_transition(row, event, transition="RESOLVED")
             resolved += 1
             logger.info(
                 "operational_incident_resolved type=%s source=%s",
@@ -348,6 +369,9 @@ class OperationsMonitor:
                 now,
                 source="USER",
             )
+            await NotificationService(
+                self.session, config=self.config, now_provider=self.now_provider
+            ).cancel_pending_for_incident(row.id, reminders_only=True)
             await self.session.commit()
             logger.info("operational_incident_acknowledged id=%s", row.id)
         return await self._schema(row, include_events=True)
@@ -506,6 +530,68 @@ class OperationsMonitor:
                     "daily-sync",
                     "Daily market-data synchronization most recently failed",
                     {},
+                )
+            )
+
+        notifications_enabled = bool(
+            self.config.NOTIFICATIONS_ENABLED and self.config.NOTIFICATION_EMAIL_ENABLED
+        )
+        if notifications_enabled and not notification_system_configured(self.config):
+            conditions.append(
+                self._condition(
+                    "NOTIFICATION_MISCONFIGURED",
+                    "WARNING",
+                    "NOTIFICATION",
+                    "EMAIL",
+                    "Operational email delivery is enabled but SMTP is incomplete",
+                    {},
+                )
+            )
+        failed_notifications = int(
+            await self.session.scalar(
+                select(func.count())
+                .select_from(Notification)
+                .where(Notification.status == NotificationStatus.FAILED.value)
+            )
+            or 0
+        )
+        if failed_notifications:
+            conditions.append(
+                self._condition(
+                    "NOTIFICATION_DELIVERY_FAILED",
+                    "WARNING",
+                    "NOTIFICATION",
+                    "EMAIL",
+                    f"{failed_notifications} operational notification(s) failed delivery",
+                    {"failed_count": failed_notifications},
+                )
+            )
+        stale_before = now.timestamp() - self.config.NOTIFICATION_WORKER_INTERVAL_SECONDS * 2
+        stale_notifications = int(
+            await self.session.scalar(
+                select(func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.status.in_(
+                        [
+                            NotificationStatus.PENDING.value,
+                            NotificationStatus.RETRY_PENDING.value,
+                        ]
+                    ),
+                    func.extract("epoch", Notification.next_attempt_at) <= stale_before,
+                )
+            )
+            or 0
+        )
+        if stale_notifications:
+            conditions.append(
+                self._condition(
+                    "NOTIFICATION_QUEUE_STALE",
+                    "WARNING",
+                    "NOTIFICATION",
+                    "EMAIL",
+                    f"{stale_notifications} operational notification(s) are stale in queue",
+                    {"stale_count": stale_notifications},
                 )
             )
 
@@ -728,6 +814,8 @@ class OperationsMonitor:
             "latest_completed_session": str(latest_market) if latest_market else None,
             "status": action.status.value,
             "reconciliation_status": action.reconciliation_status.value,
+            "shares": getattr(action, "planned_shares", None),
+            "reason": getattr(action, "decision_reason", None),
         }
         if action.status.value == "AWAITING_ACTION" and not overdue:
             incident_type = (
@@ -941,7 +1029,12 @@ class OperationsMonitor:
                 ).scalars()
             )
             events = [OperationalIncidentEventSchema.model_validate(event) for event in event_rows]
-        return OperationalIncidentSchema.model_validate(row).model_copy(update={"events": events})
+        notification_state = await NotificationService(
+            self.session, config=self.config, now_provider=self.now_provider
+        ).incident_delivery_state(row)
+        return OperationalIncidentSchema.model_validate(row).model_copy(
+            update={"events": events, "notification_state": notification_state}
+        )
 
     def _event(
         self,
@@ -954,19 +1047,19 @@ class OperationsMonitor:
         created_at: datetime,
         *,
         source: str = "OPERATIONS_MONITOR",
-    ) -> None:
-        self.session.add(
-            OperationalIncidentEvent(
-                incident_id=row.id,
-                event_type=event_type.value,
-                from_status=from_status.value if from_status else None,
-                to_status=to_status.value,
-                source=source,
-                reason=reason,
-                evidence=evidence,
-                created_at=created_at,
-            )
+    ) -> OperationalIncidentEvent:
+        event = OperationalIncidentEvent(
+            incident_id=row.id,
+            event_type=event_type.value,
+            from_status=from_status.value if from_status else None,
+            to_status=to_status.value,
+            source=source,
+            reason=reason,
+            evidence=evidence,
+            created_at=created_at,
         )
+        self.session.add(event)
+        return event
 
     @staticmethod
     def _condition(
