@@ -24,8 +24,27 @@ These three files are the source of continuity for the project.
 
 The project is currently in:
 
+Sprint 29 — Operational Notifications & Escalation
+(IMPLEMENTED LOCALLY — PERSISTENT EMAIL DELIVERY / ZERO TRADING AUTHORITY)
+
+Sprint 29 adds a deterministic EMAIL-only notification layer over authoritative
+Sprint 28 incidents. Eligible transitions create a durable outbox, a separate
+one-minute worker claims rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, SMTP attempts
+are fully audited, transient failures retry at 1/5/15/30 minutes up to five attempts,
+and expired leases recover after worker crashes. Actionable WARNING incidents notify
+once; CRITICAL incidents notify immediately and may remind hourly until acknowledged
+or resolved; recovery sends once only when an earlier external notification was
+delivered. Upcoming BUY remains in-app only. Manual exit-required/overdue emails say
+manual broker action is required and never claim an order was submitted. An optional
+completed-session daily Operations summary is disabled by default. SMTP credentials
+remain environment-only; single-operator preferences and recipient are persisted.
+Migration `3a3f0c993c27` descends from `c28a0f1b2d3e` and was verified only against
+`TEST_DATABASE_URL`. The system cannot submit/cancel/replace/close broker orders or
+change Micho, EMA20, Forward, Portfolio Plan, News, ResearchPortfolio or Paper. See
+`docs/sprints/SPRINT_29_OPERATIONAL_NOTIFICATIONS.md`. Sprint 30 is not started.
+
 Sprint 28 — Production Operations, Health & Alerting
-(IMPLEMENTED LOCALLY — DETERMINISTIC OBSERVATION / ZERO TRADING AUTHORITY)
+(PRESERVED BASELINE — DETERMINISTIC OBSERVATION / ZERO TRADING AUTHORITY)
 
 Sprint 28 adds durable operational incidents and audit events, deterministic
 INFO/WARNING/CRITICAL severity, OPEN/ACKNOWLEDGED/RESOLVED lifecycle, stable active
@@ -36,7 +55,7 @@ typed APIs and a Dashboard Operations Center. It is in-app only and cannot submi
 cancel, replace or close broker orders or change Micho decisions, Forward economics,
 Portfolio Plan, EMA20, News, ResearchPortfolio or Paper. Migration `c28a0f1b2d3e`
 descends from `fa4edd0b0ef8` and was verified only against `TEST_DATABASE_URL`. See
-`docs/sprints/SPRINT_28_PRODUCTION_OPERATIONS.md`. Sprint 29 is not started.
+`docs/sprints/SPRINT_28_PRODUCTION_OPERATIONS.md`.
 
 Sprint 27 — Alpaca Read-Only Broker Synchronization
 (IMPLEMENTED LOCALLY — BROKER OBSERVATION / ZERO TRADING AUTHORITY)

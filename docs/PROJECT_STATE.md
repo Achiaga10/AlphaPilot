@@ -2,6 +2,46 @@
 
 ## Current Phase
 
+Sprint 29 — Operational Notifications & Escalation
+IMPLEMENTED LOCALLY — DURABLE EMAIL DELIVERY / ZERO TRADING AUTHORITY
+
+AlphaPilot now converts eligible Sprint 28 incident transitions into one logical
+durable EMAIL notification. INFO remains in-app only. Actionable WARNING incidents
+send once, all non-notification-subsystem CRITICAL incidents send immediately and may
+remind every 3,600 seconds while OPEN, acknowledgement suppresses pending/future
+reminders without resolving the incident, and resolution sends once only when an
+earlier incident notification was delivered. Upcoming BUY is not emailed; manual exit
+required and overdue are emailed with explicit manual-action/no-order-submitted wording.
+
+The one-minute delivery worker is separate from Operations evaluation. PostgreSQL
+`FOR UPDATE SKIP LOCKED`, committed five-minute leases and unique logical keys provide
+multi-worker safety and restart recovery. Transient SMTP failures retry after
+1/5/15/30 minutes, with five automatic attempts; permanent configuration,
+authentication and recipient failures end in FAILED. Every attempt is audited without
+exception strings or secrets. SMTP delivery is effectively-once at application level,
+not mathematically exactly once after provider acceptance. Notification delivery
+failure, stale queue and misconfiguration can become in-app Sprint 28 incidents, but
+that source domain is excluded from email to prevent recursion.
+
+Single-operator preferences own global/email, WARNING, CRITICAL, recovery and optional
+daily-summary enablement plus recipient. SMTP host, port, username, password, TLS,
+timeout and sender remain backend environment settings. The daily summary reuses the
+Sprint 28 completed-session summary and deduplicates by recipient/channel/session, so
+weekends do not create extra summaries. Typed APIs and a compact Dashboard delivery
+surface expose configuration state, queue/failure counts, history, preferences, TEST
+email and manual retry without any broker controls.
+
+Migration `3a3f0c993c27` descends from `c28a0f1b2d3e`; TEST-only upgrade,
+downgrade/re-upgrade and Alembic drift checks passed. Full backend validation passed
+Ruff/format, mypy across 227 source files and 734 tests. Frontend lint, 111 tests
+across 20 files and production build passed. Real FastAPI/Vite/Edge acceptance used an
+isolated TEST database and FakeNotificationProvider; an acceptance-only mutation guard
+and post-run audit confirmed zero protected ResearchPortfolio, Paper, Forward and broker
+rows. Optional real SMTP smoke was `NOT_RUN_NOT_CONFIGURED`. Full handoff:
+`docs/sprints/SPRINT_29_OPERATIONAL_NOTIFICATIONS.md`. Sprint 30 is not started.
+
+## Preserved Sprint 28 baseline
+
 Sprint 28 — Production Operations, Health & Alerting
 IMPLEMENTED LOCALLY — DETERMINISTIC IN-APP OBSERVATION / ZERO TRADING AUTHORITY
 
@@ -31,7 +71,7 @@ verification. Full backend validation passed Ruff/format, mypy across 220 source
 and 715 tests. Frontend lint, 109 tests across 20 files and production build passed.
 Controlled Edge acceptance demonstrated DEGRADED, WARNING, acknowledgement, HEALTHY
 recovery and retained resolved history against TEST_DATABASE_URL. Full handoff:
-`docs/sprints/SPRINT_28_PRODUCTION_OPERATIONS.md`. Sprint 29 is not started.
+`docs/sprints/SPRINT_28_PRODUCTION_OPERATIONS.md`.
 
 ## Preserved Sprint 27 baseline
 

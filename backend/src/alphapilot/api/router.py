@@ -17,6 +17,7 @@ from alphapilot.api.routes.market import (
     router as market_router,
 )
 from alphapilot.api.routes.news import router as news_router
+from alphapilot.api.routes.notifications import router as notifications_router
 from alphapilot.api.routes.operations import router as operations_router
 from alphapilot.api.routes.portfolio import router as portfolio_router
 from alphapilot.api.routes.research_datasets import router as research_datasets_router
@@ -65,6 +66,8 @@ router.include_router(forward_portfolio_router)
 router.include_router(broker_alpaca_router)
 
 router.include_router(operations_router)
+
+router.include_router(notifications_router)
 
 router.include_router(news_router)
 

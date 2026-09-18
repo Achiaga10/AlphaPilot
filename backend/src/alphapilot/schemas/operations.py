@@ -49,6 +49,7 @@ class OperationalIncidentSchema(BaseModel):
     resolved_at: AwareDatetime | None
     summary: str
     evidence: dict[str, Any]
+    notification_state: str = "NOT_ELIGIBLE"
     events: list[OperationalIncidentEventSchema] = Field(default_factory=list)
 
 

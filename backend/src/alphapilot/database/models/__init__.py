@@ -46,6 +46,17 @@ from .news import (
     NewsClassification,
     NewsRefreshCoverage,
 )
+from .notifications import (
+    Notification,
+    NotificationAttemptResult,
+    NotificationChannel,
+    NotificationDeliveryAttempt,
+    NotificationFailureCategory,
+    NotificationKind,
+    NotificationPreference,
+    NotificationPriority,
+    NotificationStatus,
+)
 from .operations import (
     OperationalEventType,
     OperationalHealth,
@@ -117,6 +128,15 @@ __all__ = [
     "NewsArticle",
     "NewsClassification",
     "NewsRefreshCoverage",
+    "Notification",
+    "NotificationAttemptResult",
+    "NotificationChannel",
+    "NotificationDeliveryAttempt",
+    "NotificationFailureCategory",
+    "NotificationKind",
+    "NotificationPreference",
+    "NotificationPriority",
+    "NotificationStatus",
     "OperationalEventType",
     "OperationalHealth",
     "OperationalIncident",

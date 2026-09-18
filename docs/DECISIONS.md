@@ -1,5 +1,46 @@
 # AlphaPilot — Current Decisions
 
+## Sprint 29 operational notifications and escalation
+
+- Notifications have zero trading authority. They cannot submit, cancel, replace or
+  close broker orders and cannot change Micho, EMA20, Forward, Portfolio Plan, News,
+  ResearchPortfolio or Paper state.
+- Sprint 28 operational incidents remain the sole alert authority. Sprint 29 adds no
+  competing health, trading or financial decision engine; generation uses only fixed
+  incident type, severity, lifecycle, preference and cooldown rules.
+- `EMAIL` is the only external Sprint 29 channel. SMTP credentials and connection
+  settings are backend/environment-only and are never persisted, logged, returned by
+  APIs or exposed in the browser.
+- A durable outbox separates incident transactions from SMTP delivery. Logical identity
+  is incident ID + transition + generation + channel; daily summaries use recipient
+  hash + channel + completed trading session. PostgreSQL `FOR UPDATE SKIP LOCKED`, a
+  committed lease and unique keys protect concurrent workers and restart recovery.
+- Notification statuses are `PENDING`, `DELIVERING`, `DELIVERED`, `RETRY_PENDING`,
+  `FAILED` and `CANCELLED`. Every provider attempt retains number, start/completion,
+  result, bounded failure category, provider reference and duration.
+- INFO is not emailed. Actionable WARNING is one-shot by default. CRITICAL is immediate
+  and may remind every 3,600 seconds while OPEN. Acknowledgement cancels/suppresses
+  reminder notifications but does not resolve the incident. Resolution sends one
+  recovery only if an earlier external incident notification was delivered.
+- Upcoming BUY remains in-app only. Manual EXIT required is emailed; overdue manual exit
+  is CRITICAL. Copy says manual broker action is required and that AlphaPilot has not
+  submitted, cancelled or executed an order.
+- Transient retries are 60, 300, 900 and 1,800 seconds with five automatic attempts.
+  Authentication, invalid configuration and recipient rejection are permanent failures.
+  Manual retry re-enters the same durable path and retains prior attempt history.
+- Delivery-system failure, stale queue and misconfiguration are visible as Sprint 28
+  incidents but are in-app only. Excluding the `NOTIFICATION` source domain prevents
+  recursive self-email loops.
+- Preferences are a single-operator singleton because AlphaPilot has no authenticated
+  user domain. No preference row means no email. Optional daily Operations summary is
+  disabled by default and sends at most once per recipient/channel/completed session;
+  calendar weekends alone never create a summary.
+- SMTP is application-level effectively-once, not transactional exactly-once. A crash
+  after SMTP accepts a message but before the database commit can theoretically cause a
+  duplicate after lease recovery.
+- Migration `3a3f0c993c27` descends from Sprint 28 `c28a0f1b2d3e` and is applied only by
+  an explicit operator deployment step. Sprint 30 is not started.
+
 ## Sprint 28 production operations, health and alerting
 
 - Operations is a deterministic observational domain with no financial authority.

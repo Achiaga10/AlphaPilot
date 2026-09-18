@@ -1,6 +1,9 @@
 import { requestJson } from './client'
 import type {
   OperationalIncident,
+  OperationalNotification,
+  NotificationDeliveryStatus,
+  NotificationPreferences,
   OperationsEvaluation,
   OperationsHealthResponse,
 } from '../types/operations'
@@ -13,6 +16,23 @@ const isIncident = (value: unknown): value is OperationalIncident =>
   typeof value.incident_type === 'string' && typeof value.summary === 'string' &&
   (value.severity === 'INFO' || value.severity === 'WARNING' || value.severity === 'CRITICAL') &&
   (value.status === 'OPEN' || value.status === 'ACKNOWLEDGED' || value.status === 'RESOLVED')
+
+const isNotification = (value: unknown): value is OperationalNotification =>
+  isObject(value) && typeof value.id === 'string' && value.channel === 'EMAIL' &&
+  typeof value.subject === 'string' && typeof value.status === 'string'
+
+const isNotifications = (value: unknown): value is OperationalNotification[] =>
+  Array.isArray(value) && value.every(isNotification)
+
+const isNotificationStatus = (value: unknown): value is NotificationDeliveryStatus =>
+  isObject(value) && typeof value.enabled === 'boolean' &&
+  typeof value.configured === 'boolean' && typeof value.queue_depth === 'number' &&
+  typeof value.failed_count === 'number'
+
+const isPreferences = (value: unknown): value is NotificationPreferences =>
+  isObject(value) && typeof value.notifications_enabled === 'boolean' &&
+  typeof value.email_enabled === 'boolean' && typeof value.warning_enabled === 'boolean' &&
+  typeof value.critical_enabled === 'boolean' && typeof value.recovery_enabled === 'boolean'
 
 const isHealth = (value: unknown): value is OperationsHealthResponse =>
   isObject(value) &&
@@ -44,4 +64,32 @@ export function acknowledgeIncident(id: string, reason: string): Promise<Operati
 
 export function evaluateOperations(): Promise<OperationsEvaluation> {
   return requestJson('/api/v1/operations/evaluate', { method: 'POST' }, isEvaluation)
+}
+
+export function getNotificationStatus(signal?: AbortSignal): Promise<NotificationDeliveryStatus> {
+  return requestJson('/api/v1/notifications/status', { signal }, isNotificationStatus)
+}
+
+export function getNotifications(signal?: AbortSignal): Promise<OperationalNotification[]> {
+  return requestJson('/api/v1/notifications?limit=50', { signal }, isNotifications)
+}
+
+export function getNotificationPreferences(signal?: AbortSignal): Promise<NotificationPreferences> {
+  return requestJson('/api/v1/notifications/preferences', { signal }, isPreferences)
+}
+
+export function updateNotificationPreferences(preferences: NotificationPreferences): Promise<NotificationPreferences> {
+  return requestJson('/api/v1/notifications/preferences', {
+    method: 'PUT', body: JSON.stringify(preferences),
+  }, isPreferences)
+}
+
+export function sendTestNotification(): Promise<OperationalNotification> {
+  return requestJson('/api/v1/notifications/test', {
+    method: 'POST', body: JSON.stringify({}),
+  }, isNotification)
+}
+
+export function retryNotification(id: string): Promise<OperationalNotification> {
+  return requestJson(`/api/v1/notifications/${id}/retry`, { method: 'POST' }, isNotification)
 }
